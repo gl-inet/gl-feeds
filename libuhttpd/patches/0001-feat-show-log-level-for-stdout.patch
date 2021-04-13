@@ -1,0 +1,53 @@
+From 19ca4ff6c0ecf35d6ef2acdd612f42102f55ccf3 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Tue, 13 Apr 2021 15:21:38 +0800
+Subject: [PATCH] feat: show log level for stdout
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ src/log.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/log.c b/src/log.c
+index 8b423f8..f95d721 100644
+--- a/src/log.c
++++ b/src/log.c
+@@ -38,6 +38,17 @@ static const char *ident;
+ 
+ void (*log_write)(int priority, const char *fmt, va_list ap);
+ 
++static const char *prioritynames[] = {
++    [LOG_EMERG] = "emerg",
++    [LOG_ALERT] = "alert",
++    [LOG_CRIT] = "crit",
++    [LOG_ERR] = "err",
++    [LOG_WARNING] = "warn",
++    [LOG_NOTICE] = "notice",
++    [LOG_INFO] = "info",
++    [LOG_DEBUG] = "debug"
++};
++
+ static const char *log_ident()
+ {
+     FILE *self;
+@@ -69,7 +80,7 @@ static inline void log_write_stdout(int priority, const char *fmt, va_list ap)
+     localtime_r(&now, &tm);
+     strftime(buf, sizeof(buf), "%Y/%m/%d %H:%M:%S", &tm);
+ 
+-    fprintf(stderr, "%s ", buf);
++    fprintf(stderr, "%s %s ", buf, prioritynames[priority]);
+     vfprintf(stderr, fmt, ap);
+ }
+ 
+@@ -122,6 +133,8 @@ void __uh_log(const char *filename, int line, int priority, const char *fmt, ...
+     char new_fmt[256];
+     va_list ap;
+ 
++    priority = LOG_PRI(priority);
++
+     if (priority > log_threshold)
+         return;
+ 
+-- 
+2.25.1
+
