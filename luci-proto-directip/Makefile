@@ -9,6 +9,6 @@ include $(TOPDIR)/rules.mk
 LUCI_TITLE:=Support for directip
 LUCI_DEPENDS:=comgt
 
-include ../../luci.mk
+include ../../luci/luci.mk
 
 # call BuildPackage - OpenWrt buildroot signature
