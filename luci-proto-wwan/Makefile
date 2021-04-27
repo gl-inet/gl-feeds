@@ -7,7 +7,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=Support for wwan
-LUCI_DEPENDS:=wwan
+LUCI_DEPENDS:=+wwan
 
 include ../../luci/luci.mk
 

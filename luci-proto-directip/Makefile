@@ -7,7 +7,7 @@
 include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=Support for directip
-LUCI_DEPENDS:=comgt
+LUCI_DEPENDS:=+comgt
 
 include ../../luci/luci.mk
 
