@@ -30,26 +30,16 @@ define Package/libumqtt/Default
   SECTION:=libs
   CATEGORY:=Libraries
   SUBMENU:=Networking
-  TITLE:=libumqtt
+  TITLE:=A lightweight mqtt client library based on libev
   DEPENDS:=+libev $(2)
   VARIANT:=$(1)
   PROVIDES:=libumqtt
-endef
-
-define Package/libumqtt/Default/description
-A Lightweight and fully asynchronous MQTT 3.1.1 client C library based on
-libubox for Embedded Linux. Support QoS 0, 1 and 2. Support ssl.
 endef
 
 Package/libumqtt-openssl=$(call Package/libumqtt/Default,openssl,+PACKAGE_libumqtt-openssl:libopenssl)
 Package/libumqtt-wolfssl=$(call Package/libumqtt/Default,wolfssl,+PACKAGE_libumqtt-wolfssl:libwolfssl)
 Package/libumqtt-mbedtls=$(call Package/libumqtt/Default,mbedtls,+PACKAGE_libumqtt-mbedtls:libmbedtls +PACKAGE_libumqtt-mbedtls:zlib)
 Package/libumqtt-nossl=$(call Package/libumqtt/Default,nossl)
-
-Package/libumqtt-nossl/description = $(Package/libumqtt/Default/description)
-Package/libumqtt-openssl/description = $(Package/libumqtt/Default/description)
-Package/libumqtt-wolfssl/description = $(Package/libumqtt/Default/description)
-Package/libumqtt-mbedtls/description = $(Package/libumqtt/Default/description)
 
 ifeq ($(BUILD_VARIANT),openssl)
   CMAKE_OPTIONS += -DUSE_OPENSSL=ON
