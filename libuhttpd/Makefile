@@ -43,13 +43,13 @@ Package/libuhttpd-mbedtls=$(call Package/libuhttpd/Default,mbedtls,+PACKAGE_libu
 Package/libuhttpd-nossl=$(call Package/libuhttpd/Default,nossl)
 
 ifeq ($(BUILD_VARIANT),openssl)
-  CMAKE_OPTIONS += -DUHTTPD_USE_OPENSSL=ON
+  CMAKE_OPTIONS += -DUSE_OPENSSL=ON
 else ifeq ($(BUILD_VARIANT),wolfssl)
-  CMAKE_OPTIONS += -DUHTTPD_USE_WOLFSSL=ON
+  CMAKE_OPTIONS += -DUSE_WOLFSSL=ON
 else ifeq ($(BUILD_VARIANT),mbedtls)
-  CMAKE_OPTIONS += -DUHTTPD_USE_MBEDTLS=ON
+  CMAKE_OPTIONS += -DUSE_MBEDTLS=ON
 else
-  CMAKE_OPTIONS += -DUHTTPD_SSL_SUPPORT=OFF
+  CMAKE_OPTIONS += -DSSL_SUPPORT=OFF
 endif
 
 define Package/libuhttpd-$(BUILD_VARIANT)/install
