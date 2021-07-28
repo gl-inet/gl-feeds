@@ -49,10 +49,13 @@ report_policies() {
 	done
 }
 
+
 report_policies_v4() {
 	local policy
 
-	for policy in $($IPT4 -S | awk '{print $2}' | grep mwan3_policy_ | sort -u); do
+	local policies=$($IPT4 -S | awk '{print $2}' | grep mwan3_policy_ | sort -u)
+
+	for policy in $(echo $policies); do
 		json_add_array "${policy##*mwan3_policy_}"
 		report_policies "$IPT4" "$policy"
 		json_close_array
@@ -62,7 +65,9 @@ report_policies_v4() {
 report_policies_v6() {
 	local policy
 
-	for policy in $($IPT6 -S | awk '{print $2}' | grep mwan3_policy_ | sort -u); do
+	local policies=$($IPT6 -S | awk '{print $2}' | grep mwan3_policy_ | sort -u)
+
+	for policy in $(echo $policies); do
 		json_add_array "${policy##*mwan3_policy_}"
 		report_policies "$IPT6" "$policy"
 		json_close_array
@@ -77,7 +82,7 @@ get_mwan3_status() {
 	local online=0
 	local offline=0
 	local up="0"
-	local enabled pid device time_p time_n time_u time_d status
+	local enabled pid device time_p time_n time_u time_d
 
 	network_get_device device $1
 
@@ -111,12 +116,6 @@ get_mwan3_status() {
 		network_get_uptime uptime "$iface"
 		network_is_up "$iface" && up="1"
 
-		if [ -f "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS" ]; then
-			status="$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS")"
-		else
-			status="unknown"
-		fi
-
 		json_add_object "${iface}"
 		json_add_int age "$age"
 		json_add_int online "${online}"
@@ -125,25 +124,54 @@ get_mwan3_status() {
 		json_add_int "score" "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/SCORE")"
 		json_add_int "lost" "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/LOST")"
 		json_add_int "turn" "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/TURN")"
-		json_add_string "status" "${status}"
+		json_add_string "status" "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS")"
 		json_add_boolean "enabled" "${enabled}"
 		json_add_boolean "running" "${running}"
 		json_add_boolean "up" "${up}"
 		json_add_array "track_ip"
-		for file in $MWAN3TRACK_STATUS_DIR/${iface}/*; do
+		for file in $MWAN3TRACK_STATUS_DIR/${iface}/TRACK_*; do
+			[ -z "${file#*/TRACK_OUTPUT}" ] && continue
+			[ -z "${file#*/TRACK_\*}" ] && continue
 			track="${file#*/TRACK_}"
-			if [ "${track}" != "${file}" ]; then
-				json_add_object
-				json_add_string ip "${track}"
-				json_add_string status "$(cat "${file}")"
-				json_add_int latency "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/LATENCY_${track}")"
-				json_add_int packetloss "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/LOSS_${track}")"
-				json_close_object
-			fi
+			json_add_object
+			json_add_string ip "${track}"
+			json_add_string status "$(cat "${file}")"
+			json_add_int latency "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/LATENCY_${track}")"
+			json_add_int packetloss "$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/LOSS_${track}")"
+			json_close_object
 		done
 		json_close_array
 		json_close_object
 	fi
+}
+
+get_status() {
+    local iface="${1}"
+    local iface_select="${2}"
+    local running="0"
+    local age=0
+    local online=0
+    local offline=0
+    local up="0"
+    local enabled pid device time_p time_n time_u time_d status
+
+    network_get_device device $1
+
+    if [ "${iface}" = "${iface_select}" ] || [ "${iface_select}" = "" ]; then
+
+        network_is_up "$iface" && up="1"
+
+        if [ -f "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS" ]; then
+            status="$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS")"
+        else
+            status="unknown"
+        fi
+
+        json_add_object "${iface}"
+        json_add_string "status" "${status}"
+        json_add_boolean "up" "${up}"
+        json_close_object
+    fi
 }
 
 main () {
@@ -153,6 +181,10 @@ main () {
 			json_init
 			json_add_object "status"
 			json_add_string "section" "x"
+			json_add_string "interface" "x"
+			json_add_string "policies" "x"
+			json_close_object
+			json_add_object "state"
 			json_add_string "interface" "x"
 			json_add_string "policies" "x"
 			json_close_object
@@ -222,6 +254,34 @@ main () {
 				esac
 				json_dump
 				;;
+
+			state)
+                local section iface
+				read input;
+				json_load "$input"
+				json_get_var section section
+				json_get_var iface interface
+
+				config_load mwan3
+				json_init
+				case "$section" in
+					*)
+						json_add_object interfaces
+						config_foreach get_status interface "${iface}"
+						json_close_object
+						json_add_object policies
+						json_add_object ipv4
+						report_policies_v4
+						json_close_object
+						#json_add_object ipv6
+						#report_policies_v6
+						#json_close_object
+						json_close_object
+						;;
+				esac
+				json_dump
+				;;
+
 			esac
 			;;
 	esac
