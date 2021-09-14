@@ -91,7 +91,7 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.h
 +
 +#define  REKEY_GIVEUP_EVENT "REKEY-GIVEUP"
 +#define  REKEY_TIMEOUT_EVENT "REKEY-TIMEOUT"
-+#define  KEYPAIR_CREATED_EVENT "KEYPAIR-CREATED-TIMEOUT"
++#define  KEYPAIR_CREATED_EVENT "KEYPAIR-CREATED"
 +
 +extern void wireguard_hotplug(const char *ifname, const char *action);
 +
