@@ -14,20 +14,26 @@ DAEMON=/usr/bin/smsd
 
 # Set/edit this before starting service !!!!!
 WRT_SPOOL=/etc/spool
+CFG=/tmp/smstools.cfg
 
 start_service() {
 	echo "Creating minimum spool directories"
 	mkdir -p $WRT_SPOOL
 	mkdir -p $WRT_SPOOL/sms
-	mkdir -p $WRT_SPOOL/sms/incoming
-	mkdir -p $WRT_SPOOL/sms/outgoing
-	mkdir -p $WRT_SPOOL/sms/checked
-	mkdir -p $WRT_SPOOL/sms/failed
-	mkdir -p $WRT_SPOOL/sms/sent
+
+	gl_modem sms-config > $CFG
+	dirs="$(cat $CFG|grep $WRT_SPOOL/sms)"
+	IFS_sav=$IFS
+	IFS=$'\n\n'
+	for dir in $dirs;do
+		dir="$(echo $dir|cut -d ' ' -f3)"
+		mkdir -p $dir
+	done
+	IFS=$IFS_sav
 
 	procd_open_instance
 
-	procd_set_param command $DAEMON -n MAINPROCESS -p$PIDFILE -i$INFOFILE
+	procd_set_param command $DAEMON -n MAINPROCESS -p$PIDFILE -i$INFOFILE -c$CFG
 	procd_set_param respawn
 	procd_set_param stdout 1
 
