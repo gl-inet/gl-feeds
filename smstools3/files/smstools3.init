@@ -17,12 +17,13 @@ WRT_SPOOL=/etc/spool
 CFG=/tmp/smstools.cfg
 
 start_service() {
+	gl_modem sms-config > $CFG
+	dirs="$(cat $CFG|grep $WRT_SPOOL/sms)"
+	[ -z "$dirs" ] && exit 0
+
 	echo "Creating minimum spool directories"
 	mkdir -p $WRT_SPOOL
 	mkdir -p $WRT_SPOOL/sms
-
-	gl_modem sms-config > $CFG
-	dirs="$(cat $CFG|grep $WRT_SPOOL/sms)"
 	IFS_sav=$IFS
 	IFS=$'\n\n'
 	for dir in $dirs;do
