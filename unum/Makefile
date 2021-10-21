@@ -130,10 +130,6 @@ define Build/Compile
 endef
 
 define Package/unum/install
-	echo 111111
-	echo "$(AGENT_HARDWARE_ID)"
-	echo "$(HARDWARE)"
-	echo "$(DEVICE_PRODUCT_NAME)"
 	# Agent executable
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/sbin
