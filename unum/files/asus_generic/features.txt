@@ -1,0 +1,9 @@
+http-basic-auth-passwords
+telnet-passwords
+port_scanning
+rescan_devices
+hardware_content_filtering
+mac_filter
+edns0_content_filter
+gzip_requests
+guest_network
