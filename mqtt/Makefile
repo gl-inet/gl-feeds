@@ -12,7 +12,10 @@ PKG_REFV:=2
 PKG_VERSION:=1.3.1
 PKG_RELEASE:=1
 
+CMAKE_INSTALL:=1
+
 include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/cmake.mk
 
 define Package/mqtt
   SECTION:=utils
@@ -26,25 +29,9 @@ define Build/Prepare
 	$(CP) ./src/* $(PKG_BUILD_DIR)
 endef
 
-define Build/Configure
-endef
-
-#TARGET_CFLAGS += -ggdb3
-MAKE_FLAGS += CFLAGS="$(TARGET_CFLAGS) -Wall"
-
-define Build/InstallDev
-	$(INSTALL_DIR) $(1)/usr/include/
-	$(CP) $(PKG_BUILD_DIR)/src/*.h $(1)/usr/include/
-	$(INSTALL_DIR) $(1)/usr/lib/
-	$(CP) $(PKG_BUILD_DIR)/build/output/lib* $(1)/usr/lib/
-	#$(CP) $(PKG_BUILD_DIR)/build/output/MQTTVersion $(1)/usr/lib/
-endef
-
 define Package/mqtt/install
-	$(INSTALL_DIR) $(1)/usr/bin/
 	$(INSTALL_DIR) $(1)/usr/lib/
-	$(CP) $(PKG_BUILD_DIR)/build/output/lib* $(1)/usr/lib/
-	#$(CP) $(PKG_BUILD_DIR)/build/output/MQTTVersion $(1)/usr/lib/
+	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib/
 endef
 
 $(eval $(call BuildPackage,mqtt))
