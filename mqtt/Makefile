@@ -29,6 +29,8 @@ define Build/Prepare
 	$(CP) ./src/* $(PKG_BUILD_DIR)
 endef
 
+CMAKE_OPTIONS := -DPAHO_WITH_SSL=ON
+
 define Package/mqtt/install
 	$(INSTALL_DIR) $(1)/usr/lib/
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/lib*.so* $(1)/usr/lib/
