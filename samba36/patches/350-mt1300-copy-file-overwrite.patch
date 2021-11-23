@@ -1,0 +1,13 @@
+Index: samba-3.6.25/source3/modules/vfs_default.c
+===================================================================
+--- samba-3.6.25.orig/source3/modules/vfs_default.c
++++ samba-3.6.25/source3/modules/vfs_default.c
+@@ -939,7 +939,7 @@ static int vfswrap_ftruncate(vfs_handle_
+ 	   expansion and some that don't! On Linux fat can't do
+ 	   ftruncate extend but ext2 can. */
+ 
+-#if 0
++#if 1
+ 	result = sys_ftruncate(fsp->fh->fd, len);
+ 	if (result == 0)
+ 		goto done;
