@@ -1,0 +1,40 @@
+Index: getdns-1.6.0/CMakeLists.txt
+===================================================================
+--- getdns-1.6.0.orig/CMakeLists.txt
++++ getdns-1.6.0/CMakeLists.txt
+@@ -1,4 +1,4 @@
+-cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
++cmake_minimum_required(VERSION 3.3 FATAL_ERROR)
+ 
+ if (POLICY CMP0075)
+   cmake_policy(SET CMP0075 NEW)
+@@ -690,8 +690,7 @@ if (ENABLE_STATIC)
+     )
+   target_link_libraries(getdns
+     PUBLIC
+-    OpenSSL::SSL
+-    OpenSSL::Crypto
++    ${OPENSSL_LIBRARIES}
+     Threads::Threads
+     ${getdns_system_libs}
+     )
+@@ -722,8 +721,7 @@ if (ENABLE_SHARED)
+     )
+   target_link_libraries(getdns_shared
+     PUBLIC
+-    OpenSSL::SSL
+-    OpenSSL::Crypto
++    ${OPENSSL_LIBRARIES}
+     Threads::Threads
+     ${getdns_system_libs}
+     )
+@@ -922,8 +920,7 @@ if (BUILD_GETDNS_SERVER_MON)
+   add_executable(getdns_server_mon src/tools/getdns_server_mon.c)
+   target_link_libraries(getdns_server_mon
+     PUBLIC
+-    OpenSSL::SSL
+-    OpenSSL::Crypto
++    ${OPENSSL_LIBRARIES}
+     PRIVATE
+     getdns
+     )
