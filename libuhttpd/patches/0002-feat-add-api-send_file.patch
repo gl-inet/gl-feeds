@@ -28,7 +28,7 @@ Index: libuhttpd-3.14.1/src/connection.c
 +        return;
 +    }
 +
-+    if (lseek(fd, offset, SEEK_SET)) {
++    if (lseek(fd, offset, SEEK_SET) == -1) {
 +        log_err("lseek: %s\n", strerror(errno));
 +        close(fd);
 +        return;
