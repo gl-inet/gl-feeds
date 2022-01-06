@@ -148,6 +148,8 @@ ifneq ($(BUILD_VARIANT),all-module)
   endif
   ifneq ($(CONFIG_NGINX_PCRE),y)
     ADDITIONAL_MODULES += --without-pcre
+  else
+    ADDITIONAL_MODULES += --with-pcre
   endif
   ifneq ($(CONFIG_NGINX_HTTP_CHARSET),y)
     ADDITIONAL_MODULES += --without-http_charset_module
