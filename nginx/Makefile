@@ -409,6 +409,7 @@ Package/nginx-all-module/install = $(Package/nginx/install)
 
 define Build/Prepare
 	$(Build/Prepare/Default)
+	$(CP) ./src/* $(PKG_BUILD_DIR)
 	$(Prepare/nginx-naxsi)
 	$(Prepare/lua-nginx)
 	$(Prepare/nginx-brotli)
