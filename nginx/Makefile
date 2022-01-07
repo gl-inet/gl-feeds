@@ -93,6 +93,11 @@ define Package/nginx/description
  config menu)
 endef
 
+define Build/Prepare
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)
+	$(CP) ./src/. $(PKG_BUILD_DIR)
+endef
+
 define Package/nginx
   $(Package/nginx/default)
   VARIANT:=no-ssl
