@@ -6,7 +6,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=stubby
 PKG_VERSION:=0.3.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/getdnsapi/$(PKG_NAME)
@@ -22,6 +22,12 @@ PKG_BUILD_PARALLEL:=1
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
+
+ifdef CONFIG_TARGET_ipq806x
+ifeq ($(CONFIG_GCC_VERSION_4_8),y)
+  TARGET_CFLAGS += -std=gnu99
+endif
+endif
 
 define Package/stubby/Default
   TITLE:=stubby
@@ -54,10 +60,13 @@ define Package/stubby/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN)  ./files/stubby.init $(1)/etc/init.d/stubby
 	$(INSTALL_DIR) $(1)/etc/stubby
-	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/etc/stubby/stubby.yml $(1)/etc/stubby/stubby.yml.default
 	$(INSTALL_DATA) ./files/stubby.yml $(1)/etc/stubby/stubby.yml
+	$(INSTALL_DATA) ./files/stubby_nextdns_default.yml $(1)/etc/stubby/stubby_nextdns_default.yml
+	$(INSTALL_DATA) ./files/stubby_nextdns.yml $(1)/etc/stubby/stubby_nextdns.yml
 	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) ./files/stubby.conf $(1)/etc/config/stubby
+	$(INSTALL_CONF) ./files/stubby.config $(1)/etc/config/stubby
+	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
+	$(INSTALL_DATA) ./files/stubby.update $(1)/lib/upgrade/keep.d/stubby
 endef
 
 $(eval $(call BuildPackage,stubby))

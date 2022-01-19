@@ -1,0 +1,28 @@
+resolution_type: GETDNS_RESOLUTION_STUB
+
+dns_transport_list:
+  - GETDNS_TRANSPORT_TLS
+
+tls_authentication: GETDNS_AUTHENTICATION_REQUIRED
+
+tls_query_padding_blocksize: 128
+
+edns_client_subnet_private : 0
+
+round_robin_upstreams: 0
+
+idle_timeout: 10000
+
+listen_addresses:
+  - 127.0.0.1@53535
+  -  0::1@53535
+
+upstream_recursive_servers:
+  - address_data: 45.90.28.0
+    tls_auth_name: ".dns1.nextdns.io"
+  - address_data: 2a07:a8c0::0
+    tls_auth_name: ".dns1.nextdns.io"
+  - address_data: 45.90.30.0 
+    tls_auth_name: ".dns2.nextdns.io"
+  - address_data: 2a07:a8c1::0 
+    tls_auth_name: ".dns2.nextdns.io"
