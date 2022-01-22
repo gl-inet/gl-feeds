@@ -61,8 +61,6 @@ define Package/stubby/install
 	$(INSTALL_BIN)  ./files/stubby.init $(1)/etc/init.d/stubby
 	$(INSTALL_DIR) $(1)/etc/stubby
 	$(INSTALL_DATA) ./files/stubby.yml $(1)/etc/stubby/stubby.yml
-	$(INSTALL_DATA) ./files/stubby_nextdns_default.yml $(1)/etc/stubby/stubby_nextdns_default.yml
-	$(INSTALL_DATA) ./files/stubby_nextdns.yml $(1)/etc/stubby/stubby_nextdns.yml
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/stubby.config $(1)/etc/config/stubby
 	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
