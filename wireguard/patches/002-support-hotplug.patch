@@ -1,0 +1,160 @@
+Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
+===================================================================
+--- /dev/null
++++ wireguard-linux-compat-1.0.20200611/src/hotplug.c
+@@ -0,0 +1,78 @@
++/*
++ *  oui-tertf Hotplug driver
++ *
++ */
++
++#include <linux/module.h>
++#include <linux/version.h>
++#include <linux/kmod.h>
++#include <linux/input.h>
++
++#include <linux/workqueue.h>
++#include <linux/skbuff.h>
++#include <linux/netlink.h>
++#include <linux/kobject.h>
++
++#define SUBSYSTEM_NAME	"wireguard"
++
++
++#define BH_SKB_SIZE	2048
++
++/* -------------------------------------------------------------------------*/
++static int bh_event_add_var(struct sk_buff *skb, int argv,
++                            const char *format, ...)
++{
++    static char buf[128];
++    char *s;
++    va_list args;
++    int len;
++
++    if (argv)
++        return 0;
++
++    va_start(args, format);
++    len = vsnprintf(buf, sizeof(buf), format, args);
++    va_end(args);
++
++    if (len >= sizeof(buf)) {
++        //WARN(1, "buffer size too small\n");
++        return -ENOMEM;
++    }
++
++    s = skb_put(skb, len + 1);
++    strcpy(s, buf);
++
++    return 0;
++}
++
++/*
++static int is_wired_connect(const char *ifname)
++{
++    int ret = -1;
++
++    if (strstr(ifname, "eth")) {
++        ret = 0;
++    }
++
++    return ret;
++}
++*/
++
++void wireguard_hotplug(const char *ifname, const char *action)
++{
++    struct sk_buff *skb;
++
++    skb = alloc_skb(BH_SKB_SIZE, GFP_KERNEL);
++    if (!skb)
++        return;
++
++
++    printk(KERN_INFO "wireguard-hotplug IFNAME=%s ACTION=%s\n", ifname, action);
++    bh_event_add_var(skb, 0, "SUBSYSTEM=%s", SUBSYSTEM_NAME);
++    bh_event_add_var(skb, 0, "ACTION=%s", action);
++    bh_event_add_var(skb, 0, "ifname=%s", ifname);
++
++    NETLINK_CB(skb).dst_group = 1;
++    broadcast_uevent(skb, 0, 1, GFP_KERNEL);
++}
++
+Index: wireguard-linux-compat-1.0.20200611/src/hotplug.h
+===================================================================
+--- /dev/null
++++ wireguard-linux-compat-1.0.20200611/src/hotplug.h
+@@ -0,0 +1,11 @@
++#ifndef __HOTPLUG_H__
++#define __HOTPLUG_H__
++
++#define  REKEY_GIVEUP_EVENT "REKEY-GIVEUP"
++#define  REKEY_TIMEOUT_EVENT "REKEY-TIMEOUT"
++#define  KEYPAIR_CREATED_EVENT "KEYPAIR-CREATED"
++
++extern void wireguard_hotplug(const char *ifname, const char *action);
++
++#endif
++
+Index: wireguard-linux-compat-1.0.20200611/src/timers.c
+===================================================================
+--- wireguard-linux-compat-1.0.20200611.orig/src/timers.c
++++ wireguard-linux-compat-1.0.20200611/src/timers.c
+@@ -8,6 +8,7 @@
+ #include "peer.h"
+ #include "queueing.h"
+ #include "socket.h"
++#include "hotplug.h"
+ 
+ /*
+  * - Timer for retransmitting the handshake if we don't hear back after
+@@ -60,6 +61,7 @@ static void wg_expired_retransmit_handsh
+ 		if (!timer_pending(&peer->timer_zero_key_material))
+ 			mod_peer_timer(peer, &peer->timer_zero_key_material,
+ 				       jiffies + REJECT_AFTER_TIME * 3 * HZ);
++		wireguard_hotplug(peer->device->dev->name, REKEY_GIVEUP_EVENT);
+ 	} else {
+ 		++peer->timer_handshake_attempts;
+ 		pr_debug("%s: Handshake for peer %llu (%pISpfsc) did not complete after %d seconds, retrying (try %d)\n",
+@@ -73,6 +75,7 @@ static void wg_expired_retransmit_handsh
+ 		wg_socket_clear_peer_endpoint_src(peer);
+ 
+ 		wg_packet_send_queued_handshake_initiation(peer, true);
++		wireguard_hotplug(peer->device->dev->name, REKEY_TIMEOUT_EVENT);
+ 	}
+ }
+ 
+Index: wireguard-linux-compat-1.0.20200611/src/Kbuild
+===================================================================
+--- wireguard-linux-compat-1.0.20200611.orig/src/Kbuild
++++ wireguard-linux-compat-1.0.20200611/src/Kbuild
+@@ -8,7 +8,7 @@ ccflags-y += -D'pr_fmt(fmt)=KBUILD_MODNA
+ ccflags-y += -Wframe-larger-than=2048
+ ccflags-$(if $(WIREGUARD_VERSION),y,) += -D'WIREGUARD_VERSION="$(WIREGUARD_VERSION)"'
+ 
+-wireguard-y := main.o noise.o device.o peer.o timers.o queueing.o send.o receive.o socket.o peerlookup.o allowedips.o ratelimiter.o cookie.o netlink.o
++wireguard-y := main.o noise.o device.o peer.o hotplug.o timers.o queueing.o send.o receive.o socket.o peerlookup.o allowedips.o ratelimiter.o cookie.o netlink.o
+ 
+ include $(src)/crypto/Kbuild.include
+ include $(src)/compat/Kbuild.include
+Index: wireguard-linux-compat-1.0.20200611/src/noise.c
+===================================================================
+--- wireguard-linux-compat-1.0.20200611.orig/src/noise.c
++++ wireguard-linux-compat-1.0.20200611/src/noise.c
+@@ -9,6 +9,7 @@
+ #include "messages.h"
+ #include "queueing.h"
+ #include "peerlookup.h"
++#include "hotplug.h"
+ 
+ #include <linux/rcupdate.h>
+ #include <linux/slab.h>
+@@ -822,6 +823,7 @@ bool wg_noise_handshake_begin_session(st
+ 		ret = wg_index_hashtable_replace(
+ 			handshake->entry.peer->device->index_hashtable,
+ 			&handshake->entry, &new_keypair->entry);
++		wireguard_hotplug(handshake->entry.peer->device->dev->name, KEYPAIR_CREATED_EVENT);
+ 	} else {
+ 		kzfree(new_keypair);
+ 	}
