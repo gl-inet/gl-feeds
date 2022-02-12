@@ -1,7 +1,6 @@
 #!/bin/sh /etc/rc.common
 
-# Startup before dnsmasq
-START=18
+START=30
 USE_PROCD=1
 PROG=/usr/sbin/dnscrypt-proxy
 CONFIG_DIR=/var/etc
@@ -145,6 +144,8 @@ start_service() {
     then
         return 0
     fi
+    local enable="$(uci_get dnscrypt-proxy.@global[0].enable)"
+    [ "$enable" = 1 ] || return 0
     config_load dnscrypt-proxy
     config_foreach dnscrypt_instance dnscrypt-proxy
 }
