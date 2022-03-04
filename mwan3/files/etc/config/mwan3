@@ -68,6 +68,7 @@ config policy 'default_poli'
 config rule 'default_rule'
 	option dest_ip '0.0.0.0/0'
 	option use_policy 'default_poli'
+	option family 'ipv4'
 
 config interface 'wan6'
 	option enabled '1'
