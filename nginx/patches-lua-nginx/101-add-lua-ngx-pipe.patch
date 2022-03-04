@@ -202,7 +202,7 @@ Index: nginx-1.17.7/lua-nginx/src/ngx_http_lua_pipe.c
      }
  
      rev = pipe_ctx->c->read;
-@@ -2493,6 +2518,365 @@ ngx_http_lua_pipe_proc_wait_cleanup(void
+@@ -2493,6 +2518,353 @@ ngx_http_lua_pipe_proc_wait_cleanup(void
      wait_co_ctx->cleanup = NULL;
  }
  
@@ -514,15 +514,6 @@ Index: nginx-1.17.7/lua-nginx/src/ngx_http_lua_pipe.c
 +NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_line, 1, PIPE_READ_LINE)
 +NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_any, 1, PIPE_READ_ANY)
 +
-+static int ngx_http_lua_pipe_proc_gc(lua_State *L)
-+{
-+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
-+
-+    ngx_http_lua_ffi_pipe_proc_destroy(proc);
-+
-+    return 0;
-+}
-+
 +#define NGX_LUA_PIPE_ADD_FUN(name)                 \
 +    do {                                                \
 +        lua_pushcfunction(L, ngx_http_lua_proc_##name); \
@@ -558,9 +549,6 @@ Index: nginx-1.17.7/lua-nginx/src/ngx_http_lua_pipe.c
 +    NGX_LUA_PIPE_ADD_FUN(stderr_read_any);
 +
 +    lua_setfield(L, -2, "__index");
-+
-+    lua_pushcfunction(L, ngx_http_lua_pipe_proc_gc);
-+    lua_setfield(L, -2, "__gc");
 +
 +    lua_rawset(L, LUA_REGISTRYINDEX);
 +    /* }}} */
