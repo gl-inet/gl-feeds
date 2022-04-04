@@ -25,8 +25,10 @@ main() {
 	sleep 3
 	while true; do
 		mwan3_lock "service" "mwan3rtmon"
-		mwan3_rtmon_ipv4 || mwan3_rtmon_ipv6
-		ret=$?
+		mwan3_rtmon_ipv4
+		ret=$((ret+$?))
+		mwan3_rtmon_ipv6
+		ret=$((ret+$?))
 		mwan3_unlock "service" "mwan3rtmon"
 		[ "$ret" = "0" ] || break
 		[ "$rtmon_interval" = "0" ] && break
