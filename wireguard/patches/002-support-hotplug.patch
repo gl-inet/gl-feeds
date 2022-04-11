@@ -2,7 +2,7 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 ===================================================================
 --- /dev/null
 +++ wireguard-linux-compat-1.0.20200611/src/hotplug.c
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,81 @@
 +/*
 + *  oui-tertf Hotplug driver
 + *
@@ -66,6 +66,9 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 +void wireguard_hotplug(const char *ifname, const char *action)
 +{
 +    struct sk_buff *skb;
++
++    if (0 == strcmp(ifname,"wgserver"))
++	return;
 +
 +    skb = alloc_skb(BH_SKB_SIZE, GFP_KERNEL);
 +    if (!skb)
