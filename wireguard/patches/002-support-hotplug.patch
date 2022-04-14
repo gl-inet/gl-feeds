@@ -75,7 +75,7 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 +        return;
 +
 +
-+    printk(KERN_INFO "wireguard-hotplug IFNAME=%s ACTION=%s\n", ifname, action);
++    pr_info(KERN_INFO "wireguard-hotplug IFNAME=%s ACTION=%s\n", ifname, action);
 +    bh_event_add_var(skb, 0, "SUBSYSTEM=%s", SUBSYSTEM_NAME);
 +    bh_event_add_var(skb, 0, "ACTION=%s", action);
 +    bh_event_add_var(skb, 0, "ifname=%s", ifname);
