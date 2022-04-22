@@ -56,8 +56,13 @@ define Package/dnscrypt-proxy2/install
 
 	sed -i "s/^listen_addresses = .*/listen_addresses = ['127.0.0.53:53']/" $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 	sed -i "s/^  # blocked_names_file = 'blocked-names.txt'/blocked_names_file = 'blocked-names.txt'/" $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
-	sed -i 's/^ipv6_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	sed -i 's/^ipv6_servers = false/ipv6_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 	sed -i 's/^odoh_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+
+	echo "[sources.'odoh-servers']" >> $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	echo "urls = ['https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/odoh-servers.md', 'https://download.dnscrypt.info/resolvers-list/v3/odoh-servers.md']" >> $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	echo "minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'" >> $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	echo "cache_file = 'odoh-servers.md'" >> $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 endef
 
 define Package/dnscrypt-proxy2/description
