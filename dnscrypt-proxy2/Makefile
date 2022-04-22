@@ -27,7 +27,7 @@ PKG_USE_MIPS16:=0
 GO_PKG:=github.com/DNSCrypt/dnscrypt-proxy
 
 include $(INCLUDE_DIR)/package.mk
-include ../../lang/golang/golang-package.mk
+include ../../packages/lang/golang/golang-package.mk
 
 GO_MOD_ARGS:=
 GO_PKG_BUILD_VARS+= GO111MODULE=off
@@ -56,8 +56,8 @@ define Package/dnscrypt-proxy2/install
 
 	sed -i "s/^listen_addresses = .*/listen_addresses = ['127.0.0.53:53']/" $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 	sed -i "s/^  # blocked_names_file = 'blocked-names.txt'/blocked_names_file = 'blocked-names.txt'/" $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
-  sed -i 's/^ipv6_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
-  sed -i 's/^odoh_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	sed -i 's/^ipv6_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
+	sed -i 's/^odoh_servers = false/odoh_servers = true/' $(1)/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 endef
 
 define Package/dnscrypt-proxy2/description
