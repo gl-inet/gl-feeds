@@ -106,11 +106,23 @@ mwan3_rtmon_ipv6()
 			if echo "$tbl" | grep -q "^default\|^::/0"; then
 				(echo "$tbl"  | grep -v "^default\|^::/0\|^unreachable" | sort -n; echo empty fixup) >/tmp/mwan3rtmon/ipv6.$tid
 				cat /tmp/mwan3rtmon/ipv6.$tid | grep -v -x -F -f /tmp/mwan3rtmon/ipv6.main | while read line; do
+					addr=`echo $line | awk '{if($3=="br-lan") print $1}'`
+					if [ -n "$addr" ];then
+						local neigh_state=`ip -6 neigh show dev br-lan | awk -v addr=$addr '{if($1==addr) print $4}'`
+						[ "$neigh_state" == "REACHABLE" -o "$neigh_state" == "DELAY" ] && continue
+					fi
 					$IP6 route del table $tid $line
 				done
-				cat /tmp/mwan3rtmon/ipv6.main | grep -v -x -F -f /tmp/mwan3rtmon/ipv6.$tid | while read line; do
-					$IP6 route add table $tid $line
-				done
+				ifname=`ip -6 rule  | grep "iif .* lookup $tid" | sed "s/.*iif \(.*\) lookup $((tid)).*/\1/g"`
+				if [ -n "$ifname" ];then
+					cat /tmp/mwan3rtmon/ipv6.main | grep -v -x -F -f /tmp/mwan3rtmon/ipv6.$tid | grep -e "dev $ifname " -e "dev br-lan " -e "dev br-guest " | while read line; do
+						$IP6 route add table $tid $line 2>/dev/null
+					done
+				else
+					cat /tmp/mwan3rtmon/ipv6.main | grep -v -x -F -f /tmp/mwan3rtmon/ipv6.$tid | while read line; do
+						$IP6 route add table $tid $line 2>/dev/null
+					done
+				fi
 			fi
 		}
 		if [ "$enabled" = "1" ]; then
@@ -559,6 +571,20 @@ mwan3_delete_iface_route()
 
 	if [ "$family" = "ipv6" ] && [ $NO_IPV6 -eq 0 ]; then
 		$IP6 route flush table "$id"
+	fi
+}
+
+mwan3_delete_iface_route_by_ifname()
+{
+	config_get family "$1" family ipv4
+
+	if [ "$family" = "ipv6" ] && [ $NO_IPV6 -eq 0 ]; then
+		ifname=$(ifstatus `echo $1 | sed 's/6$//g'` | jsonfilter -e @.device)
+		[ -z "$ifname" ] && return
+		$IP6 route show table main | grep "dev $ifname "  | grep "default via" | sed 's/linkdown.*$//g' | sed 's/expires.*$//g' | while read line; do
+			$IP6 route del table main $line
+		done
+		mwan3_delete_iface_route $1
 	fi
 }
 
