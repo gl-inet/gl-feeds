@@ -11,7 +11,7 @@ PROG=/usr/sbin/dnscrypt-proxy
 CONFIGFILE=/etc/dnscrypt-proxy2/dnscrypt-proxy.toml
 
 start_service() {
-    local mode=$(uci -q get gl-dns.@dns[0].proto)
+    local mode=$(uci -q get gl-dns.@dns[0].mode)
     local proto=$(uci -q get gl-dns.@dns[0].proto)
 
     [ "$mode" = "secure" ] || exit 0
