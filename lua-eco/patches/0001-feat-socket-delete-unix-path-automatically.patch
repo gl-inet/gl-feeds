@@ -1,0 +1,39 @@
+From 7da45c988f5f152aa1e0d1b04606a74f1811db06 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Thu, 5 May 2022 13:41:01 +0800
+Subject: [PATCH] feat: socket: delete unix path automatically.
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ socket.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/socket.c b/socket.c
+index d80df2a..03bd4fe 100644
+--- a/socket.c
++++ b/socket.c
+@@ -607,10 +607,21 @@ static int eco_socket_close(lua_State *L)
+ {
+     struct eco_socket *sock = lua_touserdata(L, 1);
+     struct ev_loop *loop = sock->ctx->loop;
++    struct sockaddr_storage addr = {};
++    socklen_t addrlen = sizeof(addr);
++    int ret;
+ 
+     if (sock->fd < 0)
+         return 0;
+ 
++    ret = getsockname(sock->fd, (struct sockaddr *)&addr, &addrlen);
++    if (!ret && addr.ss_family == AF_UNIX) {
++        struct sockaddr_un *un = (struct sockaddr_un *)&addr;
++
++        if (!access(un->sun_path, F_OK))
++            unlink(un->sun_path);
++    }
++
+     ev_timer_stop(loop, &sock->tmr);
+     ev_io_stop(loop, &sock->ior);
+     ev_io_stop(loop, &sock->iow);
+-- 
+2.25.1
+
