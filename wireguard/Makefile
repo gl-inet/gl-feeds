@@ -48,25 +48,11 @@ define Package/wireguard/Default/description
   alike, fit for many different circumstances. It uses UDP.
 endef
 
-define Package/wireguard
-  $(call Package/wireguard/Default)
-  TITLE:=WireGuard meta-package
-  DEPENDS:=+wireguard-tools +kmod-wireguard
-endef
-
 include $(INCLUDE_DIR)/kernel-defaults.mk
 include $(INCLUDE_DIR)/package-defaults.mk
 
 define Build/Compile
 	$(MAKE) $(KERNEL_MAKEOPTS) M="$(PKG_BUILD_DIR)/src" modules
-endef
-
-define Package/wireguard/install
-  true
-endef
-
-define Package/wireguard/description
-  $(call Package/wireguard/Default/description)
 endef
 
 define KernelPackage/wireguard
@@ -85,5 +71,4 @@ define KernelPackage/wireguard/description
   This package provides the kernel module for WireGuard.
 endef
 
-$(eval $(call BuildPackage,wireguard))
 $(eval $(call KernelPackage,wireguard))
