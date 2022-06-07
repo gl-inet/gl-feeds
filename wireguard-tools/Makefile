@@ -37,7 +37,7 @@ define Package/wireguard-tools
   URL:=https://www.wireguard.com
   MAINTAINER:=Jason A. Donenfeld <Jason@zx2c4.com>
   TITLE:=WireGuard userspace control program (wg)
-  DEPENDS:=+libmnl +ip
+  DEPENDS:=+libmnl +ip +kmod-wireguard
 endef
 
 define Package/wireguard-tools/description

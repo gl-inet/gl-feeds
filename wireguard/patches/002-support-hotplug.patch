@@ -2,7 +2,7 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 ===================================================================
 --- /dev/null
 +++ wireguard-linux-compat-1.0.20200611/src/hotplug.c
-@@ -0,0 +1,81 @@
+@@ -0,0 +1,123 @@
 +/*
 + *  oui-tertf Hotplug driver
 + *
@@ -18,10 +18,23 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 +#include <linux/netlink.h>
 +#include <linux/kobject.h>
 +
++#include <linux/workqueue.h>
++
 +#define SUBSYSTEM_NAME	"wireguard"
 +
 +
 +#define BH_SKB_SIZE	2048
++
++struct work_struct wg_event_work;
++struct wg_event {
++    struct work_struct work;
++    char ifname[IFNAMSIZ];
++    const char *action;
++};
++struct wg_event *gl_wg_event;
++
++static DEFINE_SPINLOCK(event_lock);
++
 +
 +/* -------------------------------------------------------------------------*/
 +static int bh_event_add_var(struct sk_buff *skb, int argv,
@@ -50,45 +63,74 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.c
 +    return 0;
 +}
 +
-+/*
-+static int is_wired_connect(const char *ifname)
++
++static void wireguard_send_hotplug(struct work_struct *mywork)
 +{
-+    int ret = -1;
-+
-+    if (strstr(ifname, "eth")) {
-+        ret = 0;
-+    }
-+
-+    return ret;
-+}
-+*/
-+
-+void wireguard_hotplug(const char *ifname, const char *action)
-+{
++    struct wg_event * event;
 +    struct sk_buff *skb;
++    char ifname[IFNAMSIZ];
++    char *action;
 +
-+    if (0 == strcmp(ifname,"wgserver"))
-+	return;
-+
++    event = container_of(mywork, struct wg_event, work);
++    if (!event)
++        return;
 +    skb = alloc_skb(BH_SKB_SIZE, GFP_KERNEL);
 +    if (!skb)
 +        return;
++    strcpy(ifname, event->ifname);
++    action = event->action;
 +
++    pr_info("wireguard-hotplug IFNAME=%s ACTION=%s\n", ifname, action);
 +
-+    pr_info(KERN_INFO "wireguard-hotplug IFNAME=%s ACTION=%s\n", ifname, action);
 +    bh_event_add_var(skb, 0, "SUBSYSTEM=%s", SUBSYSTEM_NAME);
++
++    spin_lock(&event_lock);
 +    bh_event_add_var(skb, 0, "ACTION=%s", action);
 +    bh_event_add_var(skb, 0, "ifname=%s", ifname);
++    spin_unlock(&event_lock);
 +
 +    NETLINK_CB(skb).dst_group = 1;
 +    broadcast_uevent(skb, 0, 1, GFP_KERNEL);
 +}
 +
++void wireguard_hotplug(const char *ifname, const char *action)
++{
++    if(gl_wg_event == NULL){
++        return;
++    }
++    if (0 == strcmp(ifname,"wgserver"))
++	return;
++
++    spin_lock(&event_lock);
++    memcpy(gl_wg_event->ifname, ifname, IFNAMSIZ);
++    gl_wg_event->action = action;
++    spin_unlock(&event_lock);
++
++    schedule_work(&gl_wg_event->work);
++}
++
++void wg_hotplug_init(void)
++{
++    gl_wg_event = (struct wg_event *)kzalloc(sizeof(struct wg_event),GFP_KERNEL);
++    if(gl_wg_event == NULL){
++        return;
++    }
++    gl_wg_event->work = wg_event_work;
++    INIT_WORK(&gl_wg_event->work, wireguard_send_hotplug);
++}
++
++void wg_hotplug_free(void)
++{
++    if(gl_wg_event){
++        kfree(gl_wg_event);
++    }
++    return;
++}
 Index: wireguard-linux-compat-1.0.20200611/src/hotplug.h
 ===================================================================
 --- /dev/null
 +++ wireguard-linux-compat-1.0.20200611/src/hotplug.h
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,13 @@
 +#ifndef __HOTPLUG_H__
 +#define __HOTPLUG_H__
 +
@@ -97,6 +139,8 @@ Index: wireguard-linux-compat-1.0.20200611/src/hotplug.h
 +#define  KEYPAIR_CREATED_EVENT "KEYPAIR-CREATED"
 +
 +extern void wireguard_hotplug(const char *ifname, const char *action);
++extern void wg_hotplug_init(void);
++extern void wg_hotplug_free(void);
 +
 +#endif
 +
@@ -161,3 +205,32 @@ Index: wireguard-linux-compat-1.0.20200611/src/noise.c
  	} else {
  		kzfree(new_keypair);
  	}
+Index: wireguard-linux-compat-1.0.20200611/src/main.c
+===================================================================
+--- wireguard-linux-compat-1.0.20200611.orig/src/main.c
++++ wireguard-linux-compat-1.0.20200611/src/main.c
+@@ -17,6 +17,8 @@
+ #include <linux/genetlink.h>
+ #include <net/rtnetlink.h>
+ 
++#include "hotplug.h"
++
+ static int __init mod_init(void)
+ {
+ 	int ret;
+@@ -40,6 +42,7 @@ static int __init mod_init(void)
+ 	ret = wg_genetlink_init();
+ 	if (ret < 0)
+ 		goto err_netlink;
++	wg_hotplug_init();
+ 
+ 	pr_info("WireGuard " WIREGUARD_VERSION " loaded. See www.wireguard.com for information.\n");
+ 	pr_info("Copyright (C) 2015-2019 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.\n");
+@@ -54,6 +57,7 @@ err_device:
+ 
+ static void __exit mod_exit(void)
+ {
++	wg_hotplug_free();
+ 	wg_genetlink_uninit();
+ 	wg_device_uninit();
+ }
