@@ -4,8 +4,10 @@
 . /lib/mwan3/mwan3.sh
 
 LOG="logger -t $(basename "$0")[$$] -p"
+lock_status=0
 
 clean_up() {
+	[ "$lock_status" == "1" ] && mwan3_unlock "service" "mwan3rtmon"
 	$LOG notice "Stopping mwan3rtmon..."
 	exit 0
 }
@@ -24,12 +26,14 @@ main() {
 
 	sleep 3
 	while true; do
+		lock_status=1
 		mwan3_lock "service" "mwan3rtmon"
 		mwan3_rtmon_ipv4
 		ret=$((ret+$?))
 		mwan3_rtmon_ipv6
 		ret=$((ret+$?))
 		mwan3_unlock "service" "mwan3rtmon"
+		lock_status=0
 		[ "$ret" = "0" ] || break
 		[ "$rtmon_interval" = "0" ] && break
 		sleep "$rtmon_interval" &

@@ -164,10 +164,6 @@ stop()
 
 	sleep 1
 
-	for pid in $(pgrep -f "mwan3rtmon"); do
-		kill -KILL "$pid" > /dev/null 2>&1
-	done
-
 	for pid in $(pgrep -f "mwan3track"); do
 		kill -KILL "$pid" > /dev/null 2>&1
 	done
