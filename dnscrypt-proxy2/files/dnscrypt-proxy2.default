@@ -1,1 +1,0 @@
-sed 's/odoh_servers = false/odoh_servers = true/' /etc/dnscrypt-proxy2/dnscrypt-proxy.toml
