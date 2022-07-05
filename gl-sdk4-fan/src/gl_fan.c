@@ -3,8 +3,10 @@
 #include <unistd.h>
 #include <string.h>
 #include <getopt.h>
-#include <gl_log.h>
-#include <gl-utils/files.h>
+#include <sys/stat.h>
+#include <stdbool.h>
+//#include <gl_log.h>
+//#include <gl-utils/files.h>
 
 #define CPU_TEMP_FILE "/sys/devices/virtual/thermal/thermal_zone0/temp"
 #define FAN_PWM_FILE "/sys/class/thermal/cooling_device0/cur_state"
@@ -26,6 +28,52 @@ static void usage(const char *prog)
     exit(1);
 }
 
+static bool check_file_is_exist(const char *name)
+{
+    struct stat buffer;
+    return (stat(name, &buffer) == 0);
+}
+
+
+static int read_file_oneline(const char *path, char *result, size_t size)
+{
+    FILE *fp;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    fp = fopen(path, "r");
+    if (fp == NULL)
+        return -1;
+
+    if ((read = getline(&line, &len, fp)) != -1) {
+        if (size != 0)
+            memcpy(result, line, size);
+        else
+            memcpy(result, line, read - 1);
+    }
+
+    fclose(fp);
+    if (line)
+        free(line);
+    return 0;
+}
+
+
+static size_t write_file(const char *path, char *buf, size_t len)
+{
+    FILE *fp = NULL;
+    size_t size = 0;
+    fp = fopen(path, "w+");
+    if (fp == NULL) {
+        return 0;
+    }
+    size = fwrite(buf, len, 1, fp);
+    fclose(fp);
+    return size;
+}
+
+
 int get_cpu_temp(int *temp)
 {
     char tmp[8] = {0};
@@ -33,11 +81,11 @@ int get_cpu_temp(int *temp)
         read_file_oneline(CPU_TEMP_FILE, tmp, 0);
         *temp = atoi(tmp);
         if (*temp <= 0 || *temp >= 150) {
-            gl_log_err("%d :It's not a normal temperature\n", *temp);
+            //gl_log_err("%d :It's not a normal temperature\n", *temp);
             return -2;
         }
     } else {
-        gl_log_err("%s :No such file or directory\n", CPU_TEMP_FILE);
+        //gl_log_err("%s :No such file or directory\n", CPU_TEMP_FILE);
         return -1;
     }
     return 0;
@@ -53,10 +101,10 @@ int set_fan_pwm(char pwm)
         if ((ret = write_file(FAN_PWM_FILE, tmp, strlen(tmp))) == 1) {
             return 0;
         } else {
-            gl_log_err("%s :write error: Input/output error\n", FAN_PWM_FILE);
+            //gl_log_err("%s :write error: Input/output error\n", FAN_PWM_FILE);
         }
     } else {
-        gl_log_err("%s :No such file or directory\n", FAN_PWM_FILE);
+        //gl_log_err("%s :No such file or directory\n", FAN_PWM_FILE);
     }
     return -2;
 }
@@ -73,10 +121,10 @@ int get_fan_speed(void)
             printf("%s\n", tmp);
             return 0;
         } else {
-            gl_log_err("%s :write error: Input/output error\n", FAN_SPEED_FILE);
+            //gl_log_err("%s :write error: Input/output error\n", FAN_SPEED_FILE);
         }
     } else {
-        gl_log_err("%s :No such file or directory\n", FAN_SPEED_FILE);
+        //gl_log_err("%s :No such file or directory\n", FAN_SPEED_FILE);
     }
     return -2;
 }
@@ -88,7 +136,7 @@ int main(int argc, char **argv)
     int goal_temp = TEMPERATURE;
     int opt;
 
-    gl_log_level(LOG_ERR);
+    //gl_log_level(LOG_ERR);
 
     while ((opt = getopt(argc, argv, "t:p:i:d:vs")) != -1) {
         switch (opt) {
@@ -109,7 +157,7 @@ int main(int argc, char **argv)
                 return 0;
                 break;
             case 'v':
-                gl_log_level(LOG_DEBUG);
+                //gl_log_level(LOG_DEBUG);
                 break;
             default: /* '?' */
                 usage(argv[0]);
@@ -143,12 +191,13 @@ int main(int argc, char **argv)
 
         prev_error = last_error;
         last_error = current_error;
-
+/*
         gl_log_debug("set_pwm:%f proportion:%f integration:%f differential:%f\n",
                      set_pwm, prop * current_error, integ * total_error, diffr * (current_error - 2 * last_error + prev_error));
 
         gl_log_debug("current_temp:%d current_error:%d total_error:%d last_error:%d prev_error:%d\n",
                      current_temp, current_error, total_error, last_error, prev_error);
+*/
 
         if (set_pwm > 120) {
             set_pwm = 120;
