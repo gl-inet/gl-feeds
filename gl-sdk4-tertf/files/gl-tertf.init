@@ -1,0 +1,30 @@
+#!/bin/sh /etc/rc.common
+
+START=60
+
+USE_PROCD=1
+
+add_subnet() {
+    local network="$1"
+    echo "$network" > /proc/oui-tertf/subnet
+}
+
+parse_tertf() {
+    . /lib/functions/network.sh
+
+    local cfg="$1"
+
+    config_get ttl $cfg ttl 30
+    [ -n "$ttl" ] && echo "ttl=$ttl" > /proc/oui-tertf/config
+
+    config_list_foreach "$cfg" local_network add_subnet
+}
+
+start_service() {
+    config_load gl-tertf
+    config_foreach parse_tertf tertf
+}
+
+service_triggers() {
+    procd_add_reload_trigger "gl-tertf"
+}
