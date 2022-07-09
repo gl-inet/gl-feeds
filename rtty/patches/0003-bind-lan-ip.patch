@@ -1,0 +1,55 @@
+Index: rtty-8.0.0/src/net.c
+===================================================================
+--- rtty-8.0.0.orig/src/net.c
++++ rtty-8.0.0/src/net.c
+@@ -22,6 +22,7 @@
+  * SOFTWARE.
+  */
+ 
++#include <arpa/inet.h>
+ #include <stdbool.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+@@ -118,7 +119,12 @@ static void wait_connect(struct ev_loop
+ int tcp_connect_sockaddr(struct ev_loop *loop, const struct sockaddr *addr, socklen_t addrlen,
+                 void (*on_connected)(int sock, void *arg), void *arg)
+ {
++    struct sockaddr_in lin = {
++        .sin_family = AF_INET
++    };
++    char ipaddr[128] = "";
+     int sock;
++    FILE *fp;
+ 
+     sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+     if (sock < 0) {
+@@ -126,6 +132,29 @@ int tcp_connect_sockaddr(struct ev_loop
+         return -1;
+     }
+ 
++    fp = popen("uci -q get network.lan.ipaddr", "r");
++    if (!fp) {
++        log_err("popen failed: %s\n", strerror(errno));
++        goto err;
++    }
++
++    fgets(ipaddr, sizeof(ipaddr), fp);
++    pclose(fp);
++
++    if (strlen(ipaddr) < 2) {
++        log_err("not found lan ipaddr\n");
++        goto err;
++    }
++
++    ipaddr[strlen(ipaddr) - 1] = '\0';
++
++    lin.sin_addr.s_addr = inet_addr(ipaddr);
++
++    if (bind(sock, (struct sockaddr *)&lin, sizeof(lin))) {
++        log_err("bind socket failed: %s\n", strerror(errno));
++        goto err;
++    }
++
+     if (connect(sock, addr, addrlen) < 0) {
+         if (errno != EINPROGRESS) {
+             log_err("connect failed: %s\n", strerror(errno));
