@@ -23,6 +23,15 @@
 #include <linux/etherdevice.h>
 #include <linux/version.h>
 
+#include <net/arp.h>
+#include <linux/ip.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_arp.h>
+#include <linux/netfilter_bridge.h>
+#include <net/netfilter/nf_conntrack.h>
+#include <linux/netfilter/nf_conntrack_common.h>
+
 #include "sfe.h"
 #include "sfe_cm.h"
 
@@ -1177,6 +1186,26 @@ static void sfe_ipv4_flush_sfe_ipv4_connection(struct sfe_ipv4 *si,
 	kfree(c);
 }
 
+void term_update(const u8 *mac, __be32 addr, unsigned int rx, unsigned int tx, bool alive);
+
+void call_term_update(struct sk_buff *skb, struct sfe_ipv4_connection_match *cm, unsigned int len){
+	__be32 skb_saddr, skb_daddr;
+	struct ethhdr *ehdr = eth_hdr(skb);
+	struct sfe_ipv4_connection *c = cm->connection;
+	struct iphdr *skb_iph = ip_hdr(skb);
+
+	skb_saddr = skb_iph->saddr;
+	skb_daddr = skb_iph->daddr;
+	if(c->original_match==cm){
+		term_update(ehdr->h_source, skb_saddr, 0, len, true);
+	} else {
+		struct neighbour *n = __ipv4_neigh_lookup_noref(cm->xmit_dev, skb_daddr);
+		if (n != NULL){
+			term_update(n->ha, skb_daddr, len, 0, false);
+		}
+	}
+}
+
 /*
  * sfe_ipv4_recv_udp()
  *	Handle UDP packet receives and forwarding.
@@ -1406,6 +1435,8 @@ static int sfe_ipv4_recv_udp(struct sfe_ipv4 *si, struct sk_buff *skb, struct ne
 	 */
 	cm->rx_packet_count++;
 	cm->rx_byte_count += len;
+
+	call_term_update(skb, cm, len);
 
 	/*
 	 * If we're not already on the active list then insert ourselves at the tail
@@ -1979,6 +2010,8 @@ static int sfe_ipv4_recv_tcp(struct sfe_ipv4 *si, struct sk_buff *skb, struct ne
 	 */
 	cm->rx_packet_count++;
 	cm->rx_byte_count += len;
+
+	call_term_update(skb, cm, len);
 
 	/*
 	 * If we're not already on the active list then insert ourselves at the tail
