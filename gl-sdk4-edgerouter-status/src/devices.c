@@ -8,6 +8,7 @@
 #include <linux/inetdevice.h>
 #include <linux/sched.h>
 #include <linux/timer.h>
+#include <linux/ktime.h>
 #include <linux/inet.h>
 #include <asm/div64.h>
 #include <net/arp.h>
@@ -38,7 +39,9 @@ static inline int mac_hash(const u8 *mac)
 static __kernel_time_t get_cur_time(void)
 {
     struct timeval value;
-    do_gettimeofday(&value);
+    ktime_t cur_time;
+    cur_time = ktime_get();
+    value = ktime_to_timeval(cur_time);
     return value.tv_sec;
 }
 
@@ -166,8 +169,8 @@ int new_erdevices(const u8 *mac)
 {
     struct hlist_head *head = &devices[mac_hash(mac)];
     struct erdevice *device;
+    int ret=0;
     spin_lock(&hash_lock);
-    int ret = 0;
 
     device = find_erdevice(head, mac);
     if (likely(device)) {
