@@ -1,0 +1,13 @@
+Index: rtty-8.0.0/src/http.c
+===================================================================
+--- rtty-8.0.0.orig/src/http.c
++++ rtty-8.0.0/src/http.c
+@@ -108,7 +108,7 @@ static void on_timer_cb(struct ev_loop *
+     struct http_connection *conn = container_of(w, struct http_connection, tmr);
+     ev_tstamp now = ev_now(loop);
+ 
+-    if (now - conn->active < 30)
++    if (now - conn->active < 120)
+         return;
+ 
+     http_conn_free(conn);
