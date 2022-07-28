@@ -26,6 +26,7 @@ struct terminal {
     struct rcu_head rcu;
     u8 mac[ETH_ALEN];
     __be32 ip;
+    s64 id;
     struct term_stats __percpu *stats;
 };
 
