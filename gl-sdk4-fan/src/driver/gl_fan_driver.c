@@ -1,40 +1,46 @@
+/*
+ * 	gl_fan {
+ *		compatible = "gl-fan";
+ *		interrupt-parent = <&pio>;
+ *		interrupts = <29 IRQ_TYPE_EDGE_RISING>;
+ *	};
+ */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
 #include <linux/version.h>
 #include <linux/interrupt.h>
-#include <linux/workqueue.h>
 #include <linux/of_irq.h>
-#include <linux/gpio.h>
-#include <linux/device.h>
-#include <linux/errno.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
+#include <linux/timer.h>
 #include <linux/of_platform.h>
 
-#define GL_FAN_DRV_NAME "gl-fan_v1.0"
+#define GL_FAN_DRV_NAME "gl-fan_v2.0"
 
 typedef struct {
-    struct workqueue_struct *g_work;
-    struct delayed_work g_delayed_work;
-    struct class *g_class;
+    struct class *class;
+    struct device *dev;
     unsigned int count;
-    unsigned int gpio;
+    unsigned int irq;
     bool refresh;
+    struct timer_list timer;
 } gl_fan_t;
 
 static gl_fan_t gl_fan;
 
-static void g_delayed_work_function(struct work_struct *work)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
+static void gl_fan_timer_callback(unsigned long arg)
+#else
+static void gl_fan_timer_callback(struct timer_list *t)
+#endif
 {
-    gl_fan.refresh = 0;
-    disable_irq(gpio_to_irq(gl_fan.gpio));
+    disable_irq(gl_fan.irq);
+    gl_fan.refresh = false;
 }
 
-static irq_handler_t handle_gpio_irq(unsigned int irq, void *device, struct pt_regs *registers)
+static irqreturn_t handle_gpio_irq(int irq, void *data)
 {
     gl_fan.count++;
-    return (irq_handler_t)IRQ_HANDLED;
+    return IRQ_HANDLED;
 }
 
 static ssize_t fan_speed_show(struct class *class, struct class_attribute *attr, char *buf)
@@ -49,15 +55,17 @@ static ssize_t fan_speed_show(struct class *class, struct class_attribute *attr,
 static ssize_t fan_speed_store(struct class *class, struct class_attribute *attr, const char *buf, size_t count)
 {
     if (!strstr(buf, "refresh")) {
-        printk(KERN_ERR "please input 'refresh' %s\n", buf);
+        pr_err("please input 'refresh' %s\n", buf);
         return -EBADRQC;
-    } else {
-        gl_fan.refresh = true;
-        gl_fan.count = 0 ;
-        enable_irq(gpio_to_irq(gl_fan.gpio));
-        queue_delayed_work(gl_fan.g_work, &gl_fan.g_delayed_work, msecs_to_jiffies(1000));
-        return count;
     }
+
+    gl_fan.refresh = true;
+    gl_fan.count = 0 ;
+
+    enable_irq(gl_fan.irq);
+    mod_timer(&gl_fan.timer, jiffies + msecs_to_jiffies(1000));
+
+    return count;
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
@@ -69,85 +77,48 @@ static const struct class_attribute class_attr_fan_speed =
 
 static int gl_fan_probe(struct platform_device *pdev)
 {
-#ifdef CONFIG_OF
     struct device_node *np = pdev->dev.of_node;
+    struct device *dev = &pdev->dev;
+    int ret;
 
-    if (np) {
-        if (of_property_read_u32_array(np, "fan_speed_gpio", &gl_fan.gpio, 1)) {
-            printk("can't find fan_speed_gpio\n");
-            return -1;
-        } else {
-            printk("fan_speed_gpio is %d\n", gl_fan.gpio);
-        }
-    } else {
-        printk("can't find gl_fan node\n");
-        return  -2;
+    gl_fan.irq = of_irq_get(np, 0);
+    if (gl_fan.irq < 0) {
+        dev_err(dev, "Failed to get IRQ\n");
+        return -ENXIO;
     }
 
-    gl_fan.count = 0;
-
-    gl_fan.g_work = create_workqueue("workqueue");
-    if (!gl_fan.g_work) {
-        printk(KERN_ERR "Create workqueue failed!\n");
-        return -3;
-    }
-    INIT_DELAYED_WORK(&gl_fan.g_delayed_work, g_delayed_work_function);
-
-    if (gpio_request(gl_fan.gpio, "fan speed") != 0) {
-        flush_workqueue(gl_fan.g_work);
-        destroy_workqueue(gl_fan.g_work);
-        printk(KERN_ERR "request gpio%d failed!\n", gl_fan.gpio);
-        return -4;
+    ret = devm_request_irq(dev, gl_fan.irq, handle_gpio_irq, 0, "fan speed", NULL);
+    if (ret) {
+        pr_err("request irq %d failed!\n", gl_fan.irq);
+        return ret;
     }
 
-    if (gpio_direction_input(gl_fan.gpio) != 0) {
-        flush_workqueue(gl_fan.g_work);
-        destroy_workqueue(gl_fan.g_work);
-        gpio_free(gl_fan.gpio);
-        printk(KERN_ERR "set gpio%d INPUT failed!\n", gl_fan.gpio);
-        return -5;
-    }
+    disable_irq(gl_fan.irq);
 
-    if (request_irq(gpio_to_irq(gl_fan.gpio), (irq_handler_t) handle_gpio_irq, IRQF_TRIGGER_RISING, "fan speed", NULL) != 0) {
-        flush_workqueue(gl_fan.g_work);
-        destroy_workqueue(gl_fan.g_work);
-        gpio_free(gl_fan.gpio);
-        printk(KERN_ERR "request gpio%d irq failed!\n", gl_fan.gpio);
-        return -6;
-    }
-    disable_irq(gpio_to_irq(gl_fan.gpio));
-
-    gl_fan.g_class = class_create(THIS_MODULE, "fan");
-    if (class_create_file(gl_fan.g_class, &class_attr_fan_speed) != 0) {
-        free_irq(gpio_to_irq(gl_fan.gpio), NULL);
-        gpio_free(gl_fan.gpio);
-        cancel_delayed_work_sync(&gl_fan.g_delayed_work);
-        if (gl_fan.g_work != NULL) {
-            flush_workqueue(gl_fan.g_work);
-            destroy_workqueue(gl_fan.g_work);
-        }
-        printk(KERN_ERR "fail to creat class file\n");
-        return -7;
-    }
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
+    setup_timer(&gl_fan.timer, gl_fan_timer_callback, 0);
+#else
+    timer_setup(&gl_fan.timer, gl_fan_timer_callback, 0);
 #endif
-    printk("install gl_fan\n");
+
+    gl_fan.class = class_create(THIS_MODULE, "fan");
+    ret = class_create_file(gl_fan.class, &class_attr_fan_speed);
+    if (ret) {
+        dev_err(dev, "fail to creat class file\n");
+        return ret;
+    }
+
+    gl_fan.dev = dev;
+
+    dev_info(dev, "install gl_fan\n");
 
     return 0;
 }
 
 static int gl_fan_remove(struct platform_device *pdev)
 {
-    free_irq(gpio_to_irq(gl_fan.gpio), NULL);
-    gpio_free(gl_fan.gpio);
-    cancel_delayed_work_sync(&gl_fan.g_delayed_work);
-    if (gl_fan.g_work != NULL) {
-        flush_workqueue(gl_fan.g_work);
-        destroy_workqueue(gl_fan.g_work);
-    }
-    if (gl_fan.g_class != NULL) {
-        class_destroy(gl_fan.g_class);
-    }
-    printk("remove gl_fan\n");
+    class_destroy(gl_fan.class);
+    dev_info(&pdev->dev, "remove gl_fan\n");
     return 0;
 }
 
