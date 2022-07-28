@@ -306,6 +306,7 @@ void term_update(const u8 *mac, __be32 addr, unsigned int rx, unsigned int tx, b
     st->tx_bytes += tx;
     u64_stats_update_end(&st->syncp);
 }
+EXPORT_SYMBOL(term_update);
 
 static void term_flush(void)
 {
