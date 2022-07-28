@@ -38,10 +38,8 @@ static inline int mac_hash(const u8 *mac)
 
 static __kernel_time_t get_cur_time(void)
 {
-    struct timeval value;
-    ktime_t cur_time;
-    cur_time = ktime_get();
-    value = ktime_to_timeval(cur_time);
+    struct timespec64 value;
+    ktime_get_real_ts64(&value);
     return value.tv_sec;
 }
 
