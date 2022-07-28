@@ -19,8 +19,13 @@ static struct hlist_head subnets_index[NETDEV_HASHENTRIES];
 
 bool subnet_exist(struct net_device *dev)
 {
-    struct hlist_head *head = &subnets_index[dev->ifindex & (NETDEV_HASHENTRIES - 1)];
+    struct hlist_head *head;
     struct subnet *n;
+
+    if (!dev)
+        return false;
+
+    head = &subnets_index[dev->ifindex & (NETDEV_HASHENTRIES - 1)];
 
     hlist_for_each_entry_rcu(n, head, hlist) {
         if (n->ifindex == dev->ifindex)
@@ -88,54 +93,6 @@ static int proc_show(struct seq_file *s, void *v)
     return 0;
 }
 
-/*
-** remove the spaces(carriage returns) at the brginning and end of the string
-*/
-static void clean_string(char *str)
-{
-    char *start = str - 1;
-    char *end = str;
-    char *p = str;
-
-    while (*p) {
-        switch (*p) {
-            case ' ':
-            case '\r':
-            case '\n': {
-                if (start + 1 == p)
-                    start = p;
-            }
-            break;
-            default:
-                break;
-        }
-        ++p;
-    }
-    --p;
-    ++start;
-    if (*start == 0) {
-        *str = 0;
-        return;
-    }
-    end = p + 1;
-    while (p > start) {
-        switch (*p) {
-            case ' ':
-            case '\r':
-            case '\n': {
-                if (end - 1 == p)
-                    end = p;
-            }
-            break;
-            default:
-                break;
-        }
-        --p;
-    }
-    memmove(str, start, end - start);
-    *(str + (int)end - (int)start) = 0;
-}
-
 static void add_subnet(char *ifname)
 {
     struct net_device *dev;
@@ -174,6 +131,7 @@ err:
 static ssize_t proc_write(struct file *file, const char __user *buf, size_t size, loff_t *ppos)
 {
     char ifname[IFNAMSIZ] = {0};
+    char *p;
 
     if (size > IFNAMSIZ - 1)
         return -EINVAL;
@@ -181,7 +139,9 @@ static ssize_t proc_write(struct file *file, const char __user *buf, size_t size
     if (copy_from_user(ifname, buf, size))
         return -EFAULT;
 
-    clean_string(ifname);
+    p = strchr(ifname, '\n');
+    if (p)
+        *p = '\0';
 
     add_subnet(ifname);
 
