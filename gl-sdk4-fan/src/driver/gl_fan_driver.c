@@ -48,7 +48,11 @@ static ssize_t fan_speed_show(struct class *class, struct class_attribute *attr,
     if (gl_fan.refresh) {
         return sprintf(buf, "refreshing...\n");
     } else {
-        return sprintf(buf, "%d\n", (int)(30 * gl_fan.count));
+        if (gl_fan.count < 5) {
+            return sprintf(buf, "0\n");
+        } else {
+            return sprintf(buf, "%d\n", (int)(30 * gl_fan.count));
+        }
     }
 }
 
@@ -56,6 +60,11 @@ static ssize_t fan_speed_store(struct class *class, struct class_attribute *attr
 {
     if (!strstr(buf, "refresh")) {
         pr_err("please input 'refresh' %s\n", buf);
+        return -EBADRQC;
+    }
+
+    if (gl_fan.refresh == true) {
+        pr_err("gpio is busy\n");
         return -EBADRQC;
     }
 
