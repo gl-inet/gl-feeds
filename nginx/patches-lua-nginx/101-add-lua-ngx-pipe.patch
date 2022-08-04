@@ -169,7 +169,16 @@ Index: nginx-1.17.7/lua-nginx/src/ngx_http_lua_pipe.c
  
  #if (NGX_HTTP_LUA_HAVE_SIGNALFD)
  static int                                ngx_http_lua_signalfd;
-@@ -2090,7 +2091,31 @@ ngx_http_lua_pipe_read_retval_helper(ngx
+@@ -418,6 +419,8 @@ ngx_http_lua_pipe_sigchld_event_handler(
+                      */
+                     ngx_post_event((&pipe_node->wait_co_ctx->sleep),
+                                    &ngx_posted_events);
++                } else {
++                    ngx_http_lua_pipe_proc_finalize(pipe_node->proc);
+                 }
+ 
+                 pipe_node->proc->pipe->dead = 1;
+@@ -2090,7 +2093,31 @@ ngx_http_lua_pipe_read_retval_helper(ngx
  
      rc = ngx_http_lua_pipe_read(pipe, pipe_ctx);
      if (rc != NGX_AGAIN) {
@@ -202,7 +211,7 @@ Index: nginx-1.17.7/lua-nginx/src/ngx_http_lua_pipe.c
      }
  
      rev = pipe_ctx->c->read;
-@@ -2493,6 +2518,353 @@ ngx_http_lua_pipe_proc_wait_cleanup(void
+@@ -2493,6 +2520,353 @@ ngx_http_lua_pipe_proc_wait_cleanup(void
      wait_co_ctx->cleanup = NULL;
  }
  
