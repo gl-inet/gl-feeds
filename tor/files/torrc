@@ -1,0 +1,18 @@
+RunAsDaemon 1
+AllowUnverifiedNodes middle,rendezvous
+Log notice syslog
+## Only run as a client, never a relay or exit
+ClientOnly 1
+DataDirectory /var/lib/tor
+User root
+SocksPort 9050
+SocksPort 192.168.8.1:9050
+#AutomapHostsSuffixes .exit,.onion
+AutomapHostsSuffixes "."
+AutomapHostsOnResolve 1
+VirtualAddrNetworkIPv4 10.192.0.0/10
+TransPort 192.168.8.1:9040
+DNSPort 192.168.8.1:9053
+TruncateLogFile 1
+LogMessageDomains 1
+Log [control]notice  file /var/lib/tor/control.log

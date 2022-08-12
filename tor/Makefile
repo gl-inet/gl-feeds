@@ -123,7 +123,7 @@ define Package/tor/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/tor.init $(1)/etc/init.d/tor
 	$(INSTALL_DIR) $(1)/etc/tor
-	$(INSTALL_CONF) $(PKG_INSTALL_DIR)/etc/tor/torrc.sample $(1)/etc/tor/torrc
+	$(INSTALL_BIN) ./files/torrc $(1)/etc/tor/torrc
 endef
 
 define Package/tor-gencert/install
