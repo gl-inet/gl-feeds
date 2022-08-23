@@ -1189,19 +1189,20 @@ static void sfe_ipv4_flush_sfe_ipv4_connection(struct sfe_ipv4 *si,
 void term_update(const u8 *mac, __be32 addr, unsigned int rx, unsigned int tx, bool alive);
 
 void call_term_update(struct sk_buff *skb, struct sfe_ipv4_connection_match *cm, unsigned int len){
-	__be32 skb_saddr, skb_daddr;
 	struct ethhdr *ehdr = eth_hdr(skb);
+	struct iphdr *iph = ip_hdr(skb);
+	__be32 saddr, daddr;
 	struct sfe_ipv4_connection *c = cm->connection;
-	struct iphdr *skb_iph = ip_hdr(skb);
 
-	skb_saddr = skb_iph->saddr;
-	skb_daddr = skb_iph->daddr;
+	saddr = iph->saddr;
+	daddr = iph->daddr;
+
 	if(c->original_match==cm){
-		term_update(ehdr->h_source, skb_saddr, 0, len, true);
+		term_update(ehdr->h_source, cm->match_src_ip, 0, len, true);
 	} else {
-		struct neighbour *n = __ipv4_neigh_lookup_noref(cm->xmit_dev, skb_daddr);
+		struct neighbour *n = __ipv4_neigh_lookup_noref(cm->xmit_dev, daddr);
 		if (n != NULL){
-			term_update(n->ha, skb_daddr, len, 0, false);
+			term_update(n->ha, daddr, len, 0, false);
 		}
 	}
 }
