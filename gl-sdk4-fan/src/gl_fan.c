@@ -8,23 +8,26 @@
 //#include <gl_log.h>
 //#include <gl-utils/files.h>
 
-#define CPU_TEMP_FILE "/sys/devices/virtual/thermal/thermal_zone0/temp"
+static const char *CPU_TEMP_FILE = "/sys/devices/virtual/thermal/thermal_zone0/temp";
 #define FAN_PWM_FILE "/sys/class/thermal/cooling_device0/cur_state"
 #define FAN_SPEED_FILE "/sys/class/fan/fan_speed"
 #define TEMPERATURE 85
 #define PROPORTION 10
 #define INTEFRATION 2
 #define DIIFFERENTIAL 10
+static int temp_div = 1;
 
 static void usage(const char *prog)
 {
     fprintf(stderr, "Usage: %s [option]\n"
+            "          -T sysfs         # temperature sysfs path, default is %s\n"
+            "          -D div         # temperature divide, default is %d\n"
             "          -t temperature   # expected CPU temperature, default is %d\n"
             "          -p proportion    # Proportion parameter in PID algorithm, default is %d\n"
             "          -i integration   # integration parameter in PID algorithm, default is %d\n"
             "          -d differential  # differential parameter in PID algorithm, default is %d\n"
             "          -s               # print fan speed\n"
-            "          -v               # verbose\n", prog, TEMPERATURE, PROPORTION, INTEFRATION, DIIFFERENTIAL);
+            "          -v               # verbose\n", prog, CPU_TEMP_FILE, temp_div, TEMPERATURE, PROPORTION, INTEFRATION, DIIFFERENTIAL);
     exit(1);
 }
 
@@ -79,7 +82,7 @@ int get_cpu_temp(int *temp)
     char tmp[8] = {0};
     if (check_file_is_exist(CPU_TEMP_FILE)) {
         read_file_oneline(CPU_TEMP_FILE, tmp, 0);
-        *temp = atoi(tmp);
+        *temp = atoi(tmp) / temp_div;
         if (*temp <= 0 || *temp >= 150) {
             //gl_log_err("%d :It's not a normal temperature\n", *temp);
             return -2;
@@ -138,8 +141,16 @@ int main(int argc, char **argv)
 
     //gl_log_level(LOG_ERR);
 
-    while ((opt = getopt(argc, argv, "t:p:i:d:vs")) != -1) {
+    while ((opt = getopt(argc, argv, "T:D:t:p:i:d:vs")) != -1) {
         switch (opt) {
+            case 'T':
+                CPU_TEMP_FILE = optarg;
+                break;
+            case 'D':
+                temp_div = atoi(optarg);
+                if (temp_div < 1)
+                    temp_div = 1;
+                break;
             case 't':
                 goal_temp = atoi(optarg);
                 break;

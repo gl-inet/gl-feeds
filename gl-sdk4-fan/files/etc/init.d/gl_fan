@@ -8,6 +8,8 @@ PROG=/usr/bin/gl_fan
 
 get_fan_config() {
     config_get enabled $1 enabled
+    config_get sysfs $1 sysfs
+    config_get div $1 div
     config_get temperature $1 temperature
     config_get proportion $1 proportion
     config_get integration $1 integration
@@ -20,6 +22,8 @@ start_service() {
     config_foreach get_fan_config globals
 
     [ "$enabled" != "1" ] && exit
+    [ -n "$sysfs" ] && PROG="$PROG -T $sysfs"
+    [ -n "$div" ] && PROG="$PROG -D $div"
     [ -n "$temperature" ] && PROG="$PROG -t $temperature"
     [ -n "$proportion" ] && PROG="$PROG -p $proportion"
     [ -n "$integration" ] && PROG="$PROG -i $integration"
