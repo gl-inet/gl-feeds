@@ -185,10 +185,9 @@ int main(int argc, char **argv)
 
     set_fan_pwm(0);
     while (1) {
-        sleep(20);
 
         if (get_cpu_temp(&current_temp))
-            continue;
+            goto loop_end;
 
         current_error = current_temp - goal_temp;
         total_error += current_error;
@@ -218,7 +217,7 @@ int main(int argc, char **argv)
 
 
         if (set_pwm == 0 && last_pwm == 0) {
-            continue;
+            goto loop_end;
         } else {
             if (set_pwm == 0 && last_pwm != 0)
                 sleep(300);
@@ -227,6 +226,9 @@ int main(int argc, char **argv)
         }
 
         set_fan_pwm((char)set_pwm);
+
+loop_end:
+        sleep(20);
     }
 
     return 0;
