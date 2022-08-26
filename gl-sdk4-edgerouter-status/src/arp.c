@@ -141,14 +141,14 @@ static void do_arp_loop(struct work_struct *work)
 
     for (i = 0; i < DEVICES_HASH_SIZE ; i++) {
         hlist_for_each_entry(device, &devices[i], hlist) {
-            spin_lock(&hash_lock);
+            //spin_lock(&hash_lock);
             if (device->arpalive == 0 && device->debounce == 0) { //设备里先设置防抖标志，等待设备文档获取IP后才重新spoof，消抖时间为3个周期
                 device->debounce = 3;
             } else if (device->arpalive && device->debounce == 0) {
                 device->arpalive = device->arpalive -  1;
                 spoof(device->ip, dev, device->mac);
             }
-            spin_unlock(&hash_lock);
+            //spin_unlock(&hash_lock);
         }
 
     }
