@@ -4,10 +4,13 @@
 . /lib/functions/network.sh
 . /usr/share/libubox/jshn.sh
 . /lib/mwan3/common.sh
+. /lib/mwan3/mwan3.sh
 
 MWAN3TRACK_STATUS_DIR="/var/run/mwan3track"
 
 IPS="ipset"
+IP4="ip -4"
+IP6="ip -6"
 IPT4="iptables -t mangle -w"
 IPT6="ip6tables -t mangle -w"
 
@@ -145,31 +148,120 @@ get_mwan3_status() {
 	fi
 }
 
-get_status() {
-    local iface="${1}"
-    local iface_select="${2}"
-    local running="0"
-    local age=0
-    local online=0
-    local offline=0
-    local up="0"
-    local enabled pid device time_p time_n time_u time_d status
+mwan3_get_iface_id() {
+    local _tmp _iface _iface_count
+    _iface="$2"
+    mwan3_get_id() {
+        let _iface_count++
+        [ "$1" = "$_iface" ] && _tmp=$_iface_count
+    }
+    config_foreach mwan3_get_id interface
+    export "$1=$_tmp"
+}
 
-    network_get_device device $1
+get_mwan3_policies() {
+    local ipt="$1"
+    local policy="$2"
+    local interface="$3"
 
-    if [ "${iface}" = "${iface_select}" ] || [ "${iface_select}" = "" ]; then
+    local percent total_weight weight iface
 
-        network_is_up "$iface" && up="1"
+    total_weight=$($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | head -1 | awk '{print $3}')
 
-        if [ -f "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS" ]; then
-            status="$(cat "$MWAN3TRACK_STATUS_DIR/${iface}/STATUS")"
+    if [ ! -z "${total_weight##*[!0-9]*}" ]; then
+        for iface in $($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '{print $1}'); do
+            weight=$($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '$1 == "'$iface'"' | awk '{print $2}')
+            percent=$(($weight * 100 / $total_weight))
+            json_add_object "interface"
+            json_add_string "interface" "$iface"
+            [ -z $(echo $1 | grep 6) ] && json_add_int "percent_v4" "$percent" || json_add_int "percent_v6" "$percent"
+            json_close_object
+        done
+    fi
+}
+
+get_mwan3_state() {
+    local device result state_v4 id enabled
+    local device6 result6 state_v6 id6 enabled6
+
+    if [ -z $(echo $1 | grep 6) ]; then
+        json_add_object "interface"
+        json_add_string "interface" "$1"
+
+        mwan3_get_iface_id id "$1"
+        network_get_device device "$1"
+        config_get enabled "$1" enabled 0
+
+        if [ -z "$id" ] || [ -z "$device" ]; then
+            result="offline"
+        elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] &&
+            [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ] &&
+            [ -n "$($IPT4 -S mwan3_iface_in_$1 2>/dev/null)" ] &&
+            [ -n "$($IP4 route list table $id default dev $device 2>/dev/null)" ]; then
+            result="$(cat "$MWAN3_STATUS_DIR/iface_state/$1" 2>/dev/null || echo "offline")"
+        elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] ||
+            [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ] ||
+            [ -n "$($IPT4 -S mwan3_iface_in_$1 2>/dev/null)" ] ||
+            [ -n "$($IP4 route list table $id default dev $device 2>/dev/null)" ]; then
+            result="error"
+        elif [ "$enabled" = "1" ]; then
+            result="offline"
         else
-            status="unknown"
+            result="disabled"
         fi
 
-        json_add_object "${iface}"
-        json_add_string "status" "${status}"
-        json_add_boolean "up" "${up}"
+        case "$result" in
+           "online") state_v4=0
+           ;;
+           "offline") state_v4=1
+           ;;
+           "error") state_v4=2
+           ;;
+           "disabled") state_v4=3
+           ;;
+        esac
+        json_add_int "state_v4" "$state_v4"
+        json_add_string "status_v4" "$result"
+
+        if [ -z $(echo $1 | grep modem) ]; then
+            iface6=$1"6"
+        else
+            iface6=$1"_6"
+        fi
+        mwan3_get_iface_id id6 "$iface6"
+        network_get_device device6 "$iface6"
+        config_get enabled6 "$iface6" enabled 0
+
+        if [ -z "$id6" ] || [ -z "$device6" ]; then
+            result6="offline"
+        elif [ -n "$($IP6 rule | awk '$1 == "'$(($id6 + 1000)):'"')" ] &&
+            [ -n "$($IP6 rule | awk '$1 == "'$(($id6 + 2000)):'"')" ] &&
+            [ -n "$($IPT6 -S mwan3_iface_in_$iface6 2>/dev/null)" ] &&
+            [ -n "$($IP6 route list table $id6 default dev $device6 2>/dev/null)" ]; then
+            result6="$(cat "$MWAN3_STATUS_DIR/iface_state/$iface6" 2>/dev/null || echo "offline")"
+        elif [ -n "$($IP6 rule | awk '$1 == "'$(($id6 + 1000)):'"')" ] ||
+            [ -n "$($IP6 rule | awk '$1 == "'$(($id6 + 2000)):'"')" ] ||
+            [ -n "$($IPT6 -S mwan3_iface_in_$iface6 2>/dev/null)" ] ||
+            [ -n "$($IP6 route list table $id6 default dev $device6 2>/dev/null)" ]; then
+            result6="error"
+        elif [ "$enabled" = "1" ]; then
+            result6="offline"
+        else
+            result6="disabled"
+        fi
+
+        case "$result6" in
+           "online") state_v6=0
+           ;;
+           "offline") state_v6=1
+           ;;
+           "error") state_v6=2
+           ;;
+           "disabled") state_v6=3
+           ;;
+        esac
+        json_add_int "state_v6" "$state_v6"
+        json_add_string "status_v6" "$result6"
         json_close_object
     fi
 }
@@ -266,17 +358,13 @@ main () {
 				json_init
 				case "$section" in
 					*)
-						json_add_object interfaces
-						config_foreach get_status interface "${iface}"
-						json_close_object
-						json_add_object policies
-						json_add_object ipv4
-						report_policies_v4
-						json_close_object
-						#json_add_object ipv6
-						#report_policies_v6
-						#json_close_object
-						json_close_object
+						json_add_array interfaces
+						config_foreach get_mwan3_state interface
+						json_close_array
+						json_add_array "policies"
+						get_mwan3_policies "$IPT4" "mwan3_policy_default_poli"
+						get_mwan3_policies "$IPT6" "mwan3_policy_default_poli_v6"
+						json_close_array
 						;;
 				esac
 				json_dump
