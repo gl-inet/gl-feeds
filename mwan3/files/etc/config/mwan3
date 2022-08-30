@@ -59,6 +59,21 @@ config member 'tethering_only'
 	option metric '3'
 	option weight '3'
 
+config member 'wan_balance'
+	option interface 'wan'
+	option metric '1'
+	option weight '3'
+
+config member 'wwan_balance'
+	option interface 'wwan'
+	option metric '1'
+	option weight '3'
+
+config member 'tethering_balance'
+	option interface 'tethering'
+	option metric '1'
+	option weight '3'
+
 config policy 'default_poli'
 	list use_member 'wan_only'
 	list use_member 'wwan_only'
@@ -125,6 +140,21 @@ config member 'wwan6_only'
 config member 'tethering6_only'
 	option interface 'tethering6'
 	option metric '3'
+	option weight '3'
+
+config member 'wan6_balance'
+	option interface 'wan6'
+	option metric '1'
+	option weight '3'
+
+config member 'wwan6_balance'
+	option interface 'wwan6'
+	option metric '1'
+	option weight '3'
+
+config member 'tethering6_balance'
+	option interface 'tethering6'
+	option metric '1'
 	option weight '3'
 
 config policy 'default_poli_v6'
