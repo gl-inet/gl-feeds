@@ -1,0 +1,13 @@
+Index: mDNSResponder-1310.80.1/Clients/dns-sd.c
+===================================================================
+--- mDNSResponder-1310.80.1.orig/Clients/dns-sd.c
++++ mDNSResponder-1310.80.1/Clients/dns-sd.c
+@@ -58,6 +58,8 @@
+ //#define TEST_NEW_CLIENTSTUB 1
+ 
+ #include <ctype.h>
++#include <sys/param.h>
++#include <stdarg.h>
+ #include <stdio.h>          // For stdout, stderr
+ #include <stdlib.h>         // For exit()
+ #include <string.h>         // For strlen(), strcpy()

@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mDNSResponder
-PKG_VERSION:=878.200.35
+PKG_VERSION:=1310.80.1
 PKG_RELEASE:=1
 
 PKG_SOURCE:=mDNSResponder-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://opensource.apple.com/tarballs/mDNSResponder/
-PKG_HASH:=e777b4d7dbf5eb1552cb80090ad1ede319067ab6e45e3990d68aabf6e8b3f5a0
+PKG_HASH:=097662447e1535573484697861d9f50eceaf2c52ec2742e451ee6ffe9bbf3e75
 PKG_MAINTAINER:=
 PKG_LICENSE:=Apache-2.0
 PKG_CPE_ID:=cpe:/a:apple:mdnsresponder
@@ -131,7 +131,7 @@ define Package/mdns-utils/install
 	$(INSTALL_DIR) $(1)/usr/bin/
 	$(CP) $(PKG_INSTALL_DIR)/usr/bin/dns-sd $(1)/usr/bin/
 	$(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSClientPosix $(1)/usr/bin/mDNSClient
-	$(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSIdentify $(1)/usr/bin/mDNSIdentify
+	# $(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSIdentify $(1)/usr/bin/mDNSIdentify
 	$(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSNetMonitor $(1)/usr/bin/mDNSNetMonitor
 	$(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSProxyResponderPosix $(1)/usr/bin/mDNSProxyResponder
 	$(CP) $(PKG_BUILD_DIR)/mDNSPosix/build/prod/mDNSResponderPosix $(1)/usr/bin/mDNSResponder
