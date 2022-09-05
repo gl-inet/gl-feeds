@@ -44,7 +44,7 @@ report_policies() {
 
 	for iface in $($ipt -S $policy | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '{print $1}'); do
 		weight=$($ipt -S $policy | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '$1 == "'$iface'"' | awk '{print $2}')
-		percent=$(($weight*100/$total_weight))
+		[ "$weight" = "0" ] && percent=0 || percent=$(($weight*100/$total_weight))
 		json_add_object
 		json_add_string interface "$iface"
 		json_add_int percent "$percent"
@@ -171,7 +171,7 @@ get_mwan3_policies() {
     if [ ! -z "${total_weight##*[!0-9]*}" ]; then
         for iface in $($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '{print $1}'); do
             weight=$($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '$1 == "'$iface'"' | awk '{print $2}')
-            percent=$(($weight * 100 / $total_weight))
+            [ "$weight" = "0" ] && percent=0 || percent=$(($weight*100/$total_weight))
             json_add_object "interface"
             json_add_string "interface" "$iface"
             [ -z $(echo $1 | grep 6) ] && json_add_int "percent_v4" "$percent" || json_add_int "percent_v6" "$percent"
