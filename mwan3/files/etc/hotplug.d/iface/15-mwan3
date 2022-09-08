@@ -95,6 +95,9 @@ case "$ACTION" in
 	;;
 esac
 
+# clear nf_conntrack
+echo > /proc/net/nf_conntrack
+
 mwan3_unlock "$ACTION" "$INTERFACE"
 
 exit 0

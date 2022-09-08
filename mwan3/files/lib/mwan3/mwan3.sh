@@ -1137,7 +1137,7 @@ mwan3_report_policies()
 	if [ ! -z "${total_weight##*[!0-9]*}" ]; then
 		for iface in $($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '{print $1}'); do
 			weight=$($ipt -S "$policy" | grep -v '.*--comment "out .*" .*$' | cut -s -d'"' -f2 | awk '$1 == "'$iface'"' | awk '{print $2}')
-			[ "$weight" = "0" ] && percent=0 || percent=$(($weight*100/$total_weight))
+			percent=$(($weight*100/$total_weight))
 			echo " $iface ($percent%)"
 		done
 	else
