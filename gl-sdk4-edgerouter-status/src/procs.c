@@ -1,5 +1,6 @@
 #include <linux/proc_fs.h>
 #include <linux/inet.h>
+#include <linux/version.h>
 
 //#include <time.h>
 #include "erdevices.h"
@@ -197,6 +198,7 @@ static int iface_open(struct inode *inode, struct file *file)
     return single_open(file, iface_show, NULL);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 const static struct file_operations erdevices_ops = {
     .owner      = THIS_MODULE,
     .open       = erdevices_open,
@@ -205,7 +207,17 @@ const static struct file_operations erdevices_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops erdevices_ops = {
+    .proc_open       = erdevices_open,
+    .proc_read       = seq_read,
+    .proc_write      = erdevices_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 const static struct file_operations target_ip_ops = {
     .owner      = THIS_MODULE,
     .open       = target_ip_open,
@@ -214,7 +226,17 @@ const static struct file_operations target_ip_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops target_ip_ops = {
+    .proc_open       = target_ip_open,
+    .proc_read       = seq_read,
+    .proc_write      = target_ip_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 const static struct file_operations target_mac_ops = {
     .owner      = THIS_MODULE,
     .open       = target_mac_open,
@@ -223,7 +245,17 @@ const static struct file_operations target_mac_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops target_mac_ops = {
+    .proc_open       = target_mac_open,
+    .proc_read       = seq_read,
+    .proc_write      = target_mac_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 const static struct file_operations mode_ops = {
     .owner      = THIS_MODULE,
     .open       = mode_open,
@@ -232,7 +264,17 @@ const static struct file_operations mode_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops mode_ops = {
+    .proc_open       = mode_open,
+    .proc_read       = seq_read,
+    .proc_write      = mode_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 const static struct file_operations iface_ops = {
     .owner      = THIS_MODULE,
     .open       = iface_open,
@@ -241,6 +283,15 @@ const static struct file_operations iface_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops iface_ops = {
+    .proc_open       = iface_open,
+    .proc_read       = seq_read,
+    .proc_write      = iface_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
 int erdevice_proc_init(void)
 {

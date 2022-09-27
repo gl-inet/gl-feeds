@@ -6,12 +6,14 @@
 #include <linux/etherdevice.h>
 #include <linux/mtd/mtd.h>
 #include <linux/blkdev.h>
+#include <linux/version.h>
 #include "gl-hw-info.h"
 
 #define SECT_SIZE (1<<9)
 #define TO_SECTOR(x) (x>>9)
 #define TO_OFFSET(x) (x & (SECT_SIZE - 1))
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 static unsigned char *partition_read_block(struct block_device *bdev, sector_t from, Sector *sector)
 {
     if (from >= get_capacity(bdev->bd_disk)) {
@@ -48,6 +50,7 @@ out:
     blkdev_put(bdev, mode);
     return ret;
 }
+#endif
 
 #ifdef CONFIG_MTD
 static int parse_mtd_value(struct device_node *np, const char *prop,
@@ -64,8 +67,10 @@ static int parse_mtd_value(struct device_node *np, const char *prop,
     if (!of_property_read_string_index(np, prop, 1, &offset_str))
         offset = simple_strtoul(offset_str, NULL, 0);
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
     if(!strncmp(part,"/dev/mmc",8))
 	return partition_read(part, offset, dest, len);
+#endif
 
     mtd = get_mtd_device_nm(part);
     if (IS_ERR(mtd))

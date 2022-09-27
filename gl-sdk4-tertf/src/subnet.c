@@ -9,6 +9,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/proc_fs.h>
 #include <linux/inet.h>
+#include <linux/version.h>
 
 #include "subnet.h"
 
@@ -153,7 +154,8 @@ static int proc_open(struct inode *inode, struct file *file)
     return single_open(file, proc_show, NULL);
 }
 
-const static struct file_operations proc_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+const static struct file_operations gl_proc_ops = {
     .owner      = THIS_MODULE,
     .open       = proc_open,
     .read       = seq_read,
@@ -161,10 +163,19 @@ const static struct file_operations proc_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops gl_proc_ops = {
+    .proc_open       = proc_open,
+    .proc_read       = seq_read,
+    .proc_write      = proc_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
 int subnet_init(struct proc_dir_entry *proc)
 {
-    proc_create("subnet", 0644, proc, &proc_ops);
+    proc_create("subnet", 0644, proc, &gl_proc_ops);
 
     return 0;
 }

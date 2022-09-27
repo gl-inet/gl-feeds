@@ -63,7 +63,8 @@ static int proc_open(struct inode *inode, struct file *file)
     return single_open(file, proc_show, NULL);
 }
 
-const static struct file_operations proc_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+const static struct file_operations gl_proc_ops = {
     .owner      = THIS_MODULE,
     .open       = proc_open,
     .read       = seq_read,
@@ -71,6 +72,15 @@ const static struct file_operations proc_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops gl_proc_ops = {
+    .proc_open       = proc_open,
+    .proc_read       = seq_read,
+    .proc_write      = proc_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
 static u32 oui_ipv4_forward_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
@@ -193,7 +203,7 @@ static int __init oui_tertf_init(void)
         return -ENODEV;;
     }
 
-    proc_create("config", 0644, proc, &proc_ops);
+    proc_create("config", 0644, proc, &gl_proc_ops);
 
     subnet_init(proc);
 

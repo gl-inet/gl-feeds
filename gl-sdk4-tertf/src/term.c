@@ -436,7 +436,8 @@ static int proc_open(struct inode *inode, struct file *file)
     return single_open(file, proc_show, NULL);
 }
 
-const static struct file_operations proc_ops = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
+const static struct file_operations gl_proc_ops = {
     .owner      = THIS_MODULE,
     .open       = proc_open,
     .read       = seq_read,
@@ -444,6 +445,15 @@ const static struct file_operations proc_ops = {
     .llseek     = seq_lseek,
     .release    = single_release
 };
+#else
+const static struct proc_ops gl_proc_ops = {
+    .proc_open       = proc_open,
+    .proc_read       = seq_read,
+    .proc_write      = proc_write,
+    .proc_lseek     = seq_lseek,
+    .proc_release    = single_release
+};
+#endif
 
 static void term_keepalive(struct work_struct *work)
 {
@@ -528,7 +538,7 @@ int term_init(struct proc_dir_entry *proc)
     if (!term_cache)
         return -ENOMEM;
 
-    proc_create("term", 0644, proc, &proc_ops);
+    proc_create("term", 0644, proc, &gl_proc_ops);
 
     get_random_bytes(&hash_rnd, sizeof(hash_rnd));
 

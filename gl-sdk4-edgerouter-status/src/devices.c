@@ -14,6 +14,7 @@
 #include <net/arp.h>
 #include <linux/kobject.h>
 #include <linux/jiffies.h>
+#include <linux/version.h>
 
 #include "erdevices.h"
 
@@ -36,7 +37,11 @@ static inline int mac_hash(const u8 *mac)
     return value.tv_sec;
 }*/
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 static __kernel_time_t get_cur_time(void)
+#else
+static time64_t get_cur_time(void)
+#endif
 {
     struct timespec64 value;
     ktime_get_real_ts64(&value);

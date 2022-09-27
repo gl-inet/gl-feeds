@@ -4,6 +4,7 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 #include <linux/seq_file.h>
+#include <linux/version.h>
 #include "gl-hw-info.h"
 
 static int proc_show(struct seq_file *s, void *v)
@@ -21,7 +22,7 @@ static int proc_open(struct inode *inode, struct file *file)
     return single_open(file, proc_show, PDE_DATA(inode));
 }
 
-
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 struct file_operations proc_fops = {
     .owner = THIS_MODULE,
     .read = seq_read,
@@ -29,6 +30,14 @@ struct file_operations proc_fops = {
     .llseek = seq_lseek,
     .release = single_release,
 };
+#else
+struct proc_ops proc_fops = {
+    .proc_read = seq_read,
+    .proc_open = proc_open,
+    .proc_lseek = seq_lseek,
+    .proc_release = single_release,
+};
+#endif
 
 struct proc_dir_entry *create_proc_node(const char *name, const char *value)
 {
