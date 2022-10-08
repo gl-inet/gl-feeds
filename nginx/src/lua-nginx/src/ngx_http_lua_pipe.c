@@ -419,8 +419,6 @@ ngx_http_lua_pipe_sigchld_event_handler(ngx_event_t *ev)
                      */
                     ngx_post_event((&pipe_node->wait_co_ctx->sleep),
                                    &ngx_posted_events);
-                } else {
-                    ngx_http_lua_pipe_proc_finalize(pipe_node->proc);
                 }
 
                 pipe_node->proc->pipe->dead = 1;
@@ -1097,39 +1095,6 @@ ngx_http_lua_pipe_proc_finalize(ngx_http_lua_ffi_pipe_proc_t *proc)
 
     pipe->closed = 1;
 }
-
-
-void
-ngx_http_lua_ffi_pipe_proc_destroy(ngx_http_lua_ffi_pipe_proc_t *proc)
-{
-    ngx_http_lua_pipe_t          *pipe;
-
-    pipe = proc->pipe;
-    if (pipe == NULL) {
-        return;
-    }
-
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                   "lua pipe destroy process:%p pid:%P", proc, proc->_pid);
-
-    if (!pipe->dead) {
-        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                       "lua pipe kill process:%p pid:%P", proc, proc->_pid);
-
-        if (kill(proc->_pid, SIGKILL) == -1) {
-            if (ngx_errno != ESRCH) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, ngx_errno,
-                              "lua pipe failed to kill process:%p pid:%P",
-                              proc, proc->_pid);
-            }
-        }
-    }
-
-    ngx_http_lua_pipe_proc_finalize(proc);
-    ngx_destroy_pool(pipe->pool);
-    proc->pipe = NULL;
-}
-
 
 static ngx_int_t
 ngx_http_lua_pipe_get_lua_ctx(ngx_http_request_t *r,
@@ -2834,6 +2799,22 @@ NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_any, 1, PIPE_READ_ANY)
         lua_setfield(L, -2, #name);                      \
     } while (0)
 
+static void
+ngx_http_lua_ffi_pipe_proc_destroy(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+    ngx_http_lua_pipe_t          *pipe;
+
+    pipe = proc->pipe;
+    if (pipe == NULL) {
+        return;
+    }
+
+    ngx_http_lua_pipe_proc_finalize(proc);
+    ngx_destroy_pool(pipe->pool);
+    proc->pipe = NULL;
+}
+
 void ngx_http_lua_inject_pipe_api(lua_State *L)
 {
     lua_createtable(L, 0 /* narr */, 1 /* nrec */);    /* ngx.pipe. */
@@ -2846,7 +2827,10 @@ void ngx_http_lua_inject_pipe_api(lua_State *L)
     /* {{{proc object metatable */
     lua_pushlightuserdata(L, &ngx_http_lua_proc_metatable_key);
 
-    lua_createtable(L, 0 /* narr */, 2 /* nrec */); /* mt */
+    lua_createtable(L, 0 /* narr */, 3 /* nrec */); /* mt */
+
+    lua_pushcfunction(L, ngx_http_lua_ffi_pipe_proc_destroy);
+    lua_setfield(L, -2, "__gc");
 
     lua_createtable(L, 0 /* narr */, 11 /* nrec */); /* __index */
 
