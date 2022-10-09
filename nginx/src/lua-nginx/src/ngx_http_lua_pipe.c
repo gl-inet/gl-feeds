@@ -83,6 +83,7 @@ static void ngx_http_lua_pipe_proc_wait_cleanup(void *data);
 static ngx_rbtree_t       ngx_http_lua_pipe_rbtree;
 static ngx_rbtree_node_t  ngx_http_lua_pipe_proc_sentinel;
 
+static char ngx_http_lua_proc_metatable_key;
 
 #if (NGX_HTTP_LUA_HAVE_SIGNALFD)
 static int                                ngx_http_lua_signalfd;
@@ -1095,39 +1096,6 @@ ngx_http_lua_pipe_proc_finalize(ngx_http_lua_ffi_pipe_proc_t *proc)
     pipe->closed = 1;
 }
 
-
-void
-ngx_http_lua_ffi_pipe_proc_destroy(ngx_http_lua_ffi_pipe_proc_t *proc)
-{
-    ngx_http_lua_pipe_t          *pipe;
-
-    pipe = proc->pipe;
-    if (pipe == NULL) {
-        return;
-    }
-
-    ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                   "lua pipe destroy process:%p pid:%P", proc, proc->_pid);
-
-    if (!pipe->dead) {
-        ngx_log_debug2(NGX_LOG_DEBUG_HTTP, ngx_cycle->log, 0,
-                       "lua pipe kill process:%p pid:%P", proc, proc->_pid);
-
-        if (kill(proc->_pid, SIGKILL) == -1) {
-            if (ngx_errno != ESRCH) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, ngx_errno,
-                              "lua pipe failed to kill process:%p pid:%P",
-                              proc, proc->_pid);
-            }
-        }
-    }
-
-    ngx_http_lua_pipe_proc_finalize(proc);
-    ngx_destroy_pool(pipe->pool);
-    proc->pipe = NULL;
-}
-
-
 static ngx_int_t
 ngx_http_lua_pipe_get_lua_ctx(ngx_http_request_t *r,
     ngx_http_lua_ctx_t **ctx, u_char *errbuf, size_t *errbuf_size)
@@ -2090,7 +2058,31 @@ ngx_http_lua_pipe_read_retval_helper(ngx_http_lua_ffi_pipe_proc_t *proc,
 
     rc = ngx_http_lua_pipe_read(pipe, pipe_ctx);
     if (rc != NGX_AGAIN) {
-        return 0;
+        size_t buf_size = 4096;
+
+        while (1) {
+            u_char *buf, *p;
+
+            buf = ngx_pcalloc(pipe->pool, buf_size);
+            if (!buf) {
+                lua_pushnil(L);
+                lua_pushliteral(L, "no memory");
+                return 2;
+            }
+
+            p = buf;
+
+            ngx_http_lua_pipe_put_data(pipe, pipe_ctx, &p, &buf_size);
+            if (!p) {
+                ngx_pfree(pipe->pool, buf);
+                continue;
+            }
+
+            lua_pushlstring(L, (char *)buf, buf_size);
+            ngx_pfree(pipe->pool, buf);
+            break;
+        }
+        return 1;
     }
 
     rev = pipe_ctx->c->read;
@@ -2493,6 +2485,372 @@ ngx_http_lua_pipe_proc_wait_cleanup(void *data)
     wait_co_ctx->cleanup = NULL;
 }
 
+static int lua_table_array_cnt(lua_State *L, int idx)
+{
+    int n = 0;
+
+    if (idx < 0)
+        idx = lua_gettop(L) + idx + 1;
+
+    if (!lua_istable(L, idx))
+        return 0;
+
+    lua_pushnil(L); /* stack: table key */
+
+    while (lua_next(L, idx)) { /* stack: table key value */
+        if (lua_type(L, -2) == LUA_TNUMBER) {
+            lua_Number idx = lua_tonumber(L, -2);
+            if (floor(idx) != idx || idx != n + 1)
+                goto non_array;
+            n++;
+            lua_pop(L, 1); /* stack: table key */
+            continue;
+        }
+non_array:
+        lua_pop(L, 2);
+        break;
+    }
+
+    return n;
+}
+
+static void ngx_http_lua_ngx_pipe_set_opt(lua_State *L, int idx, const char *name, int *val)
+{
+    lua_getfield(L, idx, name);
+    if (!lua_isnil(L, -1))
+        *val = lua_tointeger(L, -1);
+    lua_pop(L, 1);
+}
+
+static int ngx_http_lua_ngx_pipe_spawn(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc;
+    int merge_stderr = 0;
+    int buffer_size = 4096;
+    int write_timeout = 10000;
+    int stdout_read_timeout = 10000;
+    int stderr_read_timeout = 10000;
+    int wait_timeout = 10000;
+    const char **args = NULL, **envs = NULL;
+    u_char errbuf[512] = "";
+    size_t errbuf_size = sizeof(errbuf);
+    ngx_http_request_t *r;
+    int rc = 1;
+
+    r = ngx_http_lua_get_req(L);
+    if (!r)
+        return luaL_error(L, "no request found");
+
+    if (lua_istable(L, 1)) {
+        int nargs = lua_table_array_cnt(L, 1);
+
+        if (nargs == 0)
+            return luaL_error(L, "bad args arg: non-empty table expected");
+
+        args = ngx_pcalloc(r->pool, sizeof(char *) * (nargs + 1));
+
+        for (int i = 0; i < nargs; i++) {
+            lua_rawgeti(L, 1, i + 1);
+            args[i] = lua_tostring(L, -1);
+            lua_pop(L, 1);
+        }
+    } else if (lua_isstring(L, 1)) {
+        args = ngx_pcalloc(r->pool, sizeof(char *) * 4);
+        args[0] = "/bin/sh";
+        args[1] = "-c";
+        args[2] = lua_tostring(L, 1);
+    } else {
+        return luaL_error(L, "bad args arg: table expected, got '%s'", lua_typename(L, lua_type(L, 1)));
+    }
+
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "merge_stderr");
+        merge_stderr = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+
+        ngx_http_lua_ngx_pipe_set_opt(L, 2, "buffer_size", &buffer_size);
+        ngx_http_lua_ngx_pipe_set_opt(L, 2, "write_timeout", &write_timeout);
+        ngx_http_lua_ngx_pipe_set_opt(L, 2, "stdout_read_timeout", &stdout_read_timeout);
+        ngx_http_lua_ngx_pipe_set_opt(L, 2, "stderr_read_timeout", &stderr_read_timeout);
+        ngx_http_lua_ngx_pipe_set_opt(L, 2, "wait_timeout", &wait_timeout);
+
+        lua_getfield(L, 2, "environ");
+        if (lua_istable(L, -1)) {
+            int nenv = lua_table_array_cnt(L, -1);
+
+            envs = ngx_pcalloc(r->pool, sizeof(char *) * (nenv + 1));
+
+            for (int i = 0; i < nenv; i++) {
+                lua_rawgeti(L, -1, i + 1);
+                envs[i] = lua_tostring(L, -1);
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+    }
+
+    proc = lua_newuserdata(L, sizeof(ngx_http_lua_ffi_pipe_proc_t));
+    if (!proc) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "no memory");
+        rc = 2;
+        goto free_mem;
+    }
+
+    proc->write_timeout = write_timeout;
+    proc->stdout_read_timeout = stdout_read_timeout;
+    proc->stderr_read_timeout = stderr_read_timeout;
+    proc->wait_timeout = wait_timeout;
+
+    lua_pushlightuserdata(L, &ngx_http_lua_proc_metatable_key);
+    lua_rawget(L, LUA_REGISTRYINDEX);
+    lua_setmetatable(L, -2);
+
+    rc = ngx_http_lua_ffi_pipe_spawn(proc, args[0], args, merge_stderr, buffer_size, envs,
+            errbuf, &errbuf_size);
+    if (rc != NGX_OK) {
+        lua_pushnil(L);
+        lua_pushlstring(L, (char *)errbuf, errbuf_size);
+        rc = 2;
+    } else {
+        rc = 1;
+    }
+
+free_mem:
+    if (args)
+        ngx_pfree(r->pool, args);
+    if (envs)
+        ngx_pfree(r->pool, envs);
+    return rc;
+}
+
+static int ngx_http_lua_proc_pid(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+
+    lua_pushinteger(L, proc->_pid);
+    return 1;
+}
+
+static int ngx_http_lua_proc_wait(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+    ngx_http_request_t *r;
+    char *reason;
+    int status;
+    u_char errbuf[128] = "";
+    size_t errbuf_size = sizeof(errbuf);
+    int rc;
+
+    r = ngx_http_lua_get_req(L);
+    if (!r)
+        return luaL_error(L, "no request found");
+
+    rc = ngx_http_lua_ffi_pipe_proc_wait(r, proc, &reason, &status, errbuf, &errbuf_size);
+    switch (rc) {
+    case NGX_OK:
+        lua_pushboolean(L, 1);
+        lua_pushstring(L, reason);
+        lua_pushinteger(L, status);
+        return 3;
+    case NGX_DECLINED:
+        lua_pushboolean(L, 0);
+        lua_pushstring(L, reason);
+        lua_pushinteger(L, status);
+        return 3;
+    case NGX_ERROR:
+        lua_pushnil(L);
+        lua_pushlstring(L, (char *)errbuf, errbuf_size);
+        return 2;
+    default:
+        return lua_yield(L, 0);
+    }
+}
+
+static int ngx_http_lua_proc_kill(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+    u_char errbuf[128] = "";
+    size_t errbuf_size = sizeof(errbuf);
+    int signal;
+    int rc;
+
+    signal = luaL_checkinteger(L, 2);
+
+    rc = ngx_http_lua_ffi_pipe_proc_kill(proc, signal, errbuf, &errbuf_size);
+    if (rc == NGX_OK) {
+        lua_pushnil(L);
+        lua_pushlstring(L, (char *)errbuf, errbuf_size);
+        return 2;
+    }
+
+    lua_pushboolean(L, 1);
+    return 1;
+}
+
+static int ngx_http_lua_proc_read(lua_State *L, int from_stderr, int reader_type)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+    ssize_t len = lua_tointeger(L, 2);
+    ngx_http_lua_pipe_ctx_t *pipe_ctx;
+    ngx_http_request_t *r;
+    u_char *buf, *p;
+    size_t buf_size = 4096;
+    u_char errbuf[128] = "";
+    size_t errbuf_size = sizeof(errbuf);
+    int rc;
+
+    switch (reader_type) {
+    case PIPE_READ_BYTES:
+        if (len <= 0) {
+            if (len < 0)
+                return luaL_error(L, "bad len argument");
+            lua_pushliteral(L, "");
+            return 1;
+        }
+        break;
+    case PIPE_READ_ANY:
+        if (len <= 0)
+            return luaL_error(L, "bad max argument");
+        break;
+    default:
+        len = 0;
+        break;
+    }
+
+    r = ngx_http_lua_get_req(L);
+    if (!r)
+        return luaL_error(L, "no request found");
+
+    buf = ngx_pcalloc(proc->pipe->pool, buf_size);
+    p = buf;
+
+    if (!p) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "no memory");
+        return 2;
+    }
+
+    rc = ngx_http_lua_ffi_pipe_proc_read(r, proc, from_stderr, reader_type, len, &p,
+                                                    &buf_size, errbuf,
+                                                    &errbuf_size);
+    if (rc == NGX_OK || rc == NGX_DECLINED) {
+        if (!p) {
+            if (from_stderr)
+                pipe_ctx = proc->pipe->stderr_ctx;
+            else
+                pipe_ctx = proc->pipe->stdout_ctx;
+
+            ngx_pfree(proc->pipe->pool, buf);
+
+            buf = ngx_pcalloc(proc->pipe->pool, buf_size);
+            if (!buf) {
+                lua_pushnil(L);
+                lua_pushliteral(L, "no memory");
+                return 2;
+            }
+            ngx_http_lua_pipe_put_data(proc->pipe, pipe_ctx, &buf, &buf_size);
+        }
+
+        if (rc == NGX_OK) {
+            lua_pushlstring(L, (char *)buf, buf_size);
+            ngx_pfree(proc->pipe->pool, buf);
+            return 1;
+        }
+
+        lua_pushnil(L);
+        lua_pushlstring(L, (char *)errbuf, errbuf_size);
+        lua_pushlstring(L, (char *)buf, buf_size);
+        ngx_pfree(proc->pipe->pool, buf);
+        return 3;
+    }
+
+    if (rc == NGX_ERROR) {
+        lua_pushnil(L);
+        lua_pushlstring(L, (char *)errbuf, errbuf_size);
+        ngx_pfree(proc->pipe->pool, buf);
+        return 2;
+    }
+
+    ngx_pfree(proc->pipe->pool, buf);
+
+    return lua_yield(L, 0);
+}
+
+#define NGX_LUA_PIPE_DEF_READ_FUN(name, from_stderr, reader_type)   \
+    static int ngx_http_lua_proc_##name(lua_State *L)               \
+    {                                                               \
+        return ngx_http_lua_proc_read(L, from_stderr, reader_type); \
+    }
+
+NGX_LUA_PIPE_DEF_READ_FUN(stdout_read_all, 0, PIPE_READ_ALL)
+NGX_LUA_PIPE_DEF_READ_FUN(stdout_read_bytes, 0, PIPE_READ_BYTES)
+NGX_LUA_PIPE_DEF_READ_FUN(stdout_read_line, 0, PIPE_READ_LINE)
+NGX_LUA_PIPE_DEF_READ_FUN(stdout_read_any, 0, PIPE_READ_ANY)
+
+NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_all, 1, PIPE_READ_ALL)
+NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_bytes, 1, PIPE_READ_BYTES)
+NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_line, 1, PIPE_READ_LINE)
+NGX_LUA_PIPE_DEF_READ_FUN(stderr_read_any, 1, PIPE_READ_ANY)
+
+#define NGX_LUA_PIPE_ADD_FUN(name)                 \
+    do {                                                \
+        lua_pushcfunction(L, ngx_http_lua_proc_##name); \
+        lua_setfield(L, -2, #name);                      \
+    } while (0)
+
+static void
+ngx_http_lua_ffi_pipe_proc_destroy(lua_State *L)
+{
+    ngx_http_lua_ffi_pipe_proc_t *proc = lua_touserdata(L, 1);
+    ngx_http_lua_pipe_t          *pipe;
+
+    pipe = proc->pipe;
+    if (pipe == NULL) {
+        return;
+    }
+
+    ngx_http_lua_pipe_proc_finalize(proc);
+    ngx_destroy_pool(pipe->pool);
+    proc->pipe = NULL;
+}
+
+void ngx_http_lua_inject_pipe_api(lua_State *L)
+{
+    lua_createtable(L, 0 /* narr */, 1 /* nrec */);    /* ngx.pipe. */
+
+    lua_pushcfunction(L, ngx_http_lua_ngx_pipe_spawn);
+    lua_setfield(L, -2, "spawn");
+
+    lua_setfield(L, -2, "pipe");
+
+    /* {{{proc object metatable */
+    lua_pushlightuserdata(L, &ngx_http_lua_proc_metatable_key);
+
+    lua_createtable(L, 0 /* narr */, 3 /* nrec */); /* mt */
+
+    lua_pushcfunction(L, ngx_http_lua_ffi_pipe_proc_destroy);
+    lua_setfield(L, -2, "__gc");
+
+    lua_createtable(L, 0 /* narr */, 11 /* nrec */); /* __index */
+
+    NGX_LUA_PIPE_ADD_FUN(pid);
+    NGX_LUA_PIPE_ADD_FUN(wait);
+    NGX_LUA_PIPE_ADD_FUN(kill);
+    NGX_LUA_PIPE_ADD_FUN(stdout_read_all);
+    NGX_LUA_PIPE_ADD_FUN(stdout_read_bytes);
+    NGX_LUA_PIPE_ADD_FUN(stdout_read_line);
+    NGX_LUA_PIPE_ADD_FUN(stdout_read_any);
+    NGX_LUA_PIPE_ADD_FUN(stderr_read_all);
+    NGX_LUA_PIPE_ADD_FUN(stderr_read_bytes);
+    NGX_LUA_PIPE_ADD_FUN(stderr_read_line);
+    NGX_LUA_PIPE_ADD_FUN(stderr_read_any);
+
+    lua_setfield(L, -2, "__index");
+
+    lua_rawset(L, LUA_REGISTRYINDEX);
+    /* }}} */
+}
 
 #endif /* HAVE_NGX_LUA_PIPE */
 
