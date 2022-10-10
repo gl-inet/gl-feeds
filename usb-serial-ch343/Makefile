@@ -10,7 +10,7 @@ include ./version.mk
 
 PKG_NAME:=usb-serial-ch343
 PKG_VERSION:=1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -20,7 +20,8 @@ define KernelPackage/usb-serial-ch343
   TITLE:=usb-serial-ch343 linux serial driver
   DEPENDS:=+kmod-usb-core
   FILES:=$(PKG_BUILD_DIR)/ch343.ko
-  AUTOLOAD:=$(call AutoLoad,30,ch343,1)
+  AUTOLOAD:=$(call AutoProbe,ch343)
+  $(call AddDepends/usb-serial)
 endef
 
 define Build/Prepare
