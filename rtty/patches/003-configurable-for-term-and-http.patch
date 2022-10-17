@@ -1,0 +1,137 @@
+Index: rtty-8.0.1/src/main.c
+===================================================================
+--- rtty-8.0.1.orig/src/main.c
++++ rtty-8.0.1/src/main.c
+@@ -32,7 +32,15 @@
+ #include "rtty.h"
+ 
+ enum {
+-    LONG_OPT_HELP = 1
++    LONG_OPT_HELP = 1,
++    LONG_OPT_NO_TERM,
++    LONG_OPT_NO_HTTP
++};
++
++static struct rtty rtty = {
++    .host = "localhost",
++    .port = 5912,
++    .sock = -1
+ };
+ 
+ #ifdef SSL_SUPPORT
+@@ -72,6 +80,8 @@ static struct option long_options[] = {
+ #endif
+     {"verbose",     no_argument,       NULL, 'v'},
+     {"version",     no_argument,       NULL, 'V'},
++    {"no-term",     no_argument,       NULL, LONG_OPT_NO_TERM},
++    {"no-http",     no_argument,       NULL, LONG_OPT_NO_HTTP},
+     {"help",        no_argument,       NULL, LONG_OPT_HELP},
+     {0, 0, 0, 0}
+ };
+@@ -99,11 +109,24 @@ static void usage(const char *prog)
+             "      -S file                  Send file\n"
+             "      -v, --verbose            verbose\n"
+             "      -V, --version            Show version\n"
++            "      --no-term                Disable term function\n"
++            "      --no-http                Disable http proxy function\n"
+             "      --help                   Show usage\n",
+             prog);
+     exit(1);
+ }
+ 
++static void signalHandler(int signum)
++{
++    if (signum == SIGUSR1) {
++        rtty.no_term = !rtty.no_term;
++        log_info("term %s\n", rtty.no_term ? "Disabled" : "Enabled");
++    } else if (signum == SIGUSR2) {
++        rtty.no_http = !rtty.no_http;
++        log_info("http %s\n", rtty.no_http ? "Disabled" : "Enabled");
++    }
++}
++
+ int main(int argc, char **argv)
+ {
+     char shortopts[32] = "I:h:p:d:aDt:f:RS:vV";
+@@ -111,18 +134,14 @@ int main(int argc, char **argv)
+     struct ev_signal signal_watcher;
+     bool background = false;
+     bool verbose = false;
+-    struct rtty rtty = {
+-        .host = "localhost",
+-        .port = 5912,
+-        .loop = loop,
+-        .sock = -1
+-    };
+ #ifdef SSL_SUPPORT
+     bool has_cacert = false;
+ #endif
+     int option_index;
+     int c;
+ 
++    rtty.loop = loop;
++
+     log_level(LOG_DEBUG);
+ 
+ #ifdef SSL_SUPPORT
+@@ -207,6 +226,12 @@ int main(int argc, char **argv)
+         case 'V':
+             log_info("rtty version %s\n", RTTY_VERSION_STRING);
+             exit(0);
++        case LONG_OPT_NO_TERM:
++            rtty.no_term = true;
++            break;
++        case LONG_OPT_NO_HTTP:
++            rtty.no_http = true;
++            break;
+         case LONG_OPT_HELP:
+             usage(argv[0]);
+             break;
+@@ -217,6 +242,8 @@ int main(int argc, char **argv)
+     }
+ 
+     signal(SIGPIPE, SIG_IGN);
++    signal(SIGUSR1, signalHandler);
++    signal(SIGUSR2, signalHandler);
+ 
+     if (background && daemon(0, 0))
+         log_err("Can't run in the background: %s\n", strerror(errno));
+Index: rtty-8.0.1/src/rtty.c
+===================================================================
+--- rtty-8.0.1.orig/src/rtty.c
++++ rtty-8.0.1/src/rtty.c
+@@ -435,6 +435,10 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_LOGIN:
++            if (rtty->no_term) {
++                buffer_pull(rb, NULL, msglen);
++                break;
++            }
+         case MSG_TYPE_LOGOUT:
+         case MSG_TYPE_TERMDATA:
+         case MSG_TYPE_WINSIZE:
+@@ -452,6 +456,10 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_HTTP:
++            if (rtty->no_http) {
++                buffer_pull(rb, NULL, msglen);
++                break;
++            }
+             http_request(rtty, msglen);
+             break;
+ 
+Index: rtty-8.0.1/src/rtty.h
+===================================================================
+--- rtty-8.0.1.orig/src/rtty.h
++++ rtty-8.0.1/src/rtty.h
+@@ -108,6 +108,8 @@ struct rtty {
+     int ntty;   /* tty number */
+     struct list_head ttys;
+     struct list_head http_conns;
++    bool no_term;
++    bool no_http;
+ };
+ 
+ int rtty_start(struct rtty *rtty);
