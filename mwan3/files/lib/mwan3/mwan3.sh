@@ -484,6 +484,11 @@ mwan3_create_iface_iptables()
 	     -m mark --mark 0x0/$MMX_MASK \
 	     -m comment --comment "$1" \
 	     -j MARK --set-xmark $(mwan3_id2mask id MMX_MASK)/$MMX_MASK
+	$IPT -A "mwan3_iface_in_$1" \
+	     -s "$3" \
+	     -m mark --mark 0x0/$MMX_MASK \
+	     -m comment --comment "$1" \
+	     -j MARK --set-xmark $(mwan3_id2mask id MMX_MASK)/$MMX_MASK
 
 	$IPT -D mwan3_ifaces_in \
 	     -m mark --mark 0x0/$MMX_MASK \

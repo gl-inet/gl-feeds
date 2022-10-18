@@ -69,7 +69,7 @@ case "$ACTION" in
 	ifup)
 		mwan3_set_general_rules
 		mwan3_set_general_iptables
-		mwan3_create_iface_iptables $INTERFACE $DEVICE
+		mwan3_create_iface_iptables $INTERFACE $DEVICE "$src_ip"
 		mwan3_create_iface_rules $INTERFACE $DEVICE
 		mwan3_create_iface_route $INTERFACE $DEVICE
 		if [ "${running}" -eq 1 ] && [ "${status}" = "online" ]; then
