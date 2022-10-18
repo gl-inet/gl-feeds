@@ -2,58 +2,78 @@ Index: rtty-8.0.1/src/main.c
 ===================================================================
 --- rtty-8.0.1.orig/src/main.c
 +++ rtty-8.0.1/src/main.c
-@@ -32,7 +32,15 @@
- #include "rtty.h"
+@@ -27,6 +27,7 @@
+ #include <stdlib.h>
+ #include <getopt.h>
+ #include <glob.h>
++#include <uci.h>
  
- enum {
--    LONG_OPT_HELP = 1
-+    LONG_OPT_HELP = 1,
-+    LONG_OPT_NO_TERM,
-+    LONG_OPT_NO_HTTP
-+};
-+
+ #include "log/log.h"
+ #include "rtty.h"
+@@ -35,6 +36,12 @@ enum {
+     LONG_OPT_HELP = 1
+ };
+ 
 +static struct rtty rtty = {
 +    .host = "localhost",
 +    .port = 5912,
 +    .sock = -1
- };
- 
++};
++
  #ifdef SSL_SUPPORT
-@@ -72,6 +80,8 @@ static struct option long_options[] = {
- #endif
-     {"verbose",     no_argument,       NULL, 'v'},
-     {"version",     no_argument,       NULL, 'V'},
-+    {"no-term",     no_argument,       NULL, LONG_OPT_NO_TERM},
-+    {"no-http",     no_argument,       NULL, LONG_OPT_NO_HTTP},
-     {"help",        no_argument,       NULL, LONG_OPT_HELP},
-     {0, 0, 0, 0}
- };
-@@ -99,11 +109,24 @@ static void usage(const char *prog)
-             "      -S file                  Send file\n"
-             "      -v, --verbose            verbose\n"
-             "      -V, --version            Show version\n"
-+            "      --no-term                Disable term function\n"
-+            "      --no-http                Disable http proxy function\n"
-             "      --help                   Show usage\n",
-             prog);
+ static void load_default_ca_cert(struct ssl_context *ctx)
+ {
+@@ -104,6 +111,49 @@ static void usage(const char *prog)
      exit(1);
  }
  
-+static void signalHandler(int signum)
++static void load_config()
 +{
-+    if (signum == SIGUSR1) {
-+        rtty.no_term = !rtty.no_term;
-+        log_info("term %s\n", rtty.no_term ? "Disabled" : "Enabled");
-+    } else if (signum == SIGUSR2) {
-+        rtty.no_http = !rtty.no_http;
-+        log_info("http %s\n", rtty.no_http ? "Disabled" : "Enabled");
++    struct uci_context *ctx;
++    struct uci_element *e;
++    struct uci_ptr ptr = {
++        .package = "rtty",
++        .section = "general"
++    };
++
++    rtty.no_term = true;
++    rtty.no_http = true;
++
++    ctx = uci_alloc_context();
++
++    if (uci_lookup_ptr(ctx, &ptr, NULL, false) != UCI_OK)
++        goto err;
++
++    uci_foreach_element(&ptr.s->options, e) {
++        struct uci_option *o = uci_to_option(e);
++        if (o->type != UCI_TYPE_STRING)
++            continue;
++
++        if (!strcmp(o->e.name, "ssh_en"))
++            rtty.no_term = atoi(o->v.string) == 0;
++        else if (!strcmp(o->e.name, "web_en"))
++            rtty.no_http = atoi(o->v.string) == 0;
 +    }
++
++err:
++    uci_free_context(ctx);
++
++    log_info("config: term %s\n", rtty.no_term ? "Disabled" : "Enabled");
++    log_info("config: http %s\n", rtty.no_http ? "Disabled" : "Enabled");
++}
++
++static void signal_handler(int signum)
++{
++    if (signum != SIGUSR1)
++        return;
++
++    load_config();
 +}
 +
  int main(int argc, char **argv)
  {
      char shortopts[32] = "I:h:p:d:aDt:f:RS:vV";
-@@ -111,18 +134,14 @@ int main(int argc, char **argv)
+@@ -111,18 +161,14 @@ int main(int argc, char **argv)
      struct ev_signal signal_watcher;
      bool background = false;
      bool verbose = false;
@@ -74,28 +94,23 @@ Index: rtty-8.0.1/src/main.c
      log_level(LOG_DEBUG);
  
  #ifdef SSL_SUPPORT
-@@ -207,6 +226,12 @@ int main(int argc, char **argv)
-         case 'V':
-             log_info("rtty version %s\n", RTTY_VERSION_STRING);
-             exit(0);
-+        case LONG_OPT_NO_TERM:
-+            rtty.no_term = true;
-+            break;
-+        case LONG_OPT_NO_HTTP:
-+            rtty.no_http = true;
-+            break;
-         case LONG_OPT_HELP:
-             usage(argv[0]);
-             break;
-@@ -217,6 +242,8 @@ int main(int argc, char **argv)
+@@ -217,6 +263,7 @@ int main(int argc, char **argv)
      }
  
      signal(SIGPIPE, SIG_IGN);
-+    signal(SIGUSR1, signalHandler);
-+    signal(SIGUSR2, signalHandler);
++    signal(SIGUSR1, signal_handler);
  
      if (background && daemon(0, 0))
          log_err("Can't run in the background: %s\n", strerror(errno));
+@@ -241,6 +288,8 @@ int main(int argc, char **argv)
+         load_default_ca_cert(rtty.ssl_ctx);
+ #endif
+ 
++    load_config();
++
+     if (rtty_start(&rtty) < 0)
+         return -1;
+ 
 Index: rtty-8.0.1/src/rtty.c
 ===================================================================
 --- rtty-8.0.1.orig/src/rtty.c
@@ -121,6 +136,19 @@ Index: rtty-8.0.1/src/rtty.c
 +            }
              http_request(rtty, msglen);
              break;
+ 
+Index: rtty-8.0.1/src/CMakeLists.txt
+===================================================================
+--- rtty-8.0.1.orig/src/CMakeLists.txt
++++ rtty-8.0.1/src/CMakeLists.txt
+@@ -14,7 +14,7 @@ add_executable(rtty ${SRCS})
+ target_compile_definitions(rtty PRIVATE _GNU_SOURCE)
+ target_compile_options(rtty PRIVATE -O -Wall -Werror --std=gnu99)
+ target_include_directories(rtty PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/buffer ${LIBEV_INCLUDE_DIR})
+-target_link_libraries(rtty PRIVATE ${LIBEV_LIBRARY} util crypt m)
++target_link_libraries(rtty PRIVATE ${LIBEV_LIBRARY} util crypt m uci)
+ 
+ add_subdirectory(ssl)
  
 Index: rtty-8.0.1/src/rtty.h
 ===================================================================
