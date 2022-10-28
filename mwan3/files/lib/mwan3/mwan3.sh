@@ -444,9 +444,11 @@ mwan3_set_general_iptables()
 
 mwan3_create_iface_iptables()
 {
-	local id family connected_name IPT
+	local id family connected_name IPT track_method
 
 	config_get family "$1" family ipv4
+	config_get track_method "$1" track_method ping
+
 	mwan3_get_iface_id id "$1"
 
 	[ -n "$id" ] || return 0
@@ -484,11 +486,15 @@ mwan3_create_iface_iptables()
 	     -m mark --mark 0x0/$MMX_MASK \
 	     -m comment --comment "$1" \
 	     -j MARK --set-xmark $(mwan3_id2mask id MMX_MASK)/$MMX_MASK
-	$IPT -A "mwan3_iface_in_$1" \
-	     -s "$3" \
-	     -m mark --mark 0x0/$MMX_MASK \
-	     -m comment --comment "$1" \
-	     -j MARK --set-xmark $(mwan3_id2mask id MMX_MASK)/$MMX_MASK
+
+	if [ "$track_method" = "httping" ]; then
+		$IPT -A "mwan3_iface_in_$1" \
+			-s "$3" \
+			-p "tcp" \
+			-m mark --mark 0x0/$MMX_MASK \
+			-m comment --comment "$1" \
+			-j MARK --set-xmark $(mwan3_id2mask id MMX_MASK)/$MMX_MASK
+	fi
 
 	$IPT -D mwan3_ifaces_in \
 	     -m mark --mark 0x0/$MMX_MASK \
