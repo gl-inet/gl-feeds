@@ -333,6 +333,29 @@ static void term_update2(s64 id, unsigned int rx, unsigned int tx)
     }
 }
 
+static void term_clean_traffic(void)
+{
+    struct terminal *term;
+    int i;
+
+    for (i = 0; i < TERM_HASH_SIZE; i++) {
+        rcu_read_lock();
+        hlist_for_each_entry_rcu(term, &terms[i], hlist) {
+            term->updated = jiffies;
+            int j;
+
+            for_each_possible_cpu(j) {
+                struct term_stats *st = per_cpu_ptr(term->stats, j);
+                u64_stats_update_begin(&st->syncp);
+                st->tx_bytes = 0;
+                st->rx_bytes = 0;
+                u64_stats_update_end(&st->syncp);
+            }
+        }
+        rcu_read_unlock();
+    }
+}
+
 static void term_flush(void)
 {
     struct terminal *term;
@@ -418,6 +441,12 @@ static ssize_t proc_write(struct file *file, const char __user *buf, size_t size
 
     if (data[0] == 'c') {
         term_flush();
+        return size;
+    }
+
+    /* clean all traffic*/
+    if (data[0] == 't') {
+        term_clean_traffic();
         return size;
     }
 
