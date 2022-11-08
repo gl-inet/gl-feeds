@@ -161,9 +161,11 @@ main() {
 					;;
 					httping)
 						if [ "$httping_ssl" -eq 1 ]; then
-							httping -y $SRC_IP -c $count -t $timeout -q "https://$track_ip" &> /dev/null
+							#httping -y $SRC_IP -c $count -t $timeout -q "https://$track_ip" &> /dev/null
+							httping -O $DEVICE -c $count -t $timeout -q "https://$track_ip" &> /dev/null
 						else
-							httping -y $SRC_IP -c $count -t $timeout -q "http://$track_ip" &> /dev/null
+							#httping -y $SRC_IP -c $count -t $timeout -q "http://$track_ip" &> /dev/null
+							httping -O $DEVICE -c $count -t $timeout -q "http://$track_ip" &> /dev/null
 						fi
 						result=$?
 					;;
