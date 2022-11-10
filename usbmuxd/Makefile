@@ -49,6 +49,8 @@ CONFIGURE_ARGS += --without-systemd
 define Package/usbmuxd/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(CP) $(PKG_INSTALL_DIR)/usr/sbin/usbmuxd $(1)/usr/sbin/
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/usb
+	$(CP) ./files/usbmuxd.hotplug $(1)/etc/hotplug.d/usb/20-usbmuxd
 endef
 
 $(eval $(call BuildPackage,usbmuxd))

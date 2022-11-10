@@ -1,0 +1,39 @@
+isApple=$(echo "${PRODUCT}" | grep "5ac/")
+
+if [ -n "$isApple" ]; then
+	if [ "${ACTION}" = "add" ]; then
+		usbmuxd 
+		if [ ! -d "/var/lib/lockdown" ]; then
+			mkdir -p /var/lib/lockdown
+		fi
+		bkp_files=`ls /etc/lockdown/locks`
+		for file in $bkp_files;
+		do
+			if [ ! -f "/var/lib/lockdown/$file" ];then
+				cp /etc/lockdown/locks/$file /var/lib/lockdown/
+			fi
+		done
+	elif  [ "${ACTION}" = "bind" -o "${ACTION}" = "unbind" ]; then
+		exit
+	else
+		killall usbmuxd
+		killall -9 usbmuxd 2>/dev/null
+		if [ ! -d "/etc/lockdown/locks" ]; then
+			mkdir -p /etc/lockdown/locks
+		fi
+		for file in `ls /var/lib/lockdown | grep -v SystemConfiguration.plist`
+		do
+			if [ ! -f "/etc/lockdown/locks/$file" ]; then
+				cp /var/lib/lockdown/$file /etc/lockdown/locks/
+			else
+				new_md5=`md5sum /var/lib/lockdown/$file | awk -F" " '{print $1}'`
+				old_md5=`md5sum /etc/lockdown/locks/$file | awk -F" " '{print $1}'`
+				if [ "$new_md5" != "$old_md5" ];then
+					cp /var/lib/lockdown/$file /etc/lockdown/locks/
+				fi
+			fi
+		done
+		
+	fi
+fi
+
