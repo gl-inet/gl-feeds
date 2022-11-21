@@ -6,7 +6,7 @@ USE_PROCD=1
 
 add_subnet() {
     local network="$1"
-    echo "$network" > /proc/oui-tertf/subnet
+    echo "add $network" > /proc/oui-tertf/subnet
 }
 
 parse_tertf() {

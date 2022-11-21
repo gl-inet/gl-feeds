@@ -94,7 +94,7 @@ static int proc_show(struct seq_file *s, void *v)
     return 0;
 }
 
-static void add_subnet(char *ifname)
+static void add_subnet(const char *ifname)
 {
     struct net_device *dev;
     struct subnet *net;
@@ -129,22 +129,111 @@ err:
     spin_unlock_bh(&lock);
 }
 
+static void subnet_rcu_free(struct rcu_head *head)
+{
+    struct subnet *n = container_of(head, struct subnet, rcu);
+    kfree(n);
+}
+
+static void del_subnet(const char *ifname)
+{
+    struct subnet *net;
+    bool found = false;
+
+    spin_lock_bh(&lock);
+
+    list_for_each_entry(net, &subnets, list) {
+        if (!strcmp(net->ifname, ifname)) {
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        spin_unlock_bh(&lock);
+        return;
+    }
+
+    /* delete from subnets */
+    list_del(&net->list);
+
+    /* delete from subnets_index */
+    hlist_del_rcu(&net->hlist);
+
+    call_rcu(&net->rcu, subnet_rcu_free);
+
+    spin_unlock_bh(&lock);
+}
+
+static void subnet_index_clear(void)
+{
+    struct subnet *n;
+    struct hlist_node *tmp;
+    int i;
+
+    for (i = 0; i < NETDEV_HASHENTRIES; i++) {
+        hlist_for_each_entry_safe(n, tmp, &subnets_index[i], hlist) {
+            hlist_del_rcu(&n->hlist);
+        }
+    }
+}
+
+static void clr_subnet(void)
+{
+    struct subnet *n, *tmp;
+
+    spin_lock_bh(&lock);
+
+    subnet_index_clear();
+
+    list_for_each_entry_safe(n, tmp, &subnets, list) {
+        list_del(&n->list);
+        call_rcu(&n->rcu, subnet_rcu_free);
+    }
+    spin_unlock_bh(&lock);
+}
+
 static ssize_t proc_write(struct file *file, const char __user *buf, size_t size, loff_t *ppos)
 {
-    char ifname[IFNAMSIZ] = {0};
+    char data[128] = "";
+    const char *ifname = "";
+    char action;
     char *p;
 
-    if (size > IFNAMSIZ - 1)
+    if (size > sizeof(data) - 1)
         return -EINVAL;
 
-    if (copy_from_user(ifname, buf, size))
+    if (copy_from_user(data, buf, size))
         return -EFAULT;
 
-    p = strchr(ifname, '\n');
-    if (p)
-        *p = '\0';
+    action = data[0];
 
-    add_subnet(ifname);
+    if (action != 'a' && action != 'd' && action != 'c')
+        return -EINVAL;
+
+    if (action != 'c') {
+        ifname = strchr(data, ' ');
+        if (!ifname)
+            return -EINVAL;
+
+        ifname++;
+        while (*ifname == ' ')
+            ifname++;
+
+        p = strchr(ifname, '\n');
+        if (p)
+            *p = '\0';
+
+        if (strlen(ifname) < 1)
+            return -EINVAL;
+    }
+
+    if (action == 'a')
+        add_subnet(ifname);
+    else if (action == 'd')
+        del_subnet(ifname);
+    else
+        clr_subnet();
 
     return size;
 }
@@ -180,38 +269,7 @@ int subnet_init(struct proc_dir_entry *proc)
     return 0;
 }
 
-
-static void subnet_index_clear(void)
-{
-    struct subnet *n;
-    struct hlist_node *tmp;
-    int i;
-
-    for (i = 0; i < NETDEV_HASHENTRIES; i++) {
-        spin_lock_bh(&lock);
-        hlist_for_each_entry_safe(n, tmp, &subnets_index[i], hlist) {
-            hlist_del_rcu(&n->hlist);
-        }
-        spin_unlock_bh(&lock);
-    }
-}
-
-static void subnet_rcu_free(struct rcu_head *head)
-{
-    struct subnet *n = container_of(head, struct subnet, rcu);
-    kfree(n);
-}
-
 void subnet_free(void)
 {
-    struct subnet *n, *tmp;
-
-    subnet_index_clear();
-
-    spin_lock_bh(&lock);
-    list_for_each_entry_safe(n, tmp, &subnets, list) {
-        list_del(&n->list);
-        call_rcu(&n->rcu, subnet_rcu_free);
-    }
-    spin_unlock_bh(&lock);
+    clr_subnet();
 }
