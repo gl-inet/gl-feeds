@@ -30,7 +30,6 @@
 static struct kmem_cache *term_cache __read_mostly;
 static struct hlist_head terms[TERM_HASH_SIZE];
 static u32 hash_rnd __read_mostly;
-static atomic64_t term_init_id;
 
 /*
 * keepalive_work:
@@ -259,7 +258,6 @@ void term_create(const u8 *mac, __be32 addr, struct net_device *dev)
 
     dev_hold(dev);
 
-    term->id = atomic64_inc_return(&term_init_id);
     term->ip = addr;
     term->dev = dev;
     memcpy(term->mac, mac, ETH_ALEN);
@@ -310,7 +308,7 @@ void term_update(const u8 *mac, __be32 addr, unsigned int rx, unsigned int tx, b
 }
 EXPORT_SYMBOL(term_update);
 
-static void term_update2(s64 id, unsigned int rx, unsigned int tx)
+static void term_update2(u8 *mac, unsigned int rx, unsigned int tx)
 {
     struct terminal *term;
     int i;
@@ -318,7 +316,7 @@ static void term_update2(s64 id, unsigned int rx, unsigned int tx)
     for (i = 0; i < TERM_HASH_SIZE; i++) {
         rcu_read_lock();
         hlist_for_each_entry_rcu(term, &terms[i], hlist) {
-            if (term->id == id) {
+            if (ether_addr_equal(term->mac, mac)) {
                 struct term_stats *st = this_cpu_ptr(term->stats);
                 term->updated = jiffies;
                 u64_stats_update_begin(&st->syncp);
@@ -341,8 +339,9 @@ static void term_clean_traffic(void)
     for (i = 0; i < TERM_HASH_SIZE; i++) {
         rcu_read_lock();
         hlist_for_each_entry_rcu(term, &terms[i], hlist) {
-            term->updated = jiffies;
             int j;
+
+            term->updated = jiffies;
 
             for_each_possible_cpu(j) {
                 struct term_stats *st = per_cpu_ptr(term->stats, j);
@@ -392,7 +391,7 @@ static int proc_show(struct seq_file *s, void *v)
     struct terminal *term;
     int i;
 
-    seq_printf(s, "%-17s  %-16s  %-16s  %-16s  %-16s %s\n", "MAC", "IP", "Tx(Byte)", "Rx(Byte)", "Device", "ID");
+    seq_printf(s, "%-17s  %-16s  %-16s  %-16s  %-16s\n", "MAC", "IP", "Tx(Byte)", "Rx(Byte)", "Device");
 
     for (i = 0; i < TERM_HASH_SIZE; i++) {
         rcu_read_lock();
@@ -415,8 +414,8 @@ static int proc_show(struct seq_file *s, void *v)
                 rx_bytes_sum += rx_bytes;
             }
 
-            seq_printf(s, "%pM  %-16pI4  %-16llu  %-16llu  %-16s %lld\n",
-                       term->mac, &term->ip, tx_bytes_sum, rx_bytes_sum, netdev_name(term->dev), term->id);
+            seq_printf(s, "%pM  %-16pI4  %-16llu  %-16llu  %-16s\n",
+                       term->mac, &term->ip, tx_bytes_sum, rx_bytes_sum, netdev_name(term->dev));
         }
         rcu_read_unlock();
     }
@@ -452,9 +451,14 @@ static ssize_t proc_write(struct file *file, const char __user *buf, size_t size
 
     /* update traffic */
     if (data[0] == 'u') {
-        u32 id, rx, tx;
-        sscanf(data + 2, "%u %u %u", &id, &rx, &tx);
-        term_update2(id, rx, tx);
+        u8 mac[ETH_ALEN];
+        u32 rx, tx;
+
+        if (sscanf(data + 2, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u",
+            &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5], &rx, &tx) != 8)
+            return -EINVAL;
+
+        term_update2(mac, rx, tx);
     }
 
     return size;
