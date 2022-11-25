@@ -122,10 +122,28 @@ static u32 oui_arp_in_hook(void *priv, struct sk_buff *skb, const struct nf_hook
     arp_ptr += skb->dev->addr_len;
     memcpy(&sip, arp_ptr, 4);
 
-    if (sip) {
-        term_create(ehdr->h_source, sip, skb->dev);
-        term_update(ehdr->h_source, sip, 0, 0, true);
-    }
+    term_update(ehdr->h_source, sip, 0, 0, true);
+
+    return NF_ACCEPT;
+}
+
+static u32 oui_bridge_pre_routing_hook(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
+{
+    struct net_device *dev = netdev_master_upper_dev_get_rcu(skb->dev);
+    struct ethhdr *ehdr = eth_hdr(skb);
+    struct iphdr *iph;
+
+    if (!IS_IP(skb))
+        return NF_ACCEPT;
+
+    if (!subnet_exist(dev))
+        return NF_ACCEPT;
+
+    ehdr = eth_hdr(skb);
+    iph = ip_hdr(skb);
+
+    if (iph->saddr)
+        term_create(ehdr->h_source, iph->saddr, skb->dev);
 
     return NF_ACCEPT;
 }
@@ -142,6 +160,12 @@ static struct nf_hook_ops oui_bwm_ops[] __read_mostly = {
         .pf         = NFPROTO_ARP,
         .hooknum    = NF_ARP_IN,
         .priority   = -1
+    },
+    {
+        .hook       = oui_bridge_pre_routing_hook,
+        .pf         = NFPROTO_BRIDGE,
+        .hooknum    = NF_BR_PRE_ROUTING,
+        .priority   = NF_BR_PRI_FIRST
     }
 };
 
