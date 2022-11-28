@@ -2,6 +2,7 @@
 
 . /lib/functions.sh
 . /lib/mwan3/common.sh
+. /usr/share/libubox/jshn.sh
 
 LOG="logger -t $(basename "$0")[$$] -p"
 INTERFACE=""
@@ -75,6 +76,7 @@ main() {
 	trap if_down USR1
 
 	config_load mwan3
+	config_get_bool enabled $INTERFACE 'enabled' '0'
 	config_get track_method $1 track_method ping
 	config_get_bool httping_ssl $1 httping_ssl 0
 	validate_track_method $track_method $SRC_IP || {
@@ -134,67 +136,74 @@ main() {
 
 		for track_ip in $track_ips; do
 			if [ $host_up_count -lt $reliability ]; then
-				case "$track_method" in
-					ping)
-						if echo $track_ip | grep -q ':'; then
-							ping_protocol=6
-						fi
-						if [ $check_quality -eq 0 ]; then
-							$PING -$ping_protocol -I $DEVICE -c $count -W $timeout -s $size -t $max_ttl -q $track_ip &> /dev/null
-							result=$?
-						else
-							ping_result_raw="$($PING -$ping_protocol -I $DEVICE -c $count -W $timeout -s $size -t $max_ttl -q $track_ip 2>/dev/null)"
-							ping_status=$?
-							ping_result=$(echo "$ping_result_raw" | tail -n2)
-							loss="$(echo "$ping_result" | grep "packet loss" |  cut -d "," -f3 | awk '{print $1}' | sed -e 's/%//')"
-							if [ "$ping_status" -ne 0 ] || [ "$loss" -eq 100 ]; then
-								latency=999999
-								loss=100
-							else
-								latency="$(echo "$ping_result" | grep -E 'rtt|round-trip' | cut -d "=" -f2 | cut -d "/" -f2 | cut -d "." -f1)"
+				if [ "${enabled}" -eq 1 ]; then
+					case "$track_method" in
+						ping)
+							if echo $track_ip | grep -q ':'; then
+								ping_protocol=6
 							fi
-						fi
-					;;
-					arping)
-						arping -I $DEVICE -c $count -w $timeout -q $track_ip &> /dev/null
-						result=$?
-					;;
-					httping)
-						if [ "$httping_ssl" -eq 1 ]; then
-							#httping -y $SRC_IP -c $count -t $timeout -q "https://$track_ip" &> /dev/null
-							httping -O $DEVICE -c $count -t $timeout -q "https://$track_ip" &> /dev/null
-						else
-							#httping -y $SRC_IP -c $count -t $timeout -q "http://$track_ip" &> /dev/null
-							httping -O $DEVICE -c $count -t $timeout -q "http://$track_ip" &> /dev/null
-						fi
-						result=$?
-					;;
-					nping-tcp)
-						result=$(nping -e $DEVICE -c $count $track_ip --tcp | grep Lost | awk '{print $12}')
-					;;
-					nping-udp)
-						result=$(nping -e $DEVICE -c $count $track_ip --udp | grep Lost | awk '{print $12}')
-					;;
-					nping-icmp)
-						result=$(nping -e $DEVICE -c $count $track_ip --icmp | grep Lost | awk '{print $12}')
-					;;
-					nping-arp)
-						result=$(nping -e $DEVICE -c $count $track_ip --arp | grep Lost | awk '{print $12}')
-					;;
-				esac
+							if [ $check_quality -eq 0 ]; then
+								$PING -$ping_protocol -I $DEVICE -c $count -W $timeout -s $size -t $max_ttl -q $track_ip &> /dev/null
+								result=$?
+							else
+								ping_result_raw="$($PING -$ping_protocol -I $DEVICE -c $count -W $timeout -s $size -t $max_ttl -q $track_ip 2>/dev/null)"
+								ping_status=$?
+								ping_result=$(echo "$ping_result_raw" | tail -n2)
+								loss="$(echo "$ping_result" | grep "packet loss" |  cut -d "," -f3 | awk '{print $1}' | sed -e 's/%//')"
+								if [ "$ping_status" -ne 0 ] || [ "$loss" -eq 100 ]; then
+									latency=999999
+									loss=100
+								else
+									latency="$(echo "$ping_result" | grep -E 'rtt|round-trip' | cut -d "=" -f2 | cut -d "/" -f2 | cut -d "." -f1)"
+								fi
+							fi
+						;;
+						arping)
+							arping -I $DEVICE -c $count -w $timeout -q $track_ip &> /dev/null
+							result=$?
+						;;
+						httping)
+							if [ "$httping_ssl" -eq 1 ]; then
+								#httping -y $SRC_IP -c $count -t $timeout -q "https://$track_ip" &> /dev/null
+								httping -O $DEVICE -c $count -t $timeout -q "https://$track_ip" &> /dev/null
+							else
+								#httping -y $SRC_IP -c $count -t $timeout -q "http://$track_ip" &> /dev/null
+								httping -O $DEVICE -c $count -t $timeout -q "http://$track_ip" &> /dev/null
+							fi
+							result=$?
+						;;
+						nping-tcp)
+							result=$(nping -e $DEVICE -c $count $track_ip --tcp | grep Lost | awk '{print $12}')
+						;;
+						nping-udp)
+							result=$(nping -e $DEVICE -c $count $track_ip --udp | grep Lost | awk '{print $12}')
+						;;
+						nping-icmp)
+							result=$(nping -e $DEVICE -c $count $track_ip --icmp | grep Lost | awk '{print $12}')
+						;;
+						nping-arp)
+							result=$(nping -e $DEVICE -c $count $track_ip --arp | grep Lost | awk '{print $12}')
+						;;
+					esac
+				else
+					json_load "$(ubus call network.interface.$INTERFACE status "$(json_dump)")"
+					json_get_var interface_status up
+					[ "${interface_status}" -eq 1 ] && result=0 || result=1
+				fi
+
 				if [ $check_quality -eq 0 ]; then
 					if [ $result -eq 0 ]; then
 						let host_up_count++
 						echo "up" > /var/run/mwan3track/$1/TRACK_${track_ip}
-						#if [ $score -le $up ]; then
-							# $LOG info "Check ($track_method) success for target \"$track_ip\" on interface $1 ($2)"
-						#fi
+						# if [ $score -le $up ]; then
+						# 	$LOG info "Check ($track_method) success for target \"$track_ip\" on interface $1 ($2)"
+						# fi
 					else
 						let lost++
 						echo "down" > /var/run/mwan3track/$1/TRACK_${track_ip}
-						#if [ $score -gt $up ]; then
-							# $LOG info "Check ($track_method) failed for target \"$track_ip\" on interface $1 ($2)"
-						#fi
+						# if [ $score -gt $up ]; then
+						# 	$LOG info "Check ($track_method) failed for target \"$track_ip\" on interface $1 ($2)"
+						# fi
 					fi
 				else
 					if [ "$loss" -ge "$failure_loss" -o "$latency" -ge "$failure_latency" ]; then
