@@ -22,6 +22,8 @@ config_get_bool enabled "$INTERFACE" 'enabled' '0'
 	mwan3_flush_conntrack "$INTERFACE" "$ACTION"
 }
 
+[ "$(uci -q get gl_mwan3.mwan3.flush_track)" = "1" ] && echo f > "/proc/net/nf_conntrack"
+
 mwan3_unlock "$ACTION" "mwan3rtmon"
 
 exit 0

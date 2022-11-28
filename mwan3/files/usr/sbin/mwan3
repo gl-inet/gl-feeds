@@ -80,7 +80,7 @@ ifup()
 
 	if [ "$up" = "1" ] \
 		&& [ -n "$l3_device" ] \
-		&& [ "$enabled" = "1" ]; then
+		&& [ -n "$enabled" ]; then
 		ACTION=ifup INTERFACE=$1 DEVICE=$l3_device /sbin/hotplug-call iface
 	fi
 }
