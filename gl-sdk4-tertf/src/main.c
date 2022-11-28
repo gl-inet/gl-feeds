@@ -122,8 +122,11 @@ static u32 oui_arp_in_hook(void *priv, struct sk_buff *skb, const struct nf_hook
     arp_ptr += skb->dev->addr_len;
     memcpy(&sip, arp_ptr, 4);
 
-    term_update(ehdr->h_source, sip, 0, 0, true);
+    if (sip && !netif_is_bridge_master(skb->dev)) {
+        term_create(ehdr->h_source, sip, skb->dev);
+    }
 
+    term_update(ehdr->h_source, sip, 0, 0, true);
     return NF_ACCEPT;
 }
 
