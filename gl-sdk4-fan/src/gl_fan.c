@@ -11,7 +11,7 @@
 static const char *CPU_TEMP_FILE = "/sys/devices/virtual/thermal/thermal_zone0/temp";
 #define FAN_PWM_FILE "/sys/class/thermal/cooling_device0/cur_state"
 #define FAN_SPEED_FILE "/sys/class/fan/fan_speed"
-#define TEMPERATURE 85
+#define TEMPERATURE 75
 #define PROPORTION 10
 #define INTEFRATION 2
 #define DIIFFERENTIAL 10
