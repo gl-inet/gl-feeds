@@ -1,0 +1,24 @@
+Index: b/wgengine/router/router_linux.go
+===================================================================
+--- a/wgengine/router/router_linux.go
++++ b/wgengine/router/router_linux.go
+@@ -73,8 +73,8 @@ const (
+ 	//
+ 	// Keep this in sync with tailscaleBypassMark in
+ 	// net/netns/netns_linux.go.
+-	tailscaleBypassMark    = "0x80000"
+-	tailscaleBypassMarkNum = 0x80000
++	tailscaleBypassMark    = "0x800000"
++	tailscaleBypassMarkNum = 0x800000
+ )
+ 
+ // netfilterRunner abstracts helpers to run netfilter commands. It
+@@ -995,7 +995,7 @@ var (
+ 	// stay in the 0-255 range even though linux itself supports
+ 	// larger numbers. (but nowadays we use netlink directly and
+ 	// aren't affected by the busybox binary's limitations)
+-	tailscaleRouteTable = newRouteTable("tailscale", 52)
++	tailscaleRouteTable = newRouteTable("tailscale", 55)
+ )
+ 
+ // ipRules are the policy routing rules that Tailscale uses.
