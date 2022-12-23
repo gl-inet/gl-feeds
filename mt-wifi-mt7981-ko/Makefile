@@ -10,7 +10,6 @@ include $(INCLUDE_DIR)/package.mk
 define KernelPackage/mt-wifi-mt7981-ko
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
-  MENU:=1
   TITLE:=MT7981 WiFi driver with ko
   DEPENDS+=+kmod-mediatek_hnat
   FILES:=./files/mt_wifi.ko ./files/mtk_warp_proxy.ko
@@ -20,9 +19,10 @@ endef
 Build/Compile=
 
 define KernelPackage/mt-wifi-mt7981-ko/install
-	$(INSTALL_DIR) $(1)/lib/firmware
+	$(INSTALL_DIR) $(1)/lib/firmware $(1)/etc
 	$(INSTALL_DATA) ./files/MT7981_ePAeLNA_EEPROM.bin $(1)/lib/firmware
 	$(INSTALL_DATA) ./files/MT7981_iPAiLNA_EEPROM.bin $(1)/lib/firmware
+	$(CP) ./files/wireless $(1)/etc
 endef
 
 $(eval $(call KernelPackage,mt-wifi-mt7981-ko))
