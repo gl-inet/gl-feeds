@@ -1,13 +1,9 @@
 #!/usr/bin/lua
 
-local lnet = require 'oui.network'
 local utils = require 'oui.utils'
 local iwpriv = require 'iwpriv'
 local uloop = require 'uloop'
-local cjson = require 'cjson'
 local ubus = require 'ubus'
-local fs = require 'oui.fs'
-local log = require 'glog'
 local uci = require 'uci'
 
 local device_configs = {}
@@ -17,20 +13,49 @@ local teardown_pending = {}
 local teardown_tmr
 local setting = false
 
+local function log(...)
+    local msg = table.concat({...})
+    local f = io.open('/var/log/mtk-wifi', 'a')
+    if not f then
+        return
+    end
+
+    f:write(os.date() .. ' ')
+    f:write(msg)
+    f:write('\n')
+    f:close()
+end
+
+local function ifup(ifname)
+    os.execute('ifconfig ' .. ifname .. ' up')
+end
+
+local function ifdown(ifname)
+    os.execute('ifconfig ' .. ifname .. ' down')
+end
+
+local function file_exist(path)
+    local f = io.open(path)
+    if f then
+        f:close()
+    end
+    return f ~= nil
+end
+
 local function iwpriv_set(ifname, key, val)
     iwpriv.set(ifname, key, val)
-    log.info('iwpriv ', ifname, ' set ', key, '=', val)
+    log('iwpriv ', ifname, ' set ', key, '=', val)
 end
 
 local function netdev_is_up(ifname)
     local path = '/sys/class/net/' .. ifname
-    return fs.access(path) and utils.readfile(path .. '/operstate', '*l') ~= 'down'
+    return file_exist(path) and utils.readfile(path .. '/operstate', '*l') ~= 'down'
 end
 
 local function down_vif(ifname)
     if netdev_is_up(ifname) then
-        log.info('down ', ifname)
-        lnet.ifdown(ifname)
+        log('down ', ifname)
+        ifdown(ifname)
         os.execute('ip link set dev ' .. ifname .. ' nomaster')
         ubus.call('service', 'delete', { name = ifname .. '-8021xd' })
     end
@@ -165,8 +190,8 @@ local function setup_vif(interfaces)
         local ifname = cfg.ifname
         local old = ap_configs[ifname] or {}
 
-        log.info('setup iface: ', ifname)
-        lnet.ifup(ifname)
+        log('setup iface: ', ifname)
+        ifup(ifname)
 
         if cfg.mode == 'ap' then
             cfg.wmm = cfg.wmm or true
@@ -220,7 +245,7 @@ local function setup_vif(interfaces)
                 local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
 
                 if is_wpa then
-                    iwpriv_set(ifname, 'RADIUS_Key', cfg.key)
+                    iwpriv.set(ifname, 'RADIUS_Key', cfg.key)
                     ubus.call('service', 'add', {
                         name = ifname .. '-8021xd',
                         instances = {
@@ -236,7 +261,7 @@ local function setup_vif(interfaces)
                         }
                     })
                 else
-                    iwpriv_set(ifname, 'WPAPSK', cfg.key)
+                    iwpriv.set(ifname, 'WPAPSK', cfg.key)
                     ubus.call('service', 'delete', { name = ifname .. '-8021xd' })
                 end
 
@@ -267,9 +292,9 @@ local function setup_vif(interfaces)
             os.execute('ip link set dev ' .. ifname .. ' master ' .. ifs.bridge)
         else
             if cfg.macaddr ~= old.macaddr then
-                lnet.ifdown(ifname)
+                ifdown(ifname)
                 os.execute('ip link set ' .. ifname .. ' address' .. (cfg.macaddr or '00:00:00:00:00:00'))
-                lnet.ifup(ifname)
+                ifup(ifname)
             end
 
             if cfg.ssid ~= old.ssid then
@@ -283,7 +308,7 @@ local function setup_vif(interfaces)
             if cfg.encryption ~= old.encryption then
                 local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
                 if is_wpa then
-                    log.err('not support eap for sta')
+                    log('not support eap for sta')
                 else
                     iwpriv_set(ifname, 'ApCliAuthMode', AuthMode)
                     iwpriv_set(ifname, 'ApCliEncrypType', EncrypType)
@@ -346,15 +371,15 @@ local setup_tmr = uloop.timer(function()
         local interfaces = cfg.interfaces
 
         if #interfaces > 0 then
-            log.info('setup: ', device)
+            log('setup: ', device)
 
             local ifname = device_to_main_dev(device)
 
-            if not fs.access('/sys/class/net/' .. ifname) then
-                lnet.ifup('ra0')
+            if not file_exist('/sys/class/net/' .. ifname) then
+                ifup('ra0')
             end
 
-            lnet.ifup(ifname)
+            ifup(ifname)
 
             if not device_configs[device] then
                 device_configs[device] = {}
@@ -500,7 +525,7 @@ end)
 
 local function teardown_cb()
     for device in pairs(teardown_pending) do
-        log.info('teardown: ', device)
+        log('teardown: ', device)
 
         local ifname = device_to_main_dev(device)
         local ifname_prefix = ifname:match('%a+')
@@ -524,8 +549,6 @@ local function teardown_cb()
 end
 
 local function main()
-    log.level(log.LOG_INFO)
-
     uloop.init()
 
     local ubus_conn = ubus.connect()
@@ -544,6 +567,8 @@ local function main()
         ['mtk-wifi'] = {
             setup = {
                 function (req, msg)
+                    os.remove('/var/log/mtk-wifi')
+
                     local device = msg.device
                     local cfg = msg.config
 
@@ -572,6 +597,8 @@ local function main()
             },
             teardown = {
                 function (req, msg)
+                    os.remove('/var/log/mtk-wifi')
+
                     local device = msg.device
 
                     if not device then
@@ -599,13 +626,9 @@ end
 
 local ok, err = pcall(main)
 if not ok then
-    if type(err) == 'table' then
-        err = cjson.encode(err)
-    end
-
     if not err then
         err = 'unknown panic'
     end
 
-    log.info(err)
+    log(err)
 end

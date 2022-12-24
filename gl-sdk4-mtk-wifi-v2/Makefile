@@ -6,15 +6,19 @@ PKG_VERSION:=$(strip $(call findrev))
 PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/cmake.mk
 
 define Package/gl-sdk4-mtk-wifi-v2
   SECTION:=base
   CATEGORY:=gl-sdk4
   TITLE:=MTK WiFi Configure for Gl.inet
-  DEPENDS:=+gl-sdk4-wifi
+  DEPENDS:=+libuci-lua +libubox-lua +libubus-lua
 endef
 
-Build/Compile=
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/* $(PKG_BUILD_DIR)
+endef
 
 define Package/gl-sdk4-mtk-wifi-v2/install
 	$(INSTALL_DIR) $(1)/etc/config $(1)/lib/netifd/wireless $(1)/usr/sbin \
@@ -30,6 +34,7 @@ define Package/gl-sdk4-mtk-wifi-v2/install
 	$(INSTALL_BIN) ./files/l1dat.lua $(1)/sbin/l1dat
 	$(INSTALL_BIN) ./files/smp.sh $(1)/sbin
 	$(INSTALL_DATA) ./files/l1dat_parser.lua $(1)/usr/lib/lua
+	$(CP) $(PKG_BUILD_DIR)/iwpriv.so $(1)/usr/lib/lua
 endef
 
 $(eval $(call BuildPackage,gl-sdk4-mtk-wifi-v2))
