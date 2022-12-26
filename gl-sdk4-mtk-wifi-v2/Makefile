@@ -12,7 +12,7 @@ define Package/gl-sdk4-mtk-wifi-v2
   SECTION:=base
   CATEGORY:=gl-sdk4
   TITLE:=MTK WiFi Configure for Gl.inet
-  DEPENDS:=+libuci-lua +libubox-lua +libubus-lua
+  DEPENDS:=+lua +libuci-lua +libubox-lua +libubus-lua
 endef
 
 define Build/Prepare
