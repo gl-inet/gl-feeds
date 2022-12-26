@@ -216,8 +216,8 @@ local function uci_encryption_to_mtk(encryption)
     return AuthMode, EncrypType, is_wpa
 end
 
-local function setup_vif(interfaces)
-    for _, ifs in ipairs(interfaces) do
+local function setup_vif(device, interfaces)
+    for name, ifs in pairs(interfaces) do
         local need_set_ssid = false
         local cfg = ifs.config
 
@@ -226,6 +226,15 @@ local function setup_vif(interfaces)
 
         log('setup iface: ', ifname)
         ifup(ifname)
+
+        ubus.call('network.wireless', 'notify', {
+            command = 1,
+            device = device,
+            interface = name,
+            data = {
+                ifname = ifname
+            }
+        })
 
         if cfg.mode == 'ap' then
             cfg.wmm = cfg.wmm or true
@@ -402,9 +411,7 @@ local setup_tmr = uloop.timer(function()
     setup_bssid_num()
 
     for device, cfg in pairs(setup_pending) do
-        local interfaces = cfg.interfaces
-
-        if #interfaces > 0 then
+        if cfg.interface_cnt > 0 then
             log('setup: ', device)
 
             local ifname = device_to_main_dev(device)
@@ -548,7 +555,7 @@ local setup_tmr = uloop.timer(function()
                 iwpriv_set(ifname, 'AutoChannelSel', 3)
             end
 
-            setup_vif(cfg.interfaces)
+            setup_vif(device, cfg.interfaces)
         end
     end
 
@@ -610,13 +617,14 @@ local function main()
                         return
                     end
 
-                    local interfaces = {}
+                    local interface_cnt = 0
 
-                    for _, ifs in pairs(msg.interfaces or {}) do
-                        interfaces[#interfaces + 1] = ifs
+                    for _ in pairs(msg.interfaces or {}) do
+                        interface_cnt = interface_cnt + 1
                     end
 
-                    cfg.interfaces = interfaces
+                    cfg.interfaces = msg.interfaces
+                    cfg.interface_cnt = interface_cnt
 
                     setup_pending[device] = cfg
                     setup_tmr:set(100)
