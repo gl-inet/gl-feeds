@@ -154,6 +154,14 @@ local function device_to_main_dev(dev)
     end
 end
 
+local function device_to_apcli(dev)
+    if dev == 'mt798111' then
+        return 'apcli0'
+    elseif dev == 'mt798112' then
+        return 'apclix0'
+    end
+end
+
 local function uci_encryption_to_mtk(encryption)
     local AuthMode = 'OPEN'
     local EncrypType = 'NONE'
@@ -216,182 +224,219 @@ local function uci_encryption_to_mtk(encryption)
     return AuthMode, EncrypType, is_wpa
 end
 
-local function setup_vif(device, interfaces)
-    for name, ifs in pairs(interfaces) do
-        local need_set_ssid = false
-        local cfg = ifs.config
+local function setup_vif(device, name, ifs)
+    local cfg = ifs.config
+    local ifname = cfg.ifname
 
-        local ifname = cfg.ifname
-        local old = ap_configs[ifname] or {}
-
-        log('setup iface: ', ifname)
-        ifup(ifname)
-
-        ubus.call('network.wireless', 'notify', {
-            command = 1,
-            device = device,
-            interface = name,
-            data = {
-                ifname = ifname
-            }
-        })
-
-        if cfg.mode == 'ap' then
-            cfg.wmm = cfg.wmm or true
-            if cfg.wmm ~= old.wmm then
-                iwpriv_set(ifname, 'WmmCapable', cfg.wmm and 0 or 1)
-            end
-
-            cfg.isolate = cfg.isolate or false
-            if cfg.isolate ~= old.isolate then
-                iwpriv_set(ifname, 'NoForwarding', cfg.isolate and 1 or 0)
-            end
-
-            cfg.hidden = cfg.hidden or false
-            if cfg.hidden ~= old.hidden then
-                iwpriv_set(ifname, 'HideSSID', cfg.hidden and 1 or 0)
-            end
-
-            cfg.ieee80211k = cfg.ieee80211k or false
-            if cfg.ieee80211k ~= old.ieee80211k then
-                iwpriv_set(ifname, 'RRMEnable', cfg.ieee80211k and 1 or 0)
-            end
-
-            cfg.maxassoc = cfg.maxassoc or 0
-            if cfg.maxassoc ~= old.maxassoc then
-                iwpriv_set(ifname, 'MbssMaxStaNum', cfg.maxassoc or 0)
-            end
-
-            cfg.rsn_preauth = cfg.rsn_preauth or false
-            if cfg.rsn_preauth ~= old.rsn_preauth then
-                iwpriv_set(ifname, 'PreAuth', cfg.rsn_preauth and 1 or 0)
-            end
-
-            cfg.ieee80211w = cfg.ieee80211w or 0
-            if cfg.ieee80211w ~= old.ieee80211w then
-                local PMFMFPC = '0'
-                local PMFMFPR = '0'
-
-                if cfg.ieee80211w == 1 then
-                    PMFMFPC = '1'
-                    PMFMFPR = '0'
-                elseif cfg.ieee80211w == 2 then
-                    PMFMFPC = '1'
-                    PMFMFPR = '1'
+    if cfg.mode == 'ap' then
+        if not ifname then
+            log('not found ifname for ifs:', name)
+            return
+        end
+    elseif cfg.mode == 'sta' then
+        if not ifname then
+            ifname = device_to_apcli(device)
+            local c = uci.cursor()
+            c:foreach('wireless', 'wifi-iface', function(s)
+                if s.device == device and s.mode == 'sta' then
+                    c:set('wireless', s['.name'], 'ifname', ifname)
                 end
+            end)
+            c:commit('wireless')
+            return 'reload'
+        end
+    else
+        log('not supported mode: ', cfg.mode)
+        return
+    end
 
-                iwpriv_set(ifname, 'PMFMFPC', PMFMFPC)
-                iwpriv_set(ifname, 'PMFMFPR', PMFMFPR)
+    local old = ap_configs[ifname] or {}
+    local need_set_ssid = false
+
+    log('setup iface: ', ifname)
+    ifup(ifname)
+
+    ubus.call('network.wireless', 'notify', {
+        command = 1,
+        device = device,
+        interface = name,
+        data = {
+            ifname = ifname
+        }
+    })
+
+    if cfg.mode == 'ap' then
+        cfg.wmm = cfg.wmm or true
+        if cfg.wmm ~= old.wmm then
+            iwpriv_set(ifname, 'WmmCapable', cfg.wmm and 0 or 1)
+        end
+
+        cfg.isolate = cfg.isolate or false
+        if cfg.isolate ~= old.isolate then
+            iwpriv_set(ifname, 'NoForwarding', cfg.isolate and 1 or 0)
+        end
+
+        cfg.hidden = cfg.hidden or false
+        if cfg.hidden ~= old.hidden then
+            iwpriv_set(ifname, 'HideSSID', cfg.hidden and 1 or 0)
+        end
+
+        cfg.ieee80211k = cfg.ieee80211k or false
+        if cfg.ieee80211k ~= old.ieee80211k then
+            iwpriv_set(ifname, 'RRMEnable', cfg.ieee80211k and 1 or 0)
+        end
+
+        cfg.maxassoc = cfg.maxassoc or 0
+        if cfg.maxassoc ~= old.maxassoc then
+            iwpriv_set(ifname, 'MbssMaxStaNum', cfg.maxassoc or 0)
+        end
+
+        cfg.rsn_preauth = cfg.rsn_preauth or false
+        if cfg.rsn_preauth ~= old.rsn_preauth then
+            iwpriv_set(ifname, 'PreAuth', cfg.rsn_preauth and 1 or 0)
+        end
+
+        cfg.ieee80211w = cfg.ieee80211w or 0
+        if cfg.ieee80211w ~= old.ieee80211w then
+            local PMFMFPC = '0'
+            local PMFMFPR = '0'
+
+            if cfg.ieee80211w == 1 then
+                PMFMFPC = '1'
+                PMFMFPR = '0'
+            elseif cfg.ieee80211w == 2 then
+                PMFMFPC = '1'
+                PMFMFPR = '1'
             end
 
-            if cfg.encryption ~= old.encryption or cfg.key ~= old.key then
-                local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
+            iwpriv_set(ifname, 'PMFMFPC', PMFMFPC)
+            iwpriv_set(ifname, 'PMFMFPR', PMFMFPR)
+        end
 
-                if is_wpa then
-                    iwpriv.set(ifname, 'RADIUS_Key', cfg.key)
-                    ubus.call('service', 'add', {
-                        name = ifname .. '-8021xd',
-                        instances = {
-                            instance1 = {
-                                command = {
-                                    '/usr/bin/8021xd',
-                                    '-p',
-                                    ifname:match('%a+'),
-                                    '-i',
-                                    ifname
-                                }
+        if cfg.encryption ~= old.encryption or cfg.key ~= old.key then
+            local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
+
+            if is_wpa then
+                iwpriv.set(ifname, 'RADIUS_Key', cfg.key)
+                ubus.call('service', 'add', {
+                    name = ifname .. '-8021xd',
+                    instances = {
+                        instance1 = {
+                            command = {
+                                '/usr/bin/8021xd',
+                                '-p',
+                                ifname:match('%a+'),
+                                '-i',
+                                ifname
                             }
                         }
-                    })
-                else
-                    iwpriv.set(ifname, 'WPAPSK', cfg.key)
-                    ubus.call('service', 'delete', { name = ifname .. '-8021xd' })
-                end
-
-                if AuthMode == 'OPEN' then
-                    iwpriv_set(ifname, 'RekeyMethod', 'DISABLE')
-                else
-                    iwpriv_set(ifname, 'RekeyMethod', 'TIME')
-                end
-
-                iwpriv_set(ifname, 'AuthMode', AuthMode)
-                iwpriv_set(ifname, 'EncrypType', EncrypType)
-
-                need_set_ssid = true
+                    }
+                })
+            else
+                iwpriv.set(ifname, 'WPAPSK', cfg.key)
+                ubus.call('service', 'delete', { name = ifname .. '-8021xd' })
             end
 
-            if cfg.server ~= old.server then
-                iwpriv_set(ifname, 'RADIUS_Server', cfg.server or '')
+            if AuthMode == 'OPEN' then
+                iwpriv_set(ifname, 'RekeyMethod', 'DISABLE')
+            else
+                iwpriv_set(ifname, 'RekeyMethod', 'TIME')
             end
 
-            if cfg.port ~= old.port then
-                iwpriv_set(ifname, 'RADIUS_Port', cfg.port or 1812)
-            end
+            iwpriv_set(ifname, 'AuthMode', AuthMode)
+            iwpriv_set(ifname, 'EncrypType', EncrypType)
 
-            if cfg.ssid ~= old.ssid or need_set_ssid then
-                iwpriv_set(ifname, 'ssid', cfg.ssid)
-            end
+            need_set_ssid = true
+        end
 
-            os.execute('ip link set dev ' .. ifname .. ' master ' .. ifs.bridge)
-        else
-            if cfg.macaddr ~= old.macaddr then
-                ifdown(ifname)
-                os.execute('ip link set ' .. ifname .. ' address' .. (cfg.macaddr or '00:00:00:00:00:00'))
-                ifup(ifname)
-            end
+        if cfg.server ~= old.server then
+            iwpriv_set(ifname, 'RADIUS_Server', cfg.server or '')
+        end
 
-            if cfg.ssid ~= old.ssid then
-                iwpriv_set(ifname, 'ApCliSsid', cfg.ssid)
-            end
+        if cfg.port ~= old.port then
+            iwpriv_set(ifname, 'RADIUS_Port', cfg.port or 1812)
+        end
 
-            if cfg.bssid ~= old.bssid then
-                iwpriv_set(ifname, 'ApCliBssid', cfg.bssid)
-            end
+        if cfg.ssid ~= old.ssid or need_set_ssid then
+            iwpriv_set(ifname, 'ssid', cfg.ssid)
+        end
 
-            if cfg.encryption ~= old.encryption then
-                local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
-                if is_wpa then
-                    log('not support eap for sta')
-                else
-                    iwpriv_set(ifname, 'ApCliAuthMode', AuthMode)
-                    iwpriv_set(ifname, 'ApCliEncrypType', EncrypType)
-                end
-            end
+        os.execute('ip link set dev ' .. ifname .. ' master ' .. ifs.bridge)
+    else
+        if cfg.macaddr ~= old.macaddr then
+            ifdown(ifname)
+            os.execute('ip link set ' .. ifname .. ' address' .. (cfg.macaddr or '00:00:00:00:00:00'))
+            ifup(ifname)
+        end
 
-            if cfg.key ~= old.key then
-                iwpriv_set(ifname, 'ApCliWPAPSK', cfg.key)
-            end
+        if cfg.ssid ~= old.ssid then
+            iwpriv_set(ifname, 'ApCliSsid', cfg.ssid)
+        end
 
-            iwpriv_set(ifname, 'ApCliPMFMFPC', 1)
-            iwpriv_set(ifname, 'ApCliDelPMKIDList', 1)
+        if cfg.bssid ~= old.bssid then
+            iwpriv_set(ifname, 'ApCliBssid', cfg.bssid)
+        end
 
-            iwpriv_set(ifname, 'ApCliEnable', 1)
-
-            local network = cfg.network[1]
-            if network then
-                ubus.call('network.interface.' .. network, 'add_device', { name = ifname })
+        if cfg.encryption ~= old.encryption then
+            local AuthMode, EncrypType, is_wpa = uci_encryption_to_mtk(cfg.encryption)
+            if is_wpa then
+                log('not support eap for sta')
+            else
+                iwpriv_set(ifname, 'ApCliAuthMode', AuthMode)
+                iwpriv_set(ifname, 'ApCliEncrypType', EncrypType)
             end
         end
 
-        ap_configs[ifname] = cfg
+        if cfg.key ~= old.key then
+            iwpriv_set(ifname, 'ApCliWPAPSK', cfg.key)
+        end
+
+        iwpriv_set(ifname, 'ApCliPMFMFPC', 1)
+        iwpriv_set(ifname, 'ApCliDelPMKIDList', 1)
+
+        iwpriv_set(ifname, 'ApCliEnable', 1)
+
+        local network = cfg.network[1]
+        if network then
+            ubus.call('network.interface.' .. network, 'add_device', { name = ifname })
+        end
+    end
+
+    ap_configs[ifname] = cfg
+end
+
+local function setup_vifs(device, interfaces)
+    local reload = false
+    for name, ifs in pairs(interfaces) do
+        if setup_vif(device, name, ifs) == 'reload' then
+            reload = true
+        end
+    end
+
+    if reload then
+        return 'reload'
     end
 end
 
 local function down_disabled_vif()
     local c = uci.cursor()
 
+    local uped = {}
+
     c:foreach('wireless', 'wifi-iface', function(s)
-        if s.disabled == '1' then
-            local ifname = s.ifname
-
-            down_vif(ifname)
-
-            local network = s.network
-            if network then
-                ubus.call('network.interface.' .. network, 'remove_device', { name = ifname })
-            end
+        if s.disabled ~= '1' then
+            uped[s.ifname] = true
         end
     end)
+
+    for _, prefix in ipairs({ 'ra', 'rax', 'apcli', 'apclix' }) do
+        for i = 0, 4 do
+            local ifname = prefix .. i
+            if not uped[ifname] then
+                down_vif(ifname)
+            end
+        end
+    end
 end
 
 local country_region_map = {
@@ -409,6 +454,8 @@ local country_region_map = {
 
 local setup_tmr = uloop.timer(function()
     setup_bssid_num()
+
+    local reload = false
 
     for device, cfg in pairs(setup_pending) do
         if cfg.interface_cnt > 0 then
@@ -555,13 +602,19 @@ local setup_tmr = uloop.timer(function()
                 iwpriv_set(ifname, 'AutoChannelSel', 3)
             end
 
-            setup_vif(device, cfg.interfaces)
+            if setup_vifs(device, cfg.interfaces) == 'reload' then
+                reload = true
+            end
         end
     end
 
     down_disabled_vif()
 
     setting = false
+
+    if reload then
+        ubus.call('network', 'reload')
+    end
 end)
 
 local function teardown_cb()
@@ -575,17 +628,7 @@ local function teardown_cb()
             down_vif(ifname_prefix .. i)
         end
 
-        local c = uci.cursor()
-
-        c:foreach('wireless', 'wifi-iface', function(s)
-            if s.device == device then
-                ifname = s.ifname
-                local network = s.network
-                if network then
-                    ubus.call('network.interface.' .. network, 'remove_device', { name = ifname })
-                end
-            end
-        end)
+        down_vif(device_to_apcli(device))
     end
 end
 
