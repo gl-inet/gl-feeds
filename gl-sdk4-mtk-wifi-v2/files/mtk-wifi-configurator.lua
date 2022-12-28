@@ -588,6 +588,11 @@ local setup_tmr = uloop.timer(function()
                 end
             end
 
+            if country ~= old.country then
+                iwpriv_set(ifname, 'CountryCode', country)
+                old.country = country
+            end
+
             if cfg.channel ~= old.channel then
                 local channel = cfg.channel
 
