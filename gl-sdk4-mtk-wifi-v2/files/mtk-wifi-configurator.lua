@@ -83,7 +83,11 @@ end
 
 local function netdev_is_up(ifname)
     local path = '/sys/class/net/' .. ifname
-    return file_exist(path) and readfile(path .. '/operstate', '*l') ~= 'down'
+    if not file_exist(path) then
+        return false
+    end
+
+    return readfile(path .. '/flags', 'n') % 2 == 1
 end
 
 local function down_vif(ifname)
