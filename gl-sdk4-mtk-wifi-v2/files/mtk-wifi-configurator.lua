@@ -361,7 +361,9 @@ local function setup_vif(device, name, ifs)
             iwpriv_set(ifname, 'ssid', cfg.ssid)
         end
 
-        os.execute('ip link set dev ' .. ifname .. ' master ' .. ifs.bridge)
+        if ifs.bridge then
+            os.execute('ip link set dev ' .. ifname .. ' master ' .. ifs.bridge)
+        end
     else
         if cfg.macaddr ~= old.macaddr then
             ifdown(ifname)
