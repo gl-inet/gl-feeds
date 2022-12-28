@@ -23,7 +23,8 @@ endef
 define Package/gl-sdk4-mtk-wifi-v2/install
 	$(INSTALL_DIR) $(1)/etc/config $(1)/lib/netifd/wireless $(1)/usr/sbin \
 		$(1)/etc/init.d $(1)/usr/share $(1)/etc/hotplug.d/firmware \
-		$(1)/sbin $(1)/usr/lib/lua
+		$(1)/sbin $(1)/usr/lib/lua $(1)/www/luci-static/resources/view/network \
+		$(1)/etc/uci-defaults
 	$(INSTALL_CONF) ./files/wireless.config $(1)/etc/config/wireless
 	$(INSTALL_CONF) ./files/wifi-features-mt798111 $(1)/usr/share
 	$(INSTALL_CONF) ./files/wifi-features-mt798112 $(1)/usr/share
@@ -35,6 +36,8 @@ define Package/gl-sdk4-mtk-wifi-v2/install
 	$(INSTALL_BIN) ./files/smp.sh $(1)/sbin
 	$(INSTALL_DATA) ./files/l1dat_parser.lua $(1)/usr/lib/lua
 	$(CP) $(PKG_BUILD_DIR)/iwpriv.so $(1)/usr/lib/lua
+	$(INSTALL_DATA) ./files/wireless.js $(1)/www/luci-static/resources/view/network/wireless.js.mtk
+	$(INSTALL_DATA) ./files/mtk-wifi-luci.default $(1)/etc/uci-defaults/20-mtk-wifi-luci
 endef
 
 $(eval $(call BuildPackage,gl-sdk4-mtk-wifi-v2))
