@@ -640,6 +640,16 @@ local function teardown_cb()
         end
 
         down_vif(device_to_apcli(device))
+
+        device_configs[device] = nil
+
+        local c = uci.cursor()
+
+        c:foreach('wireless', 'wifi-iface', function(s)
+            if s.device == device and s.ifname then
+                ap_configs[s.ifname] = nil
+            end
+        end)
     end
 end
 
