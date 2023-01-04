@@ -653,6 +653,13 @@ local function teardown_cb()
     end
 end
 
+local function DisConnectAllSta(ifname)
+    if netdev_is_up(ifname) then
+        log('DisConnectAllSta of ', ifname)
+        iwpriv.set(ifname, 'DisConnectAllSta', 1)
+    end
+end
+
 local function main()
     uloop.init()
 
@@ -696,6 +703,11 @@ local function main()
                     if teardown_tmr then
                         teardown_tmr:cancel()
                         teardown_tmr = nil
+
+                        for i = 0, 4 do
+                            DisConnectAllSta('ra' .. i)
+                            DisConnectAllSta('rax0' .. i)
+                        end
                     end
 
                     setting = true
