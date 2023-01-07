@@ -1,0 +1,20 @@
+CFG=/etc/fw_env_gl.config
+
+[ -f /proc/gl-hw-info/cfg-partition ] && dev=$(cat /proc/gl-hw-info/cfg-partition)
+
+[ -n "$dev" -a -e $dev ] || exit 0
+
+name=$(echo ${dev##*/})
+
+case "${name:0:3}" in
+    mtd)
+        size=$(cat /sys/class/mtd/$name/size | awk '{printf("0x%x",$1)}')
+        ;;
+    mmc)
+        size=$(cat /sys/class/block/$name/size | awk '{printf("0x%x",$1)}')
+        ;;
+    *)
+        exit 0
+esac
+
+echo "$dev 0 $size" > $CFG

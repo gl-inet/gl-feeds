@@ -19,6 +19,7 @@ define KernelPackage/gl-sdk4-hw-info
   SUBMENU:=Kernel modules
   TITLE:=GL.iNet hardware information
   FILES:=$(PKG_BUILD_DIR)/gl-sdk4-hw-info.ko
+  DEPENDS:=+uboot-envtools
   AUTOLOAD:=$(call AutoLoad,01,gl-sdk4-hw-info,1)
   KCONFIG:=
 endef
@@ -40,6 +41,11 @@ define Build/Compile
 	$(MAKE) -C "$(LINUX_DIR)" \
 		$(MAKE_OPTS) \
 		modules
+endef
+
+define KernelPackage/gl-sdk4-hw-info/install
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_DATA) ./files/gl-hw-env.default $(1)/etc/uci-defaults/00-gl-hw-env
 endef
 
 $(eval $(call KernelPackage,gl-sdk4-hw-info))
