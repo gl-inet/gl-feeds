@@ -10,7 +10,7 @@ drv_mtk_init_device_config() {
 }
 
 drv_mtk_init_iface_config() {
-    config_add_string ifname 'macaddr:macaddr'
+    config_add_string ifname 'macaddr:macaddr' 'bssid:macaddr'
     config_add_boolean hidden isolate wmm rsn_preauth ieee80211k
     config_add_int maxassoc ieee80211w 'port:port'
     config_add_string 'server:ip4addr'
