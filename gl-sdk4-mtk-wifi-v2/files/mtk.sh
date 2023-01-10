@@ -4,16 +4,16 @@
 init_wireless_driver "$@"
 
 drv_mtk_init_device_config() {
-	config_add_int txpower
-	config_add_array channels
+    config_add_int txpower
+    config_add_array channels
     config_add_string country
 }
 
 drv_mtk_init_iface_config() {
     config_add_string ifname 'macaddr:macaddr'
-	config_add_boolean hidden isolate wmm rsn_preauth ieee80211k
-	config_add_int maxassoc ieee80211w 'port:port'
-	config_add_string 'server:ip4addr'
+    config_add_boolean hidden isolate wmm rsn_preauth ieee80211k
+    config_add_int maxassoc ieee80211w 'port:port'
+    config_add_string 'server:ip4addr'
 }
 
 drv_mtk_cleanup() {
