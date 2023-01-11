@@ -228,7 +228,7 @@ local function uci_encryption_to_mtk(encryption)
     return AuthMode, EncrypType, is_wpa
 end
 
-local function setup_vif(device, name, ifs)
+local function setup_vif(device, name, ifs, need_set_ssid)
     local cfg = ifs.config
     local ifname = cfg.ifname
 
@@ -255,7 +255,6 @@ local function setup_vif(device, name, ifs)
     end
 
     local old = ap_configs[ifname] or {}
-    local need_set_ssid = false
 
     log('setup iface: ', ifname)
     ifup(ifname)
@@ -411,11 +410,26 @@ local function setup_vif(device, name, ifs)
     ap_configs[ifname] = cfg
 end
 
-local function setup_vifs(device, interfaces)
+local function setup_vifs(device, interfaces, need_set_ssid)
     local reload = false
+    local updated = false
+
     for name, ifs in pairs(interfaces) do
-        if setup_vif(device, name, ifs) == 'reload' then
+        updated = true
+        if setup_vif(device, name, ifs, need_set_ssid) == 'reload' then
             reload = true
+        end
+    end
+
+    if not updated and need_set_ssid then
+        if device == 'mt798111' then
+            local c = uci.cursor()
+            c:foreach('wireless', 'wifi-iface', function(s)
+                if s.device == device and s.disabled ~= '1' and s.mode == 'ap' then
+                    iwpriv_set(s.ifname, 'ssid', s.ssid)
+                    return false
+                end
+            end)
         end
     end
 
@@ -560,9 +574,12 @@ local setup_tmr = uloop.timer(function()
                 need_acs = true
             end
 
+            local need_set_ssid = false
+
             if HtBssCoex ~= old.HtBssCoex then
                 iwpriv_set(ifname, 'HtBssCoex', HtBssCoex)
                 old.HtBssCoex = HtBssCoex
+                need_set_ssid = true
             end
 
             if cfg.txpower ~= old.txpower then
@@ -613,7 +630,7 @@ local setup_tmr = uloop.timer(function()
                 iwpriv_set(ifname, 'AutoChannelSel', 3)
             end
 
-            if setup_vifs(device, cfg.interfaces) == 'reload' then
+            if setup_vifs(device, cfg.interfaces, need_set_ssid) == 'reload' then
                 reload = true
             end
         end
