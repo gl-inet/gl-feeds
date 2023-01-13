@@ -599,9 +599,11 @@ local setup_tmr = uloop.timer(function()
                     need_acs = true
                 end
             else
-                local region = 0
-                if country == 'JP' then
-                    region = 1
+                local region = 1
+                if country == 'TW' or country == 'US' or country == 'CA' then
+                    region = 0
+                elseif country == 'IL' then
+                    region = 6
                 end
 
                 if region ~= old.region then
