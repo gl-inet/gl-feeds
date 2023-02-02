@@ -5,8 +5,8 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=1eb784e7ffe410ee000c48aa1763ca29acbd8531
-PKG_MIRROR_HASH:=b4f1f2c928b0c3f5ef5e6fcdfaf23414b2abf6e075f6f7d0218dc14581b8638e
+PKG_SOURCE_VERSION:=f0ce60eb9ddecdf1a1788d7d34582ff99980b991
+PKG_MIRROR_HASH:=8acefa937e4e7df4128e66ffdba9da322a75d7f1d34dfa3683c06327a8d24d53
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -49,7 +49,7 @@ Package/lua-eco-log=$(call Package/lua-eco/Module,log utils)
 Package/lua-eco-sys=$(call Package/lua-eco/Module,system utils)
 Package/lua-eco-file=$(call Package/lua-eco/Module,file utils)
 Package/lua-eco-socket=$(call Package/lua-eco/Module,socket,+lua-eco-file +lua-eco-sys)
-Package/lua-eco-dns=$(call Package/lua-eco/Module,dns,+lua-eco-socket)
+Package/lua-eco-dns=$(call Package/lua-eco/Module,dns,+lua-eco-socket +luabitop)
 Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,\
   @(PACKAGE_libopenssl||PACKAGE_libwolfssl||PACKAGE_libmbedtls) \
   LUA_ECO_OPENSSL:libopenssl LUA_ECO_WOLFSSL:libwolfssl \
@@ -58,6 +58,7 @@ Package/lua-eco-ubus=$(call Package/lua-eco/Module,ubus,+libubus)
 Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-http=$(call Package/lua-eco/Module,http/https client/server,+lua-eco-dns +lua-eco-ssl)
 Package/lua-eco-base64=$(call Package/lua-eco/Module,base64)
+Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco-dns +lua-mosquitto)
 
 define Package/lua-eco-ssl/config
 	config LUA_ECO_DEFAULT_WOLFSSL
@@ -139,6 +140,7 @@ Package/lua-eco-ubus/install=$(call Package/lua-eco/Module/install,$1,ubus)
 Package/lua-eco-termios/install=$(call Package/lua-eco/Module/install,$1,termios)
 Package/lua-eco-http/install=$(call Package/lua-eco/Module/install,$1,http)
 Package/lua-eco-base64/install=$(call Package/lua-eco/Module/install,$1,base64)
+Package/lua-eco-mqtt/install=$(call Package/lua-eco/Module/install,$1,mqtt)
 
 $(eval $(call BuildPackage,lua-eco))
 $(eval $(call BuildPackage,lua-eco-log))
@@ -151,3 +153,4 @@ $(eval $(call BuildPackage,lua-eco-ubus))
 $(eval $(call BuildPackage,lua-eco-termios))
 $(eval $(call BuildPackage,lua-eco-http))
 $(eval $(call BuildPackage,lua-eco-base64))
+$(eval $(call BuildPackage,lua-eco-mqtt))
