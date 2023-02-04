@@ -39,6 +39,8 @@ load_sfe() {
 }
 
 start() {
+	[ -f "/sys/kernel/debug/hnat/hook_toggle" ] && echo '0' > /sys/kernel/debug/hnat/hook_toggle
+
 	local ipv6_enable=$(uci get glipv6.globals.enabled)
 	local qos_enable="$(grep queue /etc/config/qos  |grep -v "#")"
 	[ "$ipv6_enable" = "1" ] && exit 0
