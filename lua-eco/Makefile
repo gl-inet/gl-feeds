@@ -5,8 +5,8 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=ac8c33d0034587a4d15d1d6143ea6bd97aeb9dbb
-PKG_MIRROR_HASH:=a2911136531ae69fa30e39d69cbae116754e1872f41ef4be8e2dc58593af983f
+PKG_SOURCE_VERSION:=f8e50abf8154fe434ee054f33e064fd728e4a70a
+PKG_MIRROR_HASH:=56afe61ba09edabac5811abb2c79321f9930b6b9424f45a22e2bbce5ab23a3d4
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -50,53 +50,12 @@ Package/lua-eco-sys=$(call Package/lua-eco/Module,system utils)
 Package/lua-eco-file=$(call Package/lua-eco/Module,file utils)
 Package/lua-eco-socket=$(call Package/lua-eco/Module,socket,+lua-eco-file +lua-eco-sys)
 Package/lua-eco-dns=$(call Package/lua-eco/Module,dns,+lua-eco-socket +luabitop)
-Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,\
-  @(PACKAGE_libopenssl||PACKAGE_libwolfssl||PACKAGE_libmbedtls) \
-  LUA_ECO_OPENSSL:libopenssl LUA_ECO_WOLFSSL:libwolfssl \
-  LUA_ECO_MBEDTLS:libmbedtls +LUA_ECO_MBEDTLS:zlib +lua-eco-socket)
+Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,+libopenssl)
 Package/lua-eco-ubus=$(call Package/lua-eco/Module,ubus,+libubus)
 Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-http=$(call Package/lua-eco/Module,http/https client/server,+lua-eco-dns +lua-eco-ssl)
 Package/lua-eco-base64=$(call Package/lua-eco/Module,base64)
 Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco-dns +lua-mosquitto)
-
-define Package/lua-eco-ssl/config
-	config LUA_ECO_DEFAULT_WOLFSSL
-		bool
-		default y if PACKAGE_libopenssl != y && \
-			(PACKAGE_libwolfssl >= PACKAGE_libopenssl || \
-			PACKAGE_libwolfsslcpu-crypto >= PACKAGE_libopenssl) && \
-			(PACKAGE_libwolfssl >= PACKAGE_libmbedtls || \
-			PACKAGE_libwolfsslcpu-crypto >= PACKAGE_libmbedtls)
-
-	config LUA_ECO_DEFAULT_OPENSSL
-		bool
-		default y if !LUA_ECO_DEFAULT_WOLFSSL && \
-			PACKAGE_libopenssl >= PACKAGE_libmbedtls
-
-	config LUA_ECO_DEFAULT_MBEDTLS
-		bool
-		default y if !LUA_ECO_DEFAULT_WOLFSSL && !LUA_ECO_DEFAULT_OPENSSL
-
-	choice
-		prompt "SSL Library"
-		default LUA_ECO_OPENSSL if LUA_ECO_DEFAULT_OPENSSL
-		default LUA_ECO_WOLFSSL if LUA_ECO_DEFAULT_WOLFSSL
-		default LUA_ECO_MBEDTLS if LUA_ECO_DEFAULT_MBEDTLS
-
-		config LUA_ECO_OPENSSL
-			bool "OpenSSL"
-			depends on PACKAGE_libopenssl
-
-		config LUA_ECO_WOLFSSL
-			bool "wolfSSL"
-			depends on PACKAGE_libwolfssl || PACKAGE_libwolfsslcpu-crypto
-
-		config LUA_ECO_MBEDTLS
-			bool "mbedTLS"
-			depends on PACKAGE_libmbedtls
-	endchoice
-endef
 
 CMAKE_OPTIONS += \
   -DPLATFORM="openwrt" \
@@ -104,13 +63,7 @@ CMAKE_OPTIONS += \
   -DECO_SSL_SUPPORT=O$(if $(CONFIG_PACKAGE_lua-eco-ssl),N,FF)
 
 ifneq ($(CONFIG_PACKAGE_lua-eco-ssl),)
-  ifneq ($(CONFIG_LUA_ECO_OPENSSL),)
-    CMAKE_OPTIONS += -DUSE_OPENSSL=ON
-  else ifneq ($(CONFIG_LUA_ECO_WOLFSSL),)
-    CMAKE_OPTIONS += -DUSE_WOLFSSL=ON
-  else ifneq ($(CONFIG_LUA_ECO_MBEDTLS),)
-    CMAKE_OPTIONS += -DUSE_MBEDTLS=ON
-  endif
+  CMAKE_OPTIONS += -DUSE_OPENSSL=ON
 endif
 
 define Package/lua-eco/Module/install
@@ -139,8 +92,12 @@ Package/lua-eco-file/install=$(call Package/lua-eco/Module/install,$1,file)
 Package/lua-eco-ubus/install=$(call Package/lua-eco/Module/install,$1,ubus)
 Package/lua-eco-termios/install=$(call Package/lua-eco/Module/install,$1,termios)
 Package/lua-eco-http/install=$(call Package/lua-eco/Module/install,$1,http)
-Package/lua-eco-base64/install=$(call Package/lua-eco/Module/install,$1,base64)
 Package/lua-eco-mqtt/install=$(call Package/lua-eco/Module/install,$1,mqtt)
+
+define Package/lua-eco-base64/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/encoding
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/encoding/base64.so $(1)/usr/lib/lua/eco/encoding
+endef
 
 $(eval $(call BuildPackage,lua-eco))
 $(eval $(call BuildPackage,lua-eco-log))
