@@ -79,6 +79,7 @@ endef
 define Package/lua-eco/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/bin/eco $(1)/usr/bin
+	$(call Package/lua-eco/Module/install,$(1),bit)
 	$(call Package/lua-eco/Module/install,$(1),time)
 	$(call Package/lua-eco/Module/install,$(1),buffer)
 endef
