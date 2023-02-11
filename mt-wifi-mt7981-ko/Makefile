@@ -2,8 +2,8 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt-wifi-mt7981-ko
-PKG_VERSION:=20220907-8b55f5
-PKG_RELEASE:=7
+PKG_VERSION:=20221209-b9c02f
+PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
 

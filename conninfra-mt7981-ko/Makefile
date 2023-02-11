@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=conninfra-mt7981-ko
-PKG_VERSION:=20220907-bbf588
+PKG_VERSION:=20221209-bbf588
 PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk

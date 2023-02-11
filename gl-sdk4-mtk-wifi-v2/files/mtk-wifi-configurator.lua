@@ -90,6 +90,16 @@ local function netdev_is_up(ifname)
     return readfile(path .. '/flags', 'n') % 2 == 1
 end
 
+local function is_all_down()
+    for _, ifname in ipairs({'ra0', 'ra1', 'rax0', 'rax1', 'apcli0', 'apclix0'}) do
+        if netdev_is_up(ifname) then
+            return false
+        end
+    end
+
+    return true
+end
+
 local function down_vif(ifname)
     if netdev_is_up(ifname) then
         log('down ', ifname)
@@ -707,6 +717,13 @@ local function main()
                         return
                     end
 
+                    log('setup...', device)
+
+                    if is_all_down() then
+                        device_configs = {}
+                        ap_configs = {}
+                    end
+
                     local interface_cnt = 0
 
                     for _ in pairs(msg.interfaces or {}) do
@@ -741,6 +758,8 @@ local function main()
                     if not device then
                         return
                     end
+
+                    log('teardown...', device)
 
                     teardown_pending[device] = true
 
