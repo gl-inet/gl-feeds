@@ -135,6 +135,7 @@ local function setup_bssid_num()
             path = '/etc/wireless/mediatek/mt7981.dbdc.b1.dat'
         end
 
+        local changed = false
         local lines = {}
 
         for line in io.lines(path) do
@@ -142,6 +143,7 @@ local function setup_bssid_num()
                 local old = tonumber(line:match('(%d+)'))
                 if old ~= num then
                     line = 'BssidNum=' .. num
+                    changed = true
                     need_restart = true
                 end
             end
@@ -149,7 +151,10 @@ local function setup_bssid_num()
             lines[#lines + 1] = line
         end
 
-        writefile(path, table.concat(lines, '\n') .. '\n')
+        if changed then
+            writefile(path, table.concat(lines, '\n') .. '\n')
+            os.execute('sync')
+        end
     end
 
     if need_restart then
