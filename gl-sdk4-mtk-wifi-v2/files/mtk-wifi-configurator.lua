@@ -385,8 +385,9 @@ local function setup_vif(device, name, ifs, need_set_ssid)
     else
         if cfg.macaddr ~= old.macaddr then
             ifdown(ifname)
-            os.execute('ip link set ' .. ifname .. ' address' .. (cfg.macaddr or '00:00:00:00:00:00'))
+            os.execute('ip link set ' .. ifname .. ' address ' .. (cfg.macaddr or '00:00:00:00:00:00'))
             ifup(ifname)
+            log(ifname, ' set macaddr: ', cfg.macaddr)
         end
 
         if cfg.ssid ~= old.ssid then
