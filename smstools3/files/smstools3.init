@@ -17,7 +17,8 @@ WRT_SPOOL=/etc/spool
 CFG=/tmp/smstools.cfg
 
 start_service() {
-	gl_modem sms-config > $CFG
+	bus=$(cat /proc/gl-hw-info/build-in-modem)
+	gl_modem -B $bus sms-config > $CFG
 	dirs="$(cat $CFG|grep $WRT_SPOOL/sms)"
 	[ -z "$dirs" ] && exit 0
 
