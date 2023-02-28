@@ -5,8 +5,8 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=7ec4c7251dd584db7c654b42b6dc2831e34d743a
-PKG_MIRROR_HASH:=f1605e639b8f7fdd57e8aeeea7ed40c9d33c4715a3edede81899a0a839d3b047
+PKG_SOURCE_VERSION:=b36042ca486f0dbe3a5cc7b4adc07a9c3de30346
+PKG_MIRROR_HASH:=151ab1444f1b30f15fbee6bef3a3fa2e41be1ad2324567c53edf8b66061059ee
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -57,7 +57,7 @@ Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,\
   +LUA_ECO_MBEDTLS:libmbedtls +LUA_ECO_MBEDTLS:zlib +lua-eco-socket)
 Package/lua-eco-ubus=$(call Package/lua-eco/Module,ubus,+libubus)
 Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
-Package/lua-eco-http=$(call Package/lua-eco/Module,http/https,+lua-eco-dns +lua-eco-ssl)
+Package/lua-eco-http=$(call Package/lua-eco/Module,http/https,+lua-eco-dns +lua-eco-ssl +lua-eco-log)
 Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco-dns +lua-mosquitto)
 Package/lua-eco-websocket=$(call Package/lua-eco/Module,websocket,+lua-eco-http +lua-eco-base64 +lua-eco-sha1)
 
@@ -152,7 +152,7 @@ endef
 
 define Package/lua-eco-http/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
-	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/http.lua $(1)/usr/lib/lua/eco
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/{url,http}.lua $(1)/usr/lib/lua/eco
 endef
 
 define Package/lua-eco-mqtt/install
