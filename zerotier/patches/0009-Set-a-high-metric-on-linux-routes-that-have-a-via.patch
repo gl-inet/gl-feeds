@@ -1,0 +1,25 @@
+Index: ZeroTierOne-1.8.4/osdep/LinuxNetLink.cpp
+===================================================================
+--- ZeroTierOne-1.8.4.orig/osdep/LinuxNetLink.cpp
++++ ZeroTierOne-1.8.4/osdep/LinuxNetLink.cpp
+@@ -27,6 +27,7 @@
+ #ifndef IFNAMSIZ
+ #define IFNAMSIZ 16
+ #endif
++const int ZT_RTE_METRIC = 5000;
+ 
+ namespace ZeroTier {
+ 
+@@ -733,6 +734,12 @@ void LinuxNetLink::addRoute(const InetAd
+ 	rtl += rtap->rta_len;
+ 
+ 	if(via) {
++		rtap = (struct rtattr*)(((char*)rtap) + rtap->rta_len);
++		rtap->rta_type = RTA_PRIORITY;
++		rtap->rta_len = RTA_LENGTH(sizeof(ZT_RTE_METRIC));
++		memcpy(RTA_DATA(rtap), &ZT_RTE_METRIC, sizeof(ZT_RTE_METRIC));
++		rtl += rtap->rta_len;		
++
+ 		rtap = (struct rtattr *)(((char*)rtap)+rtap->rta_len);
+ 		rtap->rta_type = RTA_GATEWAY;
+ 		if(via.isV4()) {
