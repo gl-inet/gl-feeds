@@ -5,8 +5,8 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=b36042ca486f0dbe3a5cc7b4adc07a9c3de30346
-PKG_MIRROR_HASH:=151ab1444f1b30f15fbee6bef3a3fa2e41be1ad2324567c53edf8b66061059ee
+PKG_SOURCE_VERSION:=aed905b5a9233e45160a4b890c1e4b6399e7db11
+PKG_MIRROR_HASH:=e8813143ce4451cd97c1b9827caa10d02c11dee6500e542d43db2b8541f31bc7
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -30,10 +30,8 @@ define Package/lua-eco
 endef
 
 define Package/lua-eco/description
-  Lua-eco is a Lua interpreter with a built-in libev event loop. It makes all Lua code
-  running in Lua coroutines so code that does I/O can be suspended until data is ready.
-  This allows you write code as if you're using blocking I/O, while still allowing code
-  in other coroutines to run when you'd otherwise wait for I/O. It's kind of like Goroutines.
+  Lua-eco is a Lua interpreter with a built-in event loop for scheduling
+  lightweight coroutines automatically, enabling efficient concurrency in Lua.
 endef
 
 define Package/lua-eco/Module
@@ -60,6 +58,7 @@ Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-http=$(call Package/lua-eco/Module,http/https,+lua-eco-dns +lua-eco-ssl +lua-eco-log)
 Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco-dns +lua-mosquitto)
 Package/lua-eco-websocket=$(call Package/lua-eco/Module,websocket,+lua-eco-http +lua-eco-base64 +lua-eco-sha1)
+Package/lua-eco-network=$(call Package/lua-eco/Module,network)
 
 define Package/lua-eco-ssl/config
 	choice
@@ -170,6 +169,11 @@ define Package/lua-eco-termios/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/termios.so $(1)/usr/lib/lua/eco
 endef
 
+define Package/lua-eco-network/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/network.so $(1)/usr/lib/lua/eco
+endef
+
 $(eval $(call BuildPackage,lua-eco))
 $(eval $(call BuildPackage,lua-eco-log))
 $(eval $(call BuildPackage,lua-eco-sys))
@@ -184,3 +188,4 @@ $(eval $(call BuildPackage,lua-eco-http))
 $(eval $(call BuildPackage,lua-eco-mqtt))
 $(eval $(call BuildPackage,lua-eco-websocket))
 $(eval $(call BuildPackage,lua-eco-termios))
+$(eval $(call BuildPackage,lua-eco-network))
