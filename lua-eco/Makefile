@@ -5,8 +5,8 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=aed905b5a9233e45160a4b890c1e4b6399e7db11
-PKG_MIRROR_HASH:=e8813143ce4451cd97c1b9827caa10d02c11dee6500e542d43db2b8541f31bc7
+PKG_SOURCE_VERSION:=68708f08422398b079095b19c651874c2db0c0ee
+PKG_MIRROR_HASH:=b31da934d107fd421fb795bc6bfecc243a038091d702b9966e4450ca481fad2b
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -63,7 +63,7 @@ Package/lua-eco-network=$(call Package/lua-eco/Module,network)
 define Package/lua-eco-ssl/config
 	choice
 		prompt "SSL Library"
-		default LUA_ECO_WOLFSSL
+		default LUA_ECO_MBEDTLS
 
 		config LUA_ECO_OPENSSL
 			bool "OpenSSL"
