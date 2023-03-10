@@ -20,7 +20,7 @@ define KernelPackage/usb-serial-ch343
   TITLE:=usb-serial-ch343 linux serial driver
   DEPENDS:=+kmod-usb-core
   FILES:=$(PKG_BUILD_DIR)/ch343.ko
-  AUTOLOAD:=$(call AutoProbe,10,ch343,1)
+  AUTOLOAD:=$(call AutoLoad,10,ch343,1)
   $(call AddDepends/usb-serial)
 endef
 
