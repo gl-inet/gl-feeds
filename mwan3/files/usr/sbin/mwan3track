@@ -234,6 +234,7 @@ main() {
 		done
 
 		local proto_flag=0
+		local dual_enable=$(uci -q get glmodem.${INTERFACE}_dual.enable)
 		[ "$(uci -q get network.$INTERFACE.proto)" = "3g" -a -n "$(echo $DEVICE | grep modem | grep 3g)" ] && proto_flag=1
 		[ "$(uci -q get network.$INTERFACE.proto)" != "3g" -a -n "$(echo $INTERFACE | grep modem)" ] && proto_flag=1
 
@@ -245,6 +246,10 @@ main() {
 				[ ${keep_failure_interval} -eq 1 ] && {
 					sleep_time=$failure_interval
 				}
+				if [ "$dual_enable" = "1" -a $proto_flag -eq 1 -a "$(cat /var/run/dual_sim/$INTERFACE/env_send 2>/dev/null)" != "1" ]; then
+					echo 1 > /var/run/dual_sim/$INTERFACE/env_send
+					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
+				fi
 			else
 				sleep_time=$failure_interval
 			fi
@@ -253,15 +258,9 @@ main() {
 				echo "offline" > /var/run/mwan3track/$1/STATUS
 				score=0
 				env -i ACTION=ifdown INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
-				if [ ! -f "/var/run/switch-sim.lock" -a "$(uci -q get glmodem.${INTERFACE}_dual.enable)" = "1" -a $proto_flag -eq 1 ]; then
-					modem_bus="modem"
-					if [ -n "$(find /dev -name  "mhi*"|head -n 1)" ]; then
-						modem_bus="$(cat /proc/gl-hw-info/build-in-modem 2>/dev/null)"
-					else
-						bus=$(echo $INTERFACE | sed 's/modem_//g' | sed 's/_/-/' | sed 's/_/./')
-						[ -n "$(ls /tmp/usbnode/* | grep $bus)" ] && modem_bus="$bus"
-					fi
-					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 modem_bus=$modem_bus /sbin/hotplug-call iface
+				if [ "$dual_enable" = "1" -a $proto_flag -eq 1 -a "$(cat /var/run/dual_sim/$INTERFACE/env_send 2>/dev/null)" != "1" ]; then
+					echo 1 > /var/run/dual_sim/$INTERFACE/env_send
+					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
 				fi
 			fi
 		else
