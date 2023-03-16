@@ -59,6 +59,11 @@ endef
 
 Package/tailscaled/description:=$(Package/tailscale/description)
 
+define Package/tailscaled/conffiles
+/etc/config/tailscale
+/etc/tailscale/tailscaled.state
+endef
+
 define Package/tailscale/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) $(GO_PKG_BUILD_BIN_DIR)/tailscale $(1)/usr/sbin
