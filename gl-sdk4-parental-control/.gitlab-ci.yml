@@ -1,0 +1,23 @@
+# use the official gcc image, based on debian
+# can use verions as well, like gcc:5.2
+# see https://hub.docker.com/_/gcc/
+image: gcc
+
+stages:
+  - style
+  - quality
+
+check_style:
+  stage: style
+  tags:
+    - gl_router_runner
+  script:
+    - cd /home/luo/runner-script/sdk4_script;./sdk4_style_ci "$CI_PROJECT_NAME" "$CI_PROJECT_DIR" "$CI_COMMIT_SHORT_SHA" "$CI_COMMIT_MESSAGE" "$CI_COMMIT_REF_NAME" "$GITLAB_USER_NAME"
+
+check_quality:
+  stage: quality
+  tags:
+    - gl_router_runner
+  script:
+    - cd /home/luo/runner-script/sdk4_script;./sdk4_code_quality "$CI_PROJECT_NAME" "$CI_PROJECT_DIR" "$CI_COMMIT_SHORT_SHA" "$CI_COMMIT_MESSAGE" "$CI_COMMIT_REF_NAME" "$GITLAB_USER_NAME"
+
