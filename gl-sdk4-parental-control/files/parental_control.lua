@@ -7,6 +7,7 @@ local M = {}
 
 local uci = require "uci"
 local utils = require "oui.utils"
+local fs = require "oui.fs"
 
 local function apply()
     os.execute("/etc/init.d/parental_control restart")
@@ -159,6 +160,7 @@ M.add_group = function(params)
         end
     end
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {id=sid}
@@ -195,6 +197,7 @@ M.remove_group = function(params)
         end
     end)
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
@@ -297,6 +300,7 @@ M.set_group = function(params)
     end
 
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
@@ -348,6 +352,7 @@ M.add_rule = function(params)
     end
     c:set("parental_control", sid, "action", "POLICY_DROP")
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {id=sid}
@@ -401,6 +406,7 @@ M.remove_rule = function(params)
         c:delete("parental_control", params.id)
     end
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
@@ -450,6 +456,7 @@ M.set_rule = function(params)
         c:delete("parental_control", sid, "blacklist")
     end
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
@@ -593,6 +600,7 @@ M.set_config = function(params)
     c:set("parental_control", "global", "drop_anonymous", params.drop_anonymous and "1" or "0")
     c:set("parental_control", "global", "auto_update", params.auto_update and "1" or "0")
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
@@ -639,6 +647,7 @@ M.set_brief = function(params)
         c:delete("parental_control", sid, "brief_rule")
     end
     c:commit("parental_control")
+    fs.sync()
     apply()
 
     return {}
