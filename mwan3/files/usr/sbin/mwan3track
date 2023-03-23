@@ -246,9 +246,10 @@ main() {
 				[ ${keep_failure_interval} -eq 1 ] && {
 					sleep_time=$failure_interval
 				}
-				if [ "$dual_enable" = "1" -a $proto_flag -eq 1 -a "$(cat /var/run/dual_sim/$INTERFACE/env_send 2>/dev/null)" != "1" ]; then
+				if [ "$dual_enable" = "1" -a $proto_flag -eq 1 -a "$(cat /var/run/dual_sim/$INTERFACE/env_send 2>/dev/null)" != "1" -a -n "$(ip link show $DEVICE | grep 'state UP')" ]; then
 					echo 1 > /var/run/dual_sim/$INTERFACE/env_send
-					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
+					$LOG notice "mwan3 dual_sim Detect score zero fail..."
+					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface &
 				fi
 			else
 				sleep_time=$failure_interval
@@ -260,7 +261,8 @@ main() {
 				env -i ACTION=ifdown INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
 				if [ "$dual_enable" = "1" -a $proto_flag -eq 1 -a "$(cat /var/run/dual_sim/$INTERFACE/env_send 2>/dev/null)" != "1" ]; then
 					echo 1 > /var/run/dual_sim/$INTERFACE/env_send
-					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface
+					$LOG notice "mwan3 dual_sim Detect score eq up and ping down fail..."
+					env -i ACTION=switch INTERFACE=$1 DEVICE=$2 /sbin/hotplug-call iface &
 				fi
 			fi
 		else
