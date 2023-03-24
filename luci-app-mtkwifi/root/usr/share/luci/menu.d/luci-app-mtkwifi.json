@@ -1,0 +1,14 @@
+{
+	"admin/network/mtkwifi": {
+		"title": "MTk WiFi",
+		"action": {
+			"type": "cbi",
+			"path": "network/mtkwifi",
+			"post": { "cbi.submit": true }
+		},
+		"depends": {
+			"acl": [ "luci-app-mtkwifi" ],
+			"uci": { "wireless": true }
+		}
+	}
+}
