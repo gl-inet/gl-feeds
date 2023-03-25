@@ -531,6 +531,9 @@ static int pc_handle_shortcut_fe(struct sk_buff *skb)
     struct rtable *rt;
     int err;
 
+    if (ipv4_is_loopback(iph->daddr))
+        return NET_RX_SUCCESS;
+
     rcu_read_lock();
     fast_recv = rcu_dereference(athrs_fast_nat_recv);
     rcu_read_unlock();
