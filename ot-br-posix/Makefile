@@ -149,6 +149,9 @@ define Package/ot-br-posix/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) ./files/etc/uci-defaults/* $(1)/etc/uci-defaults
 
+	$(INSTALL_DIR) $(1)/usr/lib/oui-httpd/rpc
+	$(INSTALL_DATA) files/usr/lib/oui-httpd/rpc/otbr.lua $(1)/usr/lib/oui-httpd/rpc/otbr
+	
 ifdef CONFIG_OTBR_WEB
 	# Nest Thread Web
 	$(CP) files/etc/init.d/otbr-web $(1)/etc/init.d
