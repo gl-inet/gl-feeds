@@ -2,7 +2,15 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
 ===================================================================
 --- ot-br-posix-2022-11-08-r3.orig/src/agent/main.cpp
 +++ ot-br-posix-2022-11-08-r3/src/agent/main.cpp
-@@ -71,6 +71,7 @@ enum
+@@ -42,6 +42,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/stat.h>
+ #include <unistd.h>
+ 
+ #include <openthread/logging.h>
+@@ -71,6 +72,7 @@ enum
      OTBR_OPT_VERSION                 = 'V',
      OTBR_OPT_SHORTMAX                = 128,
      OTBR_OPT_RADIO_VERSION,
@@ -10,7 +18,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      OTBR_OPT_AUTO_ATTACH,
  };
  
-@@ -86,6 +87,7 @@ static const struct option kOptions[] =
+@@ -86,6 +88,7 @@ static const struct option kOptions[] =
      {"verbose", no_argument, nullptr, OTBR_OPT_VERBOSE},
      {"version", no_argument, nullptr, OTBR_OPT_VERSION},
      {"radio-version", no_argument, nullptr, OTBR_OPT_RADIO_VERSION},
@@ -18,7 +26,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      {"auto-attach", optional_argument, nullptr, OTBR_OPT_AUTO_ATTACH},
      {0, 0, 0, 0}};
  
-@@ -180,6 +182,58 @@ static void PrintRadioVersionAndExit(con
+@@ -180,6 +183,58 @@ static void PrintRadioVersionAndExit(con
      exit(EXIT_SUCCESS);
  }
  
@@ -77,7 +85,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
  static int realmain(int argc, char *argv[])
  {
      otbrLogLevel              logLevel = GetDefaultLogLevel();
-@@ -189,10 +243,13 @@ static int realmain(int argc, char *argv
+@@ -189,10 +244,13 @@ static int realmain(int argc, char *argv
      bool                      verbose           = false;
      bool                      printRadioVersion = false;
      bool                      enableAutoAttach  = true;
@@ -91,7 +99,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      std::set_new_handler(OnAllocateFailed);
  
      while ((opt = getopt_long(argc, argv, "B:d:hI:Vv", kOptions, nullptr)) != -1)
-@@ -244,6 +301,10 @@ static int realmain(int argc, char *argv
+@@ -244,6 +302,10 @@ static int realmain(int argc, char *argv
              }
              break;
  
@@ -102,7 +110,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
          default:
              PrintHelp(argv[0]);
              ExitNow(ret = EXIT_FAILURE);
-@@ -251,6 +312,8 @@ static int realmain(int argc, char *argv
+@@ -251,6 +313,8 @@ static int realmain(int argc, char *argv
          }
      }
  
@@ -111,7 +119,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      otbrLogInit(kSyslogIdent, logLevel, verbose);
      otbrLogNotice("Running %s", OTBR_PACKAGE_VERSION);
      otbrLogNotice("Thread version: %s", otbr::Ncp::ControllerOpenThread::GetThreadVersion());
-@@ -273,6 +336,12 @@ static int realmain(int argc, char *argv
+@@ -273,6 +337,12 @@ static int realmain(int argc, char *argv
          assert(false);
      }
  
