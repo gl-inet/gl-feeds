@@ -294,6 +294,11 @@ local function setup_vif(device, name, ifs, need_set_ssid)
             iwpriv_set(ifname, 'NoForwarding', cfg.isolate and 1 or 0)
         end
 
+        cfg.igmp_snooping = cfg.isolate == false and cfg.igmp_snooping or false
+        if cfg.igmp_snooping ~= old.igmp_snooping then
+            iwpriv_set(ifname, 'IgmpSnEnable', cfg.igmp_snooping and 1 or 0)
+        end
+
         cfg.hidden = cfg.hidden or false
         if cfg.hidden ~= old.hidden then
             iwpriv_set(ifname, 'HideSSID', cfg.hidden and 1 or 0)
