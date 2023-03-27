@@ -1,0 +1,23 @@
+Index: ot-br-posix-2022-11-08-r2/third_party/openthread/repo/src/core/border_router/routing_manager.cpp
+===================================================================
+--- ot-br-posix-2022-11-08-r2.orig/third_party/openthread/repo/src/core/border_router/routing_manager.cpp
++++ ot-br-posix-2022-11-08-r2/third_party/openthread/repo/src/core/border_router/routing_manager.cpp
+@@ -1721,6 +1721,18 @@ void RoutingManager::DiscoveredPrefixTab
+             continue;
+         }
+ 
++        // If the `router` emitting RA has an address belonging to
++        // infra interface, it indicates that the RAs are from
++        // same device. In this case we skip performing NS probes.
++        // This addresses situation where platform may not be
++        // be able to receive and pass the NA message response
++        // from device itself.
++
++        if (Get<RoutingManager>().mInfraIf.HasAddress(router.mAddress))
++        {
++            continue;
++        }
++
+         if (router.mTimeout <= now)
+         {
+             router.mNsProbeCount++;

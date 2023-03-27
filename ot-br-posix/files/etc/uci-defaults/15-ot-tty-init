@@ -1,0 +1,50 @@
+#!/bin/sh
+
+get_model() {
+	local board boardname
+
+	. /lib/functions.sh
+	
+	board=$(board_name)
+	boardname="${board#*-}"
+
+	[ -n "$boardname" ] || {
+		loger "Unsupported model (model not in support-list)"
+		echo ""
+		return
+	}
+	
+	echo "$boardname"
+}
+
+model=$(get_model)
+case "$model" in
+    "s200-nor-nand")
+        ttyCH343USB=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$ttyCH343USB"
+        uci set otbr.otbr.uart_baudrate="1000000"
+        uci set otbr.otbr.uart_fc="&uart-flow-control"
+        uci set otbr.otbr.gpio_rst="2"
+        uci set otbr.otbr.gpio_dfu="17"
+        ;;
+    "b1300th")
+        ttyCH343USB=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$ttyCH343USB"
+        uci set otbr.otbr.uart_baudrate="1000000"
+        uci set otbr.otbr.uart_fc="&uart-flow-control"
+        uci set otbr.otbr.gpio_rst="0"
+        uci set otbr.otbr.gpio_dfu="1"
+        ;;
+    *)
+        tty=$(ls /dev/ttyACM* 2>/dev/null)
+        [ -z "$tty" ] && tty=$(ls /dev/ttyUSB0 2>/dev/null)
+        [ -n "$tty" ] && {
+            uci set otbr.otbr.uart_tty="$tty"
+            uci set otbr.otbr.uart_baudrate="1000000"
+        }
+        ;;
+esac
+
+uci commit otbr
+
+exit 0

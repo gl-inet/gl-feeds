@@ -1,0 +1,126 @@
+Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
+===================================================================
+--- ot-br-posix-2022-11-08-r3.orig/src/agent/main.cpp
++++ ot-br-posix-2022-11-08-r3/src/agent/main.cpp
+@@ -71,6 +71,7 @@ enum
+     OTBR_OPT_VERSION                 = 'V',
+     OTBR_OPT_SHORTMAX                = 128,
+     OTBR_OPT_RADIO_VERSION,
++    OTBR_OPT_RADIO_EUI64,
+     OTBR_OPT_AUTO_ATTACH,
+ };
+ 
+@@ -86,6 +87,7 @@ static const struct option kOptions[] =
+     {"verbose", no_argument, nullptr, OTBR_OPT_VERBOSE},
+     {"version", no_argument, nullptr, OTBR_OPT_VERSION},
+     {"radio-version", no_argument, nullptr, OTBR_OPT_RADIO_VERSION},
++    {"radio-eui64", no_argument, nullptr, OTBR_OPT_RADIO_EUI64},
+     {"auto-attach", optional_argument, nullptr, OTBR_OPT_AUTO_ATTACH},
+     {0, 0, 0, 0}};
+ 
+@@ -180,6 +182,58 @@ static void PrintRadioVersionAndExit(con
+     exit(EXIT_SUCCESS);
+ }
+ 
++static void PrintRadioEUI64AndExit(const std::vector<const char *> &aRadioUrls)
++{
++    otbr::Ncp::ControllerOpenThread ncpOpenThread{/* aInterfaceName */ "", aRadioUrls, /* aBackboneInterfaceName */ "",
++                                                  /* aDryRun */ true, /* aEnableAutoAttach */ false};
++
++    ncpOpenThread.Init();
++
++    char sEUI64[32] = {0};
++    otExtAddress eui64Address;
++    otLinkGetFactoryAssignedIeeeEui64(ncpOpenThread.GetInstance(), &eui64Address);
++    sprintf(sEUI64, "%02x%02x%02x%02x%02x%02x%02x%02x", eui64Address.m8[0], eui64Address.m8[1], eui64Address.m8[2],
++        eui64Address.m8[3], eui64Address.m8[4], eui64Address.m8[5], eui64Address.m8[6], eui64Address.m8[7]);
++    printf("%s\n", sEUI64);
++
++    ncpOpenThread.Deinit();
++
++    exit(EXIT_SUCCESS);
++}
++
++static void signal_critical(int sig, siginfo_t *info, void *ucontext)
++{
++    (void)info;
++    (void)ucontext;
++    fprintf(stderr, " *** FATAL ERROR: Caught signal %d (%s):\n", sig, strsignal(sig));
++    uloop_end();
++    exit(EXIT_FAILURE);
++}
++
++static void HandleSignalRegister(void)
++{
++    struct sigaction sigact;
++    sigact.sa_sigaction = &signal_critical;
++    sigact.sa_flags     = SA_RESTART | SA_SIGINFO | SA_NOCLDWAIT;
++
++    sigaction(SIGSEGV, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGBUS, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGILL, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGABRT, &sigact, (struct sigaction *)NULL);
++}
++
++static void HandleRadioReset(void)
++{
++    char radioResetCmd[32] = "/usr/bin/gl-ot-rcp-reset";
++
++    struct stat st;
++    if (stat(radioResetCmd, &st) == 0)
++    {
++        system("/usr/bin/gl-ot-rcp-reset");
++        printf("RCP reset done.\n");
++    }
++}
++
+ static int realmain(int argc, char *argv[])
+ {
+     otbrLogLevel              logLevel = GetDefaultLogLevel();
+@@ -189,10 +243,13 @@ static int realmain(int argc, char *argv
+     bool                      verbose           = false;
+     bool                      printRadioVersion = false;
+     bool                      enableAutoAttach  = true;
++    bool                      printRadioEUI64   = false;
+     std::vector<const char *> radioUrls;
+     std::vector<const char *> backboneInterfaceNames;
+     long                      parseResult;
+ 
++    HandleSignalRegister();
++
+     std::set_new_handler(OnAllocateFailed);
+ 
+     while ((opt = getopt_long(argc, argv, "B:d:hI:Vv", kOptions, nullptr)) != -1)
+@@ -244,6 +301,10 @@ static int realmain(int argc, char *argv
+             }
+             break;
+ 
++        case OTBR_OPT_RADIO_EUI64:
++            printRadioEUI64 = true;
++            break;
++
+         default:
+             PrintHelp(argv[0]);
+             ExitNow(ret = EXIT_FAILURE);
+@@ -251,6 +312,8 @@ static int realmain(int argc, char *argv
+         }
+     }
+ 
++    HandleRadioReset();
++
+     otbrLogInit(kSyslogIdent, logLevel, verbose);
+     otbrLogNotice("Running %s", OTBR_PACKAGE_VERSION);
+     otbrLogNotice("Thread version: %s", otbr::Ncp::ControllerOpenThread::GetThreadVersion());
+@@ -273,6 +336,12 @@ static int realmain(int argc, char *argv
+         assert(false);
+     }
+ 
++    if (printRadioEUI64)
++    {
++        PrintRadioEUI64AndExit(radioUrls);
++        assert(false);
++    }
++
+     {
+         otbr::Application app(interfaceName, backboneInterfaceNames, radioUrls, enableAutoAttach);
+ 
