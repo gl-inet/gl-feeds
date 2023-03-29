@@ -145,11 +145,47 @@ static void make_device_mac(struct device_node *np)
 #endif
 }
 
+static void make_device_cert(struct device_node *np)
+{
+#ifdef CONFIG_MTD
+    size_t key_len;
+    char *p;
+
+    if (parse_mtd_value(np, "device_cert", gl_hw_info.device_cert, CERT_LEN))
+        return;
+
+    if (strlen(gl_hw_info.device_cert) == 0)
+        return;
+
+    p = strstr(gl_hw_info.device_cert, "-----BEGIN PRIVATE KEY-----");
+    if (!p)
+        return;
+
+    key_len = strlen(p);
+
+    if (p[key_len - 1] == '\n')
+        p[key_len - 1] = '\0';
+
+    memmove(p + 1, p, key_len);
+
+    if (p[-1] == '\n')
+        p[-1] = '\0';
+
+    *p++ = '\0';
+
+    gl_hw_info.device_key = p;
+
+    create_proc_node("device_cert", gl_hw_info.device_cert);
+    create_proc_node("device_key", gl_hw_info.device_key);
+#endif
+}
+
 void make_factory_data(struct device_node *np)
 {
     make_device_mac(np);
     make_device_ddns(np);
     make_device_sn(np);
     make_device_sn_bak(np);
+    make_device_cert(np);
     make_device_country_code(np);
 }

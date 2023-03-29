@@ -14,6 +14,7 @@
 #define SN_LEN 16
 #define DDNS_LEN 7
 #define COUNTRY_LEN 2
+#define CERT_LEN 4096
 
 struct glinet_hw_info {
     struct proc_dir_entry *parent;
@@ -21,6 +22,8 @@ struct glinet_hw_info {
     u8 device_ddns[DDNS_LEN + 1];
     u8 device_sn[SN_LEN + 1];
     u8 device_sn_bak[SN_LEN + 1];
+    u8 device_cert[CERT_LEN];
+    u8 *device_key;
 };
 
 extern struct glinet_hw_info gl_hw_info;

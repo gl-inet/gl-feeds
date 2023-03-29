@@ -30,6 +30,7 @@
                            device_sn_bak = <&art 0x20>;
                            device_sn = <&art 0x30>;
                            country_code = <&art 0x88>;
+                           device_cert = <&art 0x1000>;
                    };
            };
    ```
