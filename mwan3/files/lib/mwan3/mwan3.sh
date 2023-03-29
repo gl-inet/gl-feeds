@@ -1099,6 +1099,12 @@ mwan3_report_iface_status()
 		[ -n "$($IP rule | awk '$1 == "'$(($id+2000)):'"')" ] || \
 		[ -n "$($IPT -S mwan3_iface_in_$1 2> /dev/null)" ] || \
 		[ -n "$($IP route list table $id default dev $device 2> /dev/null)" ]; then
+		[ -n "$($IPT -S mwan3_iface_in_$1 2> /dev/null)" ] || {
+			local action=`ifstatus $1 |jsonfilter -e @.up`
+			if [ "$action" == "true" ];then
+				env -i ACTION="ifup" INTERFACE="$1" DEVICE="$device" sh /etc/hotplug.d/iface/15-mwan3 &
+			fi
+		}
 		result="error"
 	elif [ "$enabled" = "1" ]; then
 		result="offline"
