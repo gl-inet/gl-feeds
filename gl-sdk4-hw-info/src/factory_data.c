@@ -13,6 +13,8 @@
 #define TO_SECTOR(x) (x>>9)
 #define TO_OFFSET(x) (x & (SECT_SIZE - 1))
 
+#define	MIN(a, b) (((a) < (b)) ? (a) : (b))
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 static unsigned char *partition_read_block(struct block_device *bdev, sector_t from, Sector *sector)
 {
@@ -21,31 +23,36 @@ static unsigned char *partition_read_block(struct block_device *bdev, sector_t f
     return read_dev_sector(bdev, from, sector);
 }
 
-static int partition_read(const char *part, u32 offset, void * dest,  int len)
+static int partition_read(const char *part, u32 offset, void *dest,  int len)
 {
     const fmode_t mode = FMODE_READ;
     struct block_device *bdev;
     unsigned char *buf;
     Sector sector;
     int ret = 0;
-
-    if(len + TO_OFFSET(offset) > SECT_SIZE)
-        return -1;
+    size_t n;
 
     bdev = blkdev_get_by_path(part, mode, NULL);
     if(IS_ERR(bdev))
         return -1;
 
-    buf = partition_read_block(bdev, TO_SECTOR(offset), &sector);
-    if(!buf) {
-        ret = -1;
-        goto out;
+    while (len > 0) {
+        buf = partition_read_block(bdev, TO_SECTOR(offset), &sector);
+        if(!buf) {
+            ret = -1;
+            break;
+        }
+
+        n = MIN(len, SECT_SIZE - TO_OFFSET(offset));
+
+        memcpy(dest, buf + TO_OFFSET(offset), n);
+        put_dev_sector(sector);
+
+        offset += n;
+        dest += n;
+        len -= n;
     }
 
-    memcpy(dest, buf + TO_OFFSET(offset), len);
-    put_dev_sector(sector);
-
-out:
     blkdev_put(bdev, mode);
     return ret;
 }
