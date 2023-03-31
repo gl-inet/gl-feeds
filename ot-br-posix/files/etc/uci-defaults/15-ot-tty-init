@@ -17,19 +17,20 @@ get_model() {
 	echo "$boardname"
 }
 
+tty=""
 model=$(get_model)
 case "$model" in
     "s200-nor-nand")
-        ttyCH343USB=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
-        uci set otbr.otbr.uart_tty="$ttyCH343USB"
+        tty=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$tty"
         uci set otbr.otbr.uart_baudrate="1000000"
         uci set otbr.otbr.uart_fc="&uart-flow-control"
         uci set otbr.otbr.gpio_rst="2"
         uci set otbr.otbr.gpio_dfu="17"
         ;;
     "b1300th")
-        ttyCH343USB=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
-        uci set otbr.otbr.uart_tty="$ttyCH343USB"
+        tty=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$tty"
         uci set otbr.otbr.uart_baudrate="1000000"
         uci set otbr.otbr.uart_fc="&uart-flow-control"
         uci set otbr.otbr.gpio_rst="0"
@@ -46,5 +47,7 @@ case "$model" in
 esac
 
 uci commit otbr
+
+[ -f /usr/etc/cpcd.conf ] && sed -i "/uart_device_file:/c\uart_device_file: $tty" /usr/etc/cpcd.conf
 
 exit 0
