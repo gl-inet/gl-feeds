@@ -634,12 +634,17 @@ M.set_brief = function(params)
     if params.enable then
         if params.manual_stop then
             c:set("parental_control", sid, "brief_time", "0")
-        else
+        elseif params.time ~= nil and type(params.time) == "string" then
             if(#params.time < 8) then
                 c:set("parental_control", sid, "brief_time", params.time  .. ":00")
             else
                 c:set("parental_control", sid, "brief_time", params.time)
             end
+        else
+            return {
+                err_code = -1,
+                err_msg = "parameter missing"
+            }
         end
         c:set("parental_control", sid, "brief_rule", params.rule_id)
     else
