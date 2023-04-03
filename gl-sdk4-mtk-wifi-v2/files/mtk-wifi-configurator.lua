@@ -508,7 +508,10 @@ local setup_tmr = uloop.timer(function()
                 ifup('ra0')
             end
 
+            local ifname_guest = ifname:gsub('%d', '1')
+
             ifup(ifname)
+            ifup(ifname_guest)
 
             if not device_configs[device] then
                 device_configs[device] = {}
@@ -573,6 +576,7 @@ local setup_tmr = uloop.timer(function()
 
             if WirelessMode ~= old.WirelessMode then
                 iwpriv_set(ifname, 'WirelessMode', WirelessMode)
+                iwpriv_set(ifname_guest, 'WirelessMode', WirelessMode)
                 old.WirelessMode = WirelessMode
             end
 
