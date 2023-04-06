@@ -106,6 +106,12 @@ local function down_vif(ifname)
         ifdown(ifname)
         os.execute('ip link set dev ' .. ifname .. ' nomaster')
         ubus.call('service', 'delete', { name = ifname .. '-8021xd' })
+
+        if ifname:match('apcli') then
+            os.execute('ip link set dev ' .. ifname .. ' address 00:00:00:00:00:00')
+            ifup(ifname)
+            ifdown(ifname)
+        end
     end
 end
 
