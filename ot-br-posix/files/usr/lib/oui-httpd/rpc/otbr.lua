@@ -68,34 +68,38 @@ function M.export_thread_network()
     }
 end
 
-function M.import_thread_network()
-    local f
-    local passphrase
-    local dataset
+function M.import_thread_network(params)
+    local passphrase = params.Passphrase
+    local dataset = params.ActiveDataset
     local importData
     local err_code = 0
 
-    f = io.open('/tmp/thread_network.conf', 'r')
-    if f ~= nil then
-        importData = f:read()
-        io.close(f)
-    
-        passphrase = string.sub(importData, 1, string.find(importData, '|') - 1)
-        dataset = string.sub(importData, string.find(importData, '|') + 1, -1)
+    if dataset == nil then
+        local f
+        f = io.open('/tmp/thread_network.conf', 'r')
+        if f ~= nil then
+            importData = f:read()
+            io.close(f)
         
-        err_code = otUtils.SetDatasetActive(dataset)
-        if (err_code == 0) then
-            os.execute('sleep 2')
-            local networkname = otUtils.GetNetworkName()
-            local channel = otUtils.GetChannel()
-            otUci.Set('otbr', "otbr", "enable", "1")
-            otUci.Set('otbr', "otbr", "networkname", networkname)
-            otUci.Set('otbr', "otbr", "channel", channel)
-            otUci.Set('otbr', "otbr", "passphrase", passphrase)
-            otUtils.ThreadStart()
+            if string.find(importData, '|') ~= nil then
+                passphrase = string.sub(importData, 1, string.find(importData, '|') - 1)
+                dataset = string.sub(importData, string.find(importData, '|') + 1, -1)
+            else
+                dataset = importData
+            end
         end
-    else
-        err_code = -1
+    end
+
+    err_code = otUtils.SetDatasetActive(dataset)
+    if (err_code == 0) then
+        os.execute('sleep 2')
+        local networkname = otUtils.GetNetworkName()
+        local channel = otUtils.GetChannel()
+        otUci.Set('otbr', "otbr", "enable", "1")
+        otUci.Set('otbr', "otbr", "networkname", networkname)
+        otUci.Set('otbr', "otbr", "channel", channel)
+        otUci.Set('otbr', "otbr", "passphrase", passphrase)
+        otUtils.ThreadStart()
     end
 
     return {err_code = err_code}
