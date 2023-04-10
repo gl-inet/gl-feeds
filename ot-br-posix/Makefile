@@ -151,6 +151,9 @@ define Package/ot-br-posix/install
 
 	$(INSTALL_DIR) $(1)/usr/lib/oui-httpd/rpc
 	$(INSTALL_DATA) files/usr/lib/oui-httpd/rpc/otbr.lua $(1)/usr/lib/oui-httpd/rpc/otbr
+
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
+	$(INSTALL_BIN) files/etc/hotplug.d/net/30-wpan $(1)/etc/hotplug.d/net
 	
 ifdef CONFIG_OTBR_WEB
 	# Nest Thread Web

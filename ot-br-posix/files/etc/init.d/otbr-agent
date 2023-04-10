@@ -18,8 +18,6 @@ start_uart_interface_daemon() {
     config_get gpio_rst otbr gpio_rst
     config_get gpio_dfu otbr gpio_dfu
     config_get ifname bbr ifname
-
-    sysctl -w net.ipv6.conf.$ifname.accept_ra=2
     
     # Check if need to upgrade Thread RCP before startup
     local filepath
@@ -50,8 +48,6 @@ start_spi_interface_daemon() {
     config_get gpio_rst otbr gpio_rst
     config_get gpio_wake otbr gpio_wake
     config_get ifname bbr ifname
-
-    sysctl -w net.ipv6.conf.$ifname.accept_ra=2
 
     [ ! -e "/sys/class/gpio/gpio$gpio_sel" ] && {
         echo $gpio_sel >/sys/class/gpio/export

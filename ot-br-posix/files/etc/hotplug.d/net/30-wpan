@@ -1,0 +1,7 @@
+#!/bin/sh
+
+[ add = "$ACTION" ] && {
+    [ "$INTERFACE" = "$(uci -q get otbr.bbr.ifname)" ] && {
+        ubus send otbr-agent '{"id":9}'
+    }
+}
