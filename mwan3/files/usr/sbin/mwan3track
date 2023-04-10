@@ -3,7 +3,6 @@
 . /lib/functions.sh
 . /lib/mwan3/common.sh
 . /usr/share/libubox/jshn.sh
-. /lib/mwan3/mwan3.sh
 
 LOG="logger -t $(basename "$0")[$$] -p"
 INTERFACE=""
@@ -299,17 +298,6 @@ main() {
 		host_up_count=0
 		sleep "${sleep_time}" &
 		wait
-
-		mwan3_get_iface_id id "$1"
-		config_get family "$1" family ipv4
-		[ "$family" = "ipv4" ] && IPT="IPT4"
-		[ "$family" = "ipv6" ] && IPT="IPT6"
-		[ -n "$($IPT -S mwan3_iface_in_$1 2> /dev/null)" ] || {
-			local action=`ifstatus $1 |jsonfilter -e @.up 2>/dev/null`
-			if [ "$action" == "true" ];then
-				env -i ACTION="ifup" INTERFACE="$1" DEVICE="$2" sh /etc/hotplug.d/iface/15-mwan3 &
-			fi
-		}
 
 		if [ "${IFDOWN_EVENT}" -eq 1 ]; then
 			echo "offline" > /var/run/mwan3track/$1/STATUS
