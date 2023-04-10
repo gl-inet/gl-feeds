@@ -531,6 +531,10 @@ static int pc_handle_shortcut_fe(struct sk_buff *skb)
     struct rtable *rt;
     int err;
 
+    if (iph->version != 4)
+        return NET_RX_SUCCESS;
+
+
     if (ipv4_is_loopback(iph->daddr))
         return NET_RX_SUCCESS;
 
