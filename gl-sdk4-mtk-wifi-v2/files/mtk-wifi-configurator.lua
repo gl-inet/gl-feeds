@@ -499,6 +499,13 @@ local country_region_map = {
     KG = 11, KE = 11
 }
 
+local function DisConnectAllSta(ifname)
+    if netdev_is_up(ifname) then
+        log('DisConnectAllSta of ', ifname)
+        iwpriv.set(ifname, 'DisConnectAllSta', 1)
+    end
+end
+
 local setup_tmr = uloop.timer(function()
     setup_bssid_num()
 
@@ -666,6 +673,9 @@ local setup_tmr = uloop.timer(function()
             if setup_vifs(device, cfg.interfaces, need_set_ssid) == 'reload' then
                 reload = true
             end
+
+            DisConnectAllSta(ifname)
+            DisConnectAllSta(ifname_guest)
         end
     end
 
@@ -700,13 +710,6 @@ local function teardown_cb()
                 ap_configs[s.ifname] = nil
             end
         end)
-    end
-end
-
-local function DisConnectAllSta(ifname)
-    if netdev_is_up(ifname) then
-        log('DisConnectAllSta of ', ifname)
-        iwpriv.set(ifname, 'DisConnectAllSta', 1)
     end
 end
 
