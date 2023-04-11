@@ -498,13 +498,16 @@ end
 
 function M.set_bbr_config(params)
     local err_code = 0
+    local Enable = params.Enable
     local MlrTimeout = params.MlrTimeout
     local SequenceNumber = params.SequenceNumber
     local ReregistrationDelay = params.ReregistrationDelay
     local Jitter = params.Jitter
+    local IfName = params.IfName
 
-    err_code = otBbr.BackboneRouterConfig(MlrTimeout, SequenceNumber,
-                                       ReregistrationDelay, Jitter)
+    err_code = otBbr.BackboneRouterConfig(Enable, MlrTimeout, SequenceNumber,
+                                       ReregistrationDelay, Jitter, IfName)
+
     return {err_code = err_code}
 end
 

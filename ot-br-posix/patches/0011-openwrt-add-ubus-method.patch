@@ -709,7 +709,9 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 -                                       struct ubus_object *      aObj,
 +int UbusServer::UbusExtGetThreadStatus(struct ubus_context      *aContext,
 +                                       struct ubus_object       *aObj,
-+                                       struct ubus_request_data *aRequest,
+                                        struct ubus_request_data *aRequest,
+-                                       const char *              aMethod,
+-                                       struct blob_attr *        aMsg)
 +                                       const char               *aMethod,
 +                                       struct blob_attr         *aMsg)
 +{
@@ -855,9 +857,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 +
 +int UbusServer::UbusLeaveHandlerDetail(struct ubus_context      *aContext,
 +                                       struct ubus_object       *aObj,
-                                        struct ubus_request_data *aRequest,
--                                       const char *              aMethod,
--                                       struct blob_attr *        aMsg)
++                                       struct ubus_request_data *aRequest,
 +                                       const char               *aMethod,
 +                                       struct blob_attr         *aMsg)
  {
@@ -943,7 +943,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  
      mNcpThreadMutex->lock();
      while (otThreadGetNextNeighborInfo(mController->GetInstance(), &iterator, &neighborInfo) == OT_ERROR_NONE)
-@@ -796,34 +1063,23 @@ int UbusServer::UbusNeighborHandlerDetai
+@@ -796,33 +1063,22 @@ int UbusServer::UbusNeighborHandlerDetai
  
          blobmsg_add_string(&mBuf, "Role", neighborInfo.mIsChild ? "C" : "R");
  
@@ -960,34 +960,33 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  
 -        sprintf(transfer, "%9d", neighborInfo.mLastRssi);
 -        blobmsg_add_string(&mBuf, "LastRssi", transfer);
-+        blobmsg_add_u32(&mBuf, "AvgRssi", neighborInfo.mAverageRssi);
- 
+-
 -        if (neighborInfo.mRxOnWhenIdle)
 -        {
 -            strcat(mode, "r");
 -        }
-+        blobmsg_add_u32(&mBuf, "LastRssi", neighborInfo.mLastRssi);
++        blobmsg_add_u32(&mBuf, "AvgRssi", neighborInfo.mAverageRssi);
  
 -        if (neighborInfo.mFullThreadDevice)
+-        {
+-            strcat(mode, "d");
+-        }
++        blobmsg_add_u32(&mBuf, "LastRssi", neighborInfo.mLastRssi);
+ 
+-        if (neighborInfo.mFullNetworkData)
 +        pMode = blobmsg_open_table(&mBuf, "Mode");
 +        if (pMode)
          {
--            strcat(mode, "d");
+-            strcat(mode, "n");
 +            blobmsg_add_u32(&mBuf, "RxOnWhenIdle", neighborInfo.mRxOnWhenIdle);
 +            blobmsg_add_u32(&mBuf, "DeviceType", neighborInfo.mFullThreadDevice);
 +            blobmsg_add_u32(&mBuf, "NetworkData", neighborInfo.mFullNetworkData);
 +            blobmsg_close_table(&mBuf, pMode);
          }
- 
--        if (neighborInfo.mFullNetworkData)
--        {
--            strcat(mode, "n");
--        }
 -        blobmsg_add_string(&mBuf, "Mode", mode);
--
+ 
          OutputBytes(neighborInfo.mExtAddress.m8, sizeof(neighborInfo.mExtAddress.m8), extAddress);
          blobmsg_add_string(&mBuf, "ExtAddress", extAddress);
- 
 @@ -831,11 +1087,12 @@ int UbusServer::UbusNeighborHandlerDetai
  
          blobmsg_close_table(&mBuf, jsonList);
@@ -1247,7 +1246,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
          blobmsg_add_u32(&mBuf, "joinernum", joinerNum);
      }
      else if (!strcmp(aAction, "macfilterstate"))
-@@ -1281,6 +1582,462 @@ int UbusServer::UbusGetInformation(struc
+@@ -1281,6 +1582,470 @@ int UbusServer::UbusGetInformation(struc
  
          blobmsg_close_array(&mBuf, sJsonUri);
      }
@@ -1269,6 +1268,8 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 +        char PSKc[33]        = {0};
 +        char extAddress[17]  = {0};
 +        char passphrase[256] = {0};
++
++        char activeDataset[OT_OPERATIONAL_DATASET_MAX_LENGTH] = {0};
 +
 +        uint8_t rloc = otThreadGetDeviceRole(mController->GetInstance());
 +
@@ -1357,6 +1358,12 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 +            }
 +            blobmsg_close_table(&mBuf, pIPv6);
 +        }
++
++        otOperationalDatasetTlvs dataset;
++        otDatasetGetActiveTlvs(mController->GetInstance(), &dataset);
++        OutputBytes(dataset.mTlvs, dataset.mLength, activeDataset);
++        blobmsg_add_string(&mBuf, "ActiveDataset", activeDataset);
++
 +        blobmsg_close_table(&mBuf, pNetwork);
 +
 +        /* RCP Item */
@@ -1679,8 +1686,8 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 +                void *pService = blobmsg_open_table(&mBuf, nullptr);
 +                if (pService)
 +                {
-+                    char     aServicesData[64]  = {0};
-+                    char     aServerData[64]    = {0};
++                    char aServicesData[64] = {0};
++                    char aServerData[64]   = {0};
 +
 +                    blobmsg_add_u16(&mBuf, "ServiceId", config.mServiceId);
 +                    blobmsg_add_u32(&mBuf, "EnterpriseNumber", config.mEnterpriseNumber);
@@ -1710,7 +1717,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1293,9 +2050,9 @@ exit:
+@@ -1293,9 +2058,9 @@ exit:
  }
  
  void UbusServer::HandleDiagnosticGetResponse(otError              aError,
@@ -1722,7 +1729,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  {
      static_cast<UbusServer *>(aContext)->HandleDiagnosticGetResponse(aError, aMessage, aMessageInfo);
  }
-@@ -1316,8 +2073,8 @@ void UbusServer::HandleDiagnosticGetResp
+@@ -1316,8 +2081,8 @@ void UbusServer::HandleDiagnosticGetResp
  {
      uint16_t              rloc16;
      uint16_t              sockRloc16 = 0;
@@ -1733,7 +1740,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      char                  xrloc[10];
      otNetworkDiagTlv      diagTlv;
      otNetworkDiagIterator iterator = OT_NETWORK_DIAGNOSTIC_ITERATOR_INIT;
-@@ -1409,12 +2166,229 @@ exit:
+@@ -1409,12 +2174,229 @@ exit:
      }
  }
  
@@ -1968,7 +1975,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  {
      OT_UNUSED_VARIABLE(aObj);
      OT_UNUSED_VARIABLE(aMethod);
-@@ -1457,6 +2431,7 @@ int UbusServer::UbusSetInformation(struc
+@@ -1457,6 +2439,7 @@ int UbusServer::UbusSetInformation(struc
              long  value;
              char *panid = blobmsg_get_string(tb[SETNETWORK]);
              SuccessOrExit(error = ParseLong(panid, value));
@@ -1976,7 +1983,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
              error = otLinkSetPanId(mController->GetInstance(), static_cast<otPanId>(value));
          }
      }
-@@ -1468,7 +2443,7 @@ int UbusServer::UbusSetInformation(struc
+@@ -1468,7 +2451,7 @@ int UbusServer::UbusSetInformation(struc
          if (tb[SETNETWORK] != nullptr)
          {
              otNetworkKey key;
@@ -1985,7 +1992,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  
              VerifyOrExit(Hex2Bin(networkkey, key.m8, sizeof(key.m8)) == OT_NETWORK_KEY_SIZE, error = OT_ERROR_PARSE);
              SuccessOrExit(error = otThreadSetNetworkKey(mController->GetInstance(), &key));
-@@ -1496,7 +2471,7 @@ int UbusServer::UbusSetInformation(struc
+@@ -1496,7 +2479,7 @@ int UbusServer::UbusSetInformation(struc
          if (tb[SETNETWORK] != nullptr)
          {
              otExtendedPanId extPanId;
@@ -1994,7 +2001,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
              VerifyOrExit(Hex2Bin(input, extPanId.m8, sizeof(extPanId)) >= 0, error = OT_ERROR_PARSE);
              error = otThreadSetExtendedPanId(mController->GetInstance(), &extPanId);
          }
-@@ -1592,6 +2567,69 @@ int UbusServer::UbusSetInformation(struc
+@@ -1592,6 +2575,69 @@ int UbusServer::UbusSetInformation(struc
      {
          otLinkFilterClearAddresses(mController->GetInstance());
      }
@@ -2064,7 +2071,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1647,6 +2685,11 @@ void UbusServer::UbusReconnTimer(struct
+@@ -1647,6 +2693,11 @@ void UbusServer::UbusReconnTimer(struct
      GetInstance().UbusReconnTimerDetail(aTimeout);
  }
  
@@ -2076,7 +2083,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  void UbusServer::UbusReconnTimerDetail(struct uloop_timeout *aTimeout)
  {
      OT_UNUSED_VARIABLE(aTimeout);
-@@ -1668,6 +2711,23 @@ void UbusServer::UbusReconnTimerDetail(s
+@@ -1668,6 +2719,23 @@ void UbusServer::UbusReconnTimerDetail(s
      UbusAddFd();
  }
  
@@ -2100,7 +2107,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  void UbusServer::UbusConnectionLost(struct ubus_context *aContext)
  {
      OT_UNUSED_VARIABLE(aContext);
-@@ -1724,6 +2784,13 @@ void UbusServer::InstallUbusObject(void)
+@@ -1724,6 +2792,13 @@ void UbusServer::InstallUbusObject(void)
          return;
      }
  
@@ -2114,7 +2121,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      otbrLogInfo("Uloop run");
      uloop_run();
  
-@@ -1743,7 +2810,7 @@ int UbusServer::Hex2Bin(const char *aHex
+@@ -1743,7 +2818,7 @@ int UbusServer::Hex2Bin(const char *aHex
  {
      size_t      hexLength = strlen(aHex);
      const char *hexEnd    = aHex + hexLength;
@@ -2123,7 +2130,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      uint8_t     numChars  = hexLength & 1;
      uint8_t     byte      = 0;
      int         rval;
-@@ -1790,6 +2857,39 @@ exit:
+@@ -1790,6 +2865,39 @@ exit:
      return rval;
  }
  
