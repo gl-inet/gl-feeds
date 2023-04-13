@@ -40,7 +40,8 @@ load_sfe() {
 
 start() {
 	local actype=$(uci -q get mtkhnat.global.actype)
-	[ "$actype" == "1" ] && exit 0
+	local mtknat_enable=$(uci -q get mtkhnat.global.enable)
+	[ "$actype" == "1" ] || [ "$mtknat_enable" == "0" ] && exit 0
 	[ -f "/sys/kernel/debug/hnat/hook_toggle" ] && echo '0' > /sys/kernel/debug/hnat/hook_toggle
 
 	local ipv6_enable=$(uci get glipv6.globals.enabled)
