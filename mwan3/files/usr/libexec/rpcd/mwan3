@@ -189,7 +189,6 @@ get_mwan3_state() {
             result="offline"
         elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] &&
             [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ] &&
-            [ -n "$($IPT4 -S mwan3_iface_in_$1 2>/dev/null)" ] &&
             [ -n "$($IP4 route list table $id default dev $device 2>/dev/null)" ]; then
             result="$(mwan3_get_iface_hotplug_state $1)"
         elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] ||
@@ -227,7 +226,6 @@ get_mwan3_state() {
             result_v6="offline"
         elif [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 1000)):'"')" ] &&
             [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 2000)):'"')" ] &&
-            [ -n "$($IPT6 -S mwan3_iface_in_$iface_v6 2>/dev/null)" ] &&
             [ -n "$($IP6 route list table $id_v6 default dev $device_v6 2>/dev/null)" ]; then
             result_v6="$(mwan3_get_iface_hotplug_state $iface_v6)"
         elif [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 1000)):'"')" ] ||
