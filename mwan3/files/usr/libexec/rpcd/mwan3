@@ -188,8 +188,7 @@ get_mwan3_state() {
         if [ -z "$id" ] || [ -z "$device" ]; then
             result="offline"
         elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] &&
-            [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ] &&
-            [ -n "$($IP4 route list table $id default dev $device 2>/dev/null)" ]; then
+            [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ]; then
             result="$(mwan3_get_iface_hotplug_state $1)"
         elif [ -n "$($IP4 rule | awk '$1 == "'$(($id + 1000)):'"')" ] ||
             [ -n "$($IP4 rule | awk '$1 == "'$(($id + 2000)):'"')" ] ||
@@ -225,8 +224,7 @@ get_mwan3_state() {
         if [ -z "$id_v6" ] || [ -z "$device_v6" ]; then
             result_v6="offline"
         elif [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 1000)):'"')" ] &&
-            [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 2000)):'"')" ] &&
-            [ -n "$($IP6 route list table $id_v6 default dev $device_v6 2>/dev/null)" ]; then
+            [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 2000)):'"')" ]; then
             result_v6="$(mwan3_get_iface_hotplug_state $iface_v6)"
         elif [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 1000)):'"')" ] ||
             [ -n "$($IP6 rule | awk '$1== "'$(($id_v6 + 2000)):'"')" ] ||
