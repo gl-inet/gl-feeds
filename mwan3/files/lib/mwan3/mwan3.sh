@@ -700,6 +700,10 @@ mwan3_track()
 	for pid in $(pgrep -f "mwan3track $1 $2"); do
 		kill -KILL "$pid" > /dev/null 2>&1
 	done
+	sleep 1
+	for pid in $(pgrep -f "mwan3track $1"); do
+		kill -KILL "$pid" > /dev/null 2>&1
+	done
 	if [ -n "$track_ips" ]; then
 		[ -x /usr/sbin/mwan3track ] && /usr/sbin/mwan3track "$1" "$2" "$3" "$4" $track_ips &
 	fi
