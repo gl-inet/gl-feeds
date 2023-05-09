@@ -275,6 +275,7 @@ main() {
 
 			if [ $score -gt $up ]; then
 				echo "online" > /var/run/mwan3track/$1/STATUS
+				echo "online" > /var/run/mwan3/iface_state/$1
 				score=$(($down+$up))
 			elif [ $score -le $up ]; then
 				sleep_time=$recovery_interval
