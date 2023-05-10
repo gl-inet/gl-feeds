@@ -1,1 +1,0 @@
-logger "$ACTION $MAC $IP $DEV"
