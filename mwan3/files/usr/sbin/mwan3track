@@ -186,9 +186,11 @@ main() {
 						;;
 					esac
 				else
-					json_load "$(ubus call network.interface.$INTERFACE status "$(json_dump)")"
-					json_get_var interface_status up
-					[ "${interface_status}" -eq 1 ] && result=0 || result=1
+					if [ -n "$(ubus list | grep $INTERFACE)" ]; then
+						json_load "$(ubus call network.interface.$INTERFACE status "$(json_dump)")"
+						json_get_var interface_status up
+					fi
+					[ "${interface_status}" = "1" ] && result=0 || result=1
 				fi
 
 				if [ $check_quality -eq 0 ]; then
