@@ -5,9 +5,10 @@
 
 local uci = require "uci"
 local utils = require "oui.utils"
+local fs = require "oui.fs"
 
 local M = {}
- 
+
 local function stop_test_fan()
     utils.writefile("/sys/class/thermal/cooling_device0/cur_state", "0")
     ngx.pipe.spawn({"/etc/init.d/gl_fan", "restart"}):wait()
@@ -32,9 +33,8 @@ M.set_test = function(params)
         utils.writefile("/sys/class/thermal/cooling_device0/cur_state", "255")
         ngx.timer.at(time, stop_test_fan)
     end
-    
 end
- 
+
 --[[
     @method-name: get_status
     @method-desc: Get status of fan.
@@ -46,13 +46,23 @@ end
     @out-example: {"id":1,"jsonrpc":"2.0","result":{"speed":2000,"status":true}}
 --]]
 M.get_status = function(params)
+    local res = { speed = 0, status = false }
 
-    local c = uci.cursor()
-    local res = {}
-    utils.writefile("/sys/class/fan/fan_speed", "refresh")
-    ngx.sleep(1.5)
-    res.speed = tonumber(utils.readfile("/sys/class/fan/fan_speed"):match("(%d+)"))
-    res.status = tonumber(utils.readfile("/sys/class/thermal/cooling_device0/cur_state", 'n') or 0) ~= 0 and true or false
+    if not fs.access("/proc/gl-hw-info/fan") then
+        return res
+    end
+
+    local hwmon, cooling_device = utils.readfile("/proc/gl-hw-info/fan", "l"):match("(.+) (.+)")
+
+    if fs.access("/sys/class/hwmon/" .. hwmon .. "/fan1_input") then
+        res.speed = utils.readfile("/sys/class/hwmon/" .. hwmon .. "/fan1_input", "n")
+    else
+        utils.writefile("/sys/class/fan/fan_speed", "refresh")
+        ngx.sleep(1.5)
+        res.speed = tonumber(utils.readfile("/sys/class/fan/fan_speed"):match("(%d+)"))
+    end
+
+    res.status = utils.readfile("/sys/class/thermal/" .. cooling_device .. "/cur_state", 'n') > 0
     return res
 end
 
