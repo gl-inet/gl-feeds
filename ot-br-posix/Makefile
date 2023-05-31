@@ -51,7 +51,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_OTBR_TTY_DRIVER_CH343 \
 	CONFIG_OTBR_TTY_DRIVER_CDC_ACM
 
-TARGET_CFLAGS += -ggdb3 \
+TARGET_CFLAGS += \
 	-DOPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME=\\\"/var/run/openthread-%s\\\" \
 	-DOPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES=100 \
 	-DOPENTHREAD_CONFIG_PLATFORM_RADIO_SPINEL_RX_FRAME_BUFFER_SIZE=10240 \
@@ -116,10 +116,10 @@ CMAKE_OPTIONS = \
 	-DOTBR_DUA_ROUTING=ON \
 	-DOTBR_OPENWRT=ON \
 	-DOTBR_REST=ON \
-	-DOT_FIREWALL=OFF \
+	-DOT_FIREWALL=ON \
 	-DOTBR_SRP_ADVERTISING_PROXY=ON \
 	-DOTBR_DNSSD_DISCOVERY_PROXY=ON \
-	-DOT_DNS_CLIENT= ON \
+	-DOT_DNS_CLIENT=ON \
 	-DOT_LOG_LEVEL=INFO \
 	-DOT_RCP_RESTORATION_MAX_COUNT=5 \
 	-DOT_REFERENCE_DEVICE=ON \
@@ -141,7 +141,7 @@ define Package/ot-br-posix/install
 
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) files/etc/init.d/otbr-agent $(1)/etc/init.d/otbr-agent
-	# $(INSTALL_BIN) files/etc/init.d/otbr-firewall $(1)/etc/init.d/otbr-firewall
+	$(INSTALL_BIN) files/etc/init.d/otbr-firewall $(1)/etc/init.d/otbr-firewall
 
 	$(INSTALL_DIR) $(1)/etc/config
 	$(CP) files/etc/config/otbr $(1)/etc/config
