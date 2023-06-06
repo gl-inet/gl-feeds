@@ -7,16 +7,20 @@ Platform designs use Radio Co-Processor (RCP),
 Confirmed supported targets
 
 - GL.iNET S200 built-in Silicon Labs EFR32MG21 module
+  - `configs/config-21.02.2.yml`
+
 - GL.iNET AR750 + NRF52840 USB Dongle
+  - `configs/config-21.02.2.yml`
 
-Manual configuration by `make menuconfig`,
+
+## Getting started to build your own OTBR with [gl-infra-builder](https://github.com/gl-inet/gl-infra-builder)
 
 ```
-Network  --->
-	<*> ot-br-posix..................................... OpenThread Border Router  --->
-		Configuration  --->
-			[ ] Enable OTBR_WEB
-			USB to UART Converter Driver Select (CH343)  --->
+$ git clone https://github.com/gl-inet/gl-infra-builder.git
+$ cd gl-infra-builder/
+$ python3 setup.py -c configs/config-21.02.2.yml
+$ cd openwrt-21.02/openwrt-21.02.2/
+$ ./scripts/gen_config.py glinet_s200_clean
+$ make -j9
 ```
 
-Or use [gl-infra-builder](https://github.com/gl-inet/gl-infra-builder) to configure directly in profile.
