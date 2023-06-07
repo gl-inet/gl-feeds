@@ -12,18 +12,9 @@ get_model() {
 
 model=$(echo $(get_model) | awk '{ print toupper($1); }')
 if [ -n "$model" -a -n "$(which gl-ot-inited)" ]; then
-    def_panid=$(printf '%d\n' 0x$(cat /proc/gl-hw-info/device_mac | sed 's/://g' | cut -c9-12))
-    def_extpanid=$(cat /proc/gl-hw-info/device_mac | md5sum | cut -c 1-16)
-    def_network_key=$(cat /proc/gl-hw-info/device_mac | md5sum | awk -F ' ' '{print $1}')
     suffix=$(cat /proc/gl-hw-info/device_mac | sed 's/://g' | cut -c10-12)
     def_network_name=GL-$model-$suffix
     uci set otbr.otbr.networkname=$def_network_name
-    uci set otbr.otbr.networkkey=$def_network_key
-    uci set otbr.otbr.panid=$def_panid
-    uci set otbr.otbr.extpanid=$def_extpanid
-    uci set otbr.otbr.eui64=$eui64
-    uci set otbr.otbr.rcp_version=$rcp_version
-    uci set otbr.otbr.passphrase="goodlife"
     uci commit otbr
 fi
 
