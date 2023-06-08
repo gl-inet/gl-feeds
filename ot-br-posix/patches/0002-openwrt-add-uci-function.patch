@@ -1,7 +1,7 @@
-Index: ot-br-posix-2022-11-08-r3/src/utils/CMakeLists.txt
+Index: ot-br-posix-2022-11-08-r4.2.3/src/utils/CMakeLists.txt
 ===================================================================
---- ot-br-posix-2022-11-08-r3.orig/src/utils/CMakeLists.txt
-+++ ot-br-posix-2022-11-08-r3/src/utils/CMakeLists.txt
+--- ot-br-posix-2022-11-08-r4.2.3.orig/src/utils/CMakeLists.txt
++++ ot-br-posix-2022-11-08-r4.2.3/src/utils/CMakeLists.txt
 @@ -38,8 +38,13 @@ add_library(otbr-utils
      system_utils.cpp
      thread_helper.cpp
@@ -16,10 +16,10 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/CMakeLists.txt
      mbedtls
 +    uci
  )
-Index: ot-br-posix-2022-11-08-r3/src/utils/uci.cpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/utils/uci.cpp
 ===================================================================
 --- /dev/null
-+++ ot-br-posix-2022-11-08-r3/src/utils/uci.cpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/utils/uci.cpp
 @@ -0,0 +1,128 @@
 +#include "utils/uci.hpp"
 +
@@ -149,10 +149,10 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/uci.cpp
 +} // namespace Utils
 +
 +} // namespace otbr
-Index: ot-br-posix-2022-11-08-r3/src/utils/uci.hpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/utils/uci.hpp
 ===================================================================
 --- /dev/null
-+++ ot-br-posix-2022-11-08-r3/src/utils/uci.hpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/utils/uci.hpp
 @@ -0,0 +1,34 @@
 +#ifndef OTBR_UTILS_UCI_HPP_
 +#define OTBR_UTILS_UCI_HPP_
@@ -188,11 +188,11 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/uci.hpp
 +} // namespace otbr
 +
 +#endif // OTBR_UTILS_UCI_
-Index: ot-br-posix-2022-11-08-r3/src/utils/uci_config.cpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/utils/uci_config.cpp
 ===================================================================
 --- /dev/null
-+++ ot-br-posix-2022-11-08-r3/src/utils/uci_config.cpp
-@@ -0,0 +1,132 @@
++++ ot-br-posix-2022-11-08-r4.2.3/src/utils/uci_config.cpp
+@@ -0,0 +1,103 @@
 +#define OTBR_LOG_TAG "UTILS"
 +
 +#include "utils/uci_config.hpp"
@@ -227,10 +227,6 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/uci_config.cpp
 +    otError error                = OT_ERROR_NONE;
 +    char    sLogLevel[4]         = {0};
 +    char    sTxPower[4]          = {0};
-+    char    sMinLease[16]        = {0};
-+    char    sMaxLease[16]        = {0};
-+    char    sMinKeyLease[16]     = {0};
-+    char    sMaxKeyLease[16]     = {0};
 +    char    sRCPVersion[120]     = {0};
 +    char    sPosixVersion[120]   = {0};
 +    char    sThreadVersion[8]    = {0};
@@ -290,31 +286,6 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/uci_config.cpp
 +            otbrLogErr("otPlatRadioSetTransmitPower failed");
 +    }
 +
-+    otSrpServerLeaseConfig leaseConfig;
-+    otbr::Utils::UciGet("otbr.srp_server.min_lease", sMinLease);
-+    otbr::Utils::UciGet("otbr.srp_server.max_lease", sMaxLease);
-+    otbr::Utils::UciGet("otbr.srp_server.min_key_lease", sMinKeyLease);
-+    otbr::Utils::UciGet("otbr.srp_server.max_key_lease", sMaxKeyLease);
-+    otSrpServerGetLeaseConfig(aInstance, &leaseConfig);
-+    if (strlen(sMinLease) != 0)
-+    {
-+        leaseConfig.mMinLease = atoi(sMinLease);
-+    }
-+    if (strlen(sMaxLease) != 0)
-+    {
-+        leaseConfig.mMaxLease = atoi(sMaxLease);
-+    }
-+    if (strlen(sMinKeyLease) != 0)
-+    {
-+        leaseConfig.mMinKeyLease = atoi(sMinKeyLease);
-+    }
-+    if (strlen(sMaxKeyLease) != 0)
-+    {
-+        leaseConfig.mMaxKeyLease = atoi(sMaxKeyLease);
-+    }
-+    if ((error = otSrpServerSetLeaseConfig(aInstance, &leaseConfig)) != OT_ERROR_NONE)
-+        otbrLogErr("otSrpServerSetLeaseConfig failed");
-+
 +    if (error != OT_ERROR_NONE)
 +    {
 +        otbrLogErr("%s", otThreadErrorToString(error));
@@ -325,10 +296,10 @@ Index: ot-br-posix-2022-11-08-r3/src/utils/uci_config.cpp
 +} // namespace Utils
 +
 +} // namespace otbr
-Index: ot-br-posix-2022-11-08-r3/src/utils/uci_config.hpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/utils/uci_config.hpp
 ===================================================================
 --- /dev/null
-+++ ot-br-posix-2022-11-08-r3/src/utils/uci_config.hpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/utils/uci_config.hpp
 @@ -0,0 +1,27 @@
 +#ifndef OTBR_UTILS_UCI_CONFIG_HPP_
 +#define OTBR_UTILS_UCI_CONFIG_HPP_

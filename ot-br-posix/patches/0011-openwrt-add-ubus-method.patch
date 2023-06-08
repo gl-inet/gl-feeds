@@ -1,7 +1,7 @@
-Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
 ===================================================================
---- ot-br-posix-2022-11-08-r3.orig/src/openwrt/ubus/otubus.cpp
-+++ ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
+--- ot-br-posix-2022-11-08-r4.2.3.orig/src/openwrt/ubus/otubus.cpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
 @@ -32,6 +32,16 @@
  
  #define OTBR_LOG_TAG "UBUS"
@@ -2001,7 +2001,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
              VerifyOrExit(Hex2Bin(input, extPanId.m8, sizeof(extPanId)) >= 0, error = OT_ERROR_PARSE);
              error = otThreadSetExtendedPanId(mController->GetInstance(), &extPanId);
          }
-@@ -1592,6 +2575,69 @@ int UbusServer::UbusSetInformation(struc
+@@ -1592,6 +2575,71 @@ int UbusServer::UbusSetInformation(struc
      {
          otLinkFilterClearAddresses(mController->GetInstance());
      }
@@ -2019,6 +2019,8 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
 +    {
 +        struct blob_attr *tb[SET_SRPSRVCONFIG_MAX];
 +        blobmsg_parse(setSrpSrvConfigPolicy, SET_SRPSRVCONFIG_MAX, tb, blob_data(aMsg), blob_len(aMsg));
++
++        otSrpServerSetEnabled(mController->GetInstance(), false);
 +
 +        if ((tb[MINLEASE] != nullptr) && (tb[MAXLEASE] != nullptr) && (tb[KEYMINLEASE] != nullptr) &&
 +            (tb[KEYMAXLEASE] != nullptr))
@@ -2071,7 +2073,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1647,6 +2693,11 @@ void UbusServer::UbusReconnTimer(struct
+@@ -1647,6 +2695,11 @@ void UbusServer::UbusReconnTimer(struct
      GetInstance().UbusReconnTimerDetail(aTimeout);
  }
  
@@ -2083,7 +2085,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  void UbusServer::UbusReconnTimerDetail(struct uloop_timeout *aTimeout)
  {
      OT_UNUSED_VARIABLE(aTimeout);
-@@ -1668,6 +2719,23 @@ void UbusServer::UbusReconnTimerDetail(s
+@@ -1668,6 +2721,23 @@ void UbusServer::UbusReconnTimerDetail(s
      UbusAddFd();
  }
  
@@ -2107,7 +2109,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  void UbusServer::UbusConnectionLost(struct ubus_context *aContext)
  {
      OT_UNUSED_VARIABLE(aContext);
-@@ -1724,6 +2792,13 @@ void UbusServer::InstallUbusObject(void)
+@@ -1724,6 +2794,13 @@ void UbusServer::InstallUbusObject(void)
          return;
      }
  
@@ -2121,7 +2123,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      otbrLogInfo("Uloop run");
      uloop_run();
  
-@@ -1743,7 +2818,7 @@ int UbusServer::Hex2Bin(const char *aHex
+@@ -1743,7 +2820,7 @@ int UbusServer::Hex2Bin(const char *aHex
  {
      size_t      hexLength = strlen(aHex);
      const char *hexEnd    = aHex + hexLength;
@@ -2130,7 +2132,7 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
      uint8_t     numChars  = hexLength & 1;
      uint8_t     byte      = 0;
      int         rval;
-@@ -1790,6 +2865,39 @@ exit:
+@@ -1790,6 +2867,39 @@ exit:
      return rval;
  }
  
@@ -2170,10 +2172,10 @@ Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.cpp
  void UBusAgent::Init(void)
  {
      otbr::ubus::sUbusEfd = eventfd(0, 0);
-Index: ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.hpp
+Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.hpp
 ===================================================================
---- ot-br-posix-2022-11-08-r3.orig/src/openwrt/ubus/otubus.hpp
-+++ ot-br-posix-2022-11-08-r3/src/openwrt/ubus/otubus.hpp
+--- ot-br-posix-2022-11-08-r4.2.3.orig/src/openwrt/ubus/otubus.hpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.hpp
 @@ -42,6 +42,7 @@
  #include <openthread/ip6.h>
  #include <openthread/link.h>
