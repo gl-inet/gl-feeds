@@ -1,38 +1,17 @@
-Index: ot-br-posix-2022-11-08/third_party/openthread/repo/src/posix/platform/udp.cpp
+Index: ot-br-posix-2023-5-17-r4.3.0/third_party/openthread/repo/src/posix/platform/udp.cpp
 ===================================================================
---- ot-br-posix-2022-11-08.orig/third_party/openthread/repo/src/posix/platform/udp.cpp
-+++ ot-br-posix-2022-11-08/third_party/openthread/repo/src/posix/platform/udp.cpp
-@@ -276,15 +276,13 @@ otError otPlatUdpBind(otUdpSocket *aUdpS
-     VerifyOrExit(aUdpSocket->mSockName.mPort != 0, error = OT_ERROR_INVALID_ARGS);
-     fd = FdFromHandle(aUdpSocket->mHandle);
- 
--    {
--        struct sockaddr_in6 sin6;
-+    struct sockaddr_in6 sin6;
- 
--        memset(&sin6, 0, sizeof(struct sockaddr_in6));
--        sin6.sin6_port   = htons(aUdpSocket->mSockName.mPort);
--        sin6.sin6_family = AF_INET6;
--        memcpy(&sin6.sin6_addr, &aUdpSocket->mSockName.mAddress, sizeof(sin6.sin6_addr));
--        VerifyOrExit(0 == bind(fd, reinterpret_cast<struct sockaddr *>(&sin6), sizeof(sin6)), error = OT_ERROR_FAILED);
--    }
-+    memset(&sin6, 0, sizeof(struct sockaddr_in6));
-+    sin6.sin6_port   = htons(aUdpSocket->mSockName.mPort);
-+    sin6.sin6_family = AF_INET6;
-+    memcpy(&sin6.sin6_addr, &aUdpSocket->mSockName.mAddress, sizeof(sin6.sin6_addr));
-+    VerifyOrExit(0 == bind(fd, reinterpret_cast<struct sockaddr *>(&sin6), sizeof(sin6)), error = OT_ERROR_FAILED);
- 
-     {
-         int on = 1;
-@@ -296,6 +294,11 @@ exit:
+--- ot-br-posix-2023-5-17-r4.3.0.orig/third_party/openthread/repo/src/posix/platform/udp.cpp
++++ ot-br-posix-2023-5-17-r4.3.0/third_party/openthread/repo/src/posix/platform/udp.cpp
+@@ -284,6 +284,12 @@ exit:
      if (error == OT_ERROR_FAILED)
      {
          otLogCritPlat("Failed to bind UDP socket: %s", strerror(errno));
-+        char str[INET6_ADDRSTRLEN];
-+        inet_ntop(AF_INET6, &(sin6.sin6_addr), str, INET6_ADDRSTRLEN);
-+        otLogCritPlat("addr=%s, port=%d", str, sin6.sin6_port);
 +        if (errno == EINVAL)
-+            abort();
++        {
++            char str[INET6_ADDRSTRLEN];
++            inet_ntop(AF_INET6, &(aUdpSocket->mSockName.mAddress), str, INET6_ADDRSTRLEN);
++            otLogCritPlat("Got Invalid argument, addr=%s, port=%d", str, htons(aUdpSocket->mSockName.mPort));
++        }
      }
  
      return error;

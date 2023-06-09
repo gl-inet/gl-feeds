@@ -1,32 +1,24 @@
-Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
+Index: ot-br-posix-2023-5-17-r4.3.0/src/agent/main.cpp
 ===================================================================
---- ot-br-posix-2022-11-08-r3.orig/src/agent/main.cpp
-+++ ot-br-posix-2022-11-08-r3/src/agent/main.cpp
-@@ -42,6 +42,7 @@
- #include <stdio.h>
- #include <stdlib.h>
- #include <string.h>
-+#include <sys/stat.h>
- #include <unistd.h>
- 
- #include <openthread/logging.h>
-@@ -71,6 +72,7 @@ enum
-     OTBR_OPT_VERSION                 = 'V',
-     OTBR_OPT_SHORTMAX                = 128,
-     OTBR_OPT_RADIO_VERSION,
-+    OTBR_OPT_RADIO_EUI64,
+--- ot-br-posix-2023-5-17-r4.3.0.orig/src/agent/main.cpp
++++ ot-br-posix-2023-5-17-r4.3.0/src/agent/main.cpp
+@@ -77,6 +77,7 @@ enum
      OTBR_OPT_AUTO_ATTACH,
+     OTBR_OPT_REST_LISTEN_ADDR,
+     OTBR_OPT_REST_LISTEN_PORT,
++    OTBR_OPT_RADIO_EUI64,
  };
  
-@@ -86,6 +88,7 @@ static const struct option kOptions[] =
-     {"verbose", no_argument, nullptr, OTBR_OPT_VERBOSE},
-     {"version", no_argument, nullptr, OTBR_OPT_VERSION},
-     {"radio-version", no_argument, nullptr, OTBR_OPT_RADIO_VERSION},
-+    {"radio-eui64", no_argument, nullptr, OTBR_OPT_RADIO_EUI64},
+ static jmp_buf            sResetJump;
+@@ -94,6 +95,7 @@ static const struct option kOptions[] =
      {"auto-attach", optional_argument, nullptr, OTBR_OPT_AUTO_ATTACH},
+     {"rest-listen-address", required_argument, nullptr, OTBR_OPT_REST_LISTEN_ADDR},
+     {"rest-listen-port", required_argument, nullptr, OTBR_OPT_REST_LISTEN_PORT},
++    {"radio-eui64", no_argument, nullptr, OTBR_OPT_RADIO_EUI64},
      {0, 0, 0, 0}};
  
-@@ -180,6 +183,58 @@ static void PrintRadioVersionAndExit(con
+ static bool ParseInteger(const char *aStr, long &aOutResult)
+@@ -187,6 +189,58 @@ static void PrintRadioVersionAndExit(con
      exit(EXIT_SUCCESS);
  }
  
@@ -85,11 +77,13 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
  static int realmain(int argc, char *argv[])
  {
      otbrLogLevel              logLevel = GetDefaultLogLevel();
-@@ -189,10 +244,13 @@ static int realmain(int argc, char *argv
+@@ -196,12 +250,15 @@ static int realmain(int argc, char *argv
      bool                      verbose           = false;
      bool                      printRadioVersion = false;
      bool                      enableAutoAttach  = true;
 +    bool                      printRadioEUI64   = false;
+     const char               *restListenAddress = "";
+     int                       restListenPort    = kPortNumber;
      std::vector<const char *> radioUrls;
      std::vector<const char *> backboneInterfaceNames;
      long                      parseResult;
@@ -99,8 +93,8 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      std::set_new_handler(OnAllocateFailed);
  
      while ((opt = getopt_long(argc, argv, "B:d:hI:Vv", kOptions, nullptr)) != -1)
-@@ -244,6 +302,10 @@ static int realmain(int argc, char *argv
-             }
+@@ -261,6 +318,10 @@ static int realmain(int argc, char *argv
+             restListenPort = parseResult;
              break;
  
 +        case OTBR_OPT_RADIO_EUI64:
@@ -110,7 +104,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
          default:
              PrintHelp(argv[0]);
              ExitNow(ret = EXIT_FAILURE);
-@@ -251,6 +313,8 @@ static int realmain(int argc, char *argv
+@@ -268,6 +329,8 @@ static int realmain(int argc, char *argv
          }
      }
  
@@ -119,7 +113,7 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
      otbrLogInit(kSyslogIdent, logLevel, verbose);
      otbrLogNotice("Running %s", OTBR_PACKAGE_VERSION);
      otbrLogNotice("Thread version: %s", otbr::Ncp::ControllerOpenThread::GetThreadVersion());
-@@ -273,6 +337,12 @@ static int realmain(int argc, char *argv
+@@ -290,6 +353,12 @@ static int realmain(int argc, char *argv
          assert(false);
      }
  
@@ -130,5 +124,5 @@ Index: ot-br-posix-2022-11-08-r3/src/agent/main.cpp
 +    }
 +
      {
-         otbr::Application app(interfaceName, backboneInterfaceNames, radioUrls, enableAutoAttach);
- 
+         otbr::Application app(interfaceName, backboneInterfaceNames, radioUrls, enableAutoAttach, restListenAddress,
+                               restListenPort);
