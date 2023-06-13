@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lua-eco
+PKG_VERSION:=2.3.0
 PKG_RELEASE:=1
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_VERSION:=6564a0ab2e0f55fd26e6054e45b8ac5c5190b317
-PKG_MIRROR_HASH:=715c811d87fbb863ace95daeaa2e5630da418c3201668117f4116ce4e32a505d
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco/releases/download/v$(PKG_VERSION)
+PKG_HASH:=931737acd080bd309fd589c521ad32d00b2285fe9edeefdcacb86ba8f1fe1fdc
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -31,7 +31,8 @@ endef
 
 define Package/lua-eco/description
   Lua-eco is a Lua interpreter with a built-in event loop for scheduling
-  lightweight coroutines automatically, enabling efficient concurrency in Lua.
+  lightweight coroutines automatically, enabling efficient concurrency in
+  Lua. Build high-performance, scalable applications.
 endef
 
 define Package/lua-eco/Module
@@ -54,11 +55,14 @@ Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,\
   +LUA_ECO_OPENSSL:libopenssl +LUA_ECO_WOLFSSL:libwolfssl \
   +LUA_ECO_MBEDTLS:libmbedtls +LUA_ECO_MBEDTLS:zlib +lua-eco-socket)
 Package/lua-eco-ubus=$(call Package/lua-eco/Module,ubus,+libubus)
-Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-http=$(call Package/lua-eco/Module,http/https,+lua-eco-dns +lua-eco-ssl +lua-eco-log)
 Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco-dns +lua-mosquitto)
 Package/lua-eco-websocket=$(call Package/lua-eco/Module,websocket,+lua-eco-http +lua-eco-base64 +lua-eco-sha1)
-Package/lua-eco-network=$(call Package/lua-eco/Module,network)
+Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
+Package/lua-eco-struct=$(call Package/lua-eco/Module,struct pack)
+Package/lua-eco-network=$(call Package/lua-eco/Module,network utils)
+Package/lua-eco-netlink=$(call Package/lua-eco/Module,netlink)
+Package/lua-eco-nl80211=$(call Package/lua-eco/Module,nl80211,+lua-eco-netlink)
 
 define Package/lua-eco-ssl/config
 	choice
@@ -169,9 +173,27 @@ define Package/lua-eco-termios/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/termios.so $(1)/usr/lib/lua/eco
 endef
 
+define Package/lua-eco-struct/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/struct.so $(1)/usr/lib/lua/eco
+endef
+
 define Package/lua-eco-network/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/network.so $(1)/usr/lib/lua/eco
+endef
+
+define Package/lua-eco-netlink/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/core
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/{nl,genl}.lua $(1)/usr/lib/lua/eco
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/core/{nl,genl}.so $(1)/usr/lib/lua/eco/core
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/rtnl.so $(1)/usr/lib/lua/eco
+endef
+
+define Package/lua-eco-nl80211/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/core
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/nl80211.lua $(1)/usr/lib/lua/eco
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/core/nl80211.so $(1)/usr/lib/lua/eco/core
 endef
 
 $(eval $(call BuildPackage,lua-eco))
@@ -189,3 +211,5 @@ $(eval $(call BuildPackage,lua-eco-mqtt))
 $(eval $(call BuildPackage,lua-eco-websocket))
 $(eval $(call BuildPackage,lua-eco-termios))
 $(eval $(call BuildPackage,lua-eco-network))
+$(eval $(call BuildPackage,lua-eco-netlink))
+$(eval $(call BuildPackage,lua-eco-nl80211))
