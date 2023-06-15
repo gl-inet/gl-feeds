@@ -820,7 +820,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
 +                                    {
 +                                        char value[256] = {0};
 +                                        strcat(item, "=");
-+                                        OutputBytes(entry.mValue, entry.mValueLength, value);
++                                        snprintf(value, entry.mValueLength + 1, "%s", entry.mValue);
 +                                        strcat(item, value);
 +                                    }
 +                                }
