@@ -62,7 +62,18 @@ start_spi_interface_daemon() {
 	procd_close_instance
 }
 
+restore_bbr_interface () {
+    local bbr_ifname=$(uci -q get otbr.bbr.ifname)
+    local rp_disabled=$(uci -q get repeater.@main[0].disabled)
+    if [ "$bbr_ifname" = "wlan-sta0" -a "$rp_disabled" = "1" ]; then
+        uci set otbr.bbr.ifname='br-lan'
+        uci commit otbr
+    fi
+}
+
 start_service() {
+    restore_bbr_interface
+    
     start_uart_interface_daemon
 }
 
