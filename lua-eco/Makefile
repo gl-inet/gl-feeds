@@ -5,9 +5,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_DATE:=2023-06-19
-PKG_SOURCE_VERSION:=d56abb1e1c30b8fd1e6730919a4321be1bad5fc5
-PKG_MIRROR_HASH:=20b5d34235957616b43830a6d010c20eb2af3880f4faa1a4a3567558f2c9b803
+PKG_SOURCE_DATE:=2023-06-25
+PKG_SOURCE_VERSION:=e08cac48f5eb5649b1aa5db1f95e73faae900cb6
+PKG_MIRROR_HASH:=319bb6db6aa8ee8650d723b349f1e635140e7bb520a80a994611be15ed02e8d2
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -27,7 +27,7 @@ define Package/lua-eco
   CATEGORY:=Languages
   SUBMENU:=Lua
   URL:=https://github.com/zhaojh329/lua-eco
-  DEPENDS:=+libev +liblua
+  DEPENDS:=+libev +liblua +luabitop
 endef
 
 define Package/lua-eco/description
@@ -50,8 +50,9 @@ Package/lua-eco-sys=$(call Package/lua-eco/Module,system utils)
 Package/lua-eco-file=$(call Package/lua-eco/Module,file utils)
 Package/lua-eco-base64=$(call Package/lua-eco/Module,base64)
 Package/lua-eco-sha1=$(call Package/lua-eco/Module,sha1)
+Package/lua-eco-md5=$(call Package/lua-eco/Module,md5)
 Package/lua-eco-socket=$(call Package/lua-eco/Module,socket,+lua-eco-file +lua-eco-sys)
-Package/lua-eco-dns=$(call Package/lua-eco/Module,dns,+lua-eco-socket +luabitop)
+Package/lua-eco-dns=$(call Package/lua-eco/Module,dns,+lua-eco-socket)
 Package/lua-eco-ssl=$(call Package/lua-eco/Module,ssl,\
   +LUA_ECO_OPENSSL:libopenssl +LUA_ECO_WOLFSSL:libwolfssl \
   +LUA_ECO_MBEDTLS:libmbedtls +LUA_ECO_MBEDTLS:zlib +lua-eco-socket)
@@ -61,8 +62,8 @@ Package/lua-eco-mqtt=$(call Package/lua-eco/Module,mqtt,+lua-eco-socket +lua-eco
 Package/lua-eco-websocket=$(call Package/lua-eco/Module,websocket,+lua-eco-http +lua-eco-base64 +lua-eco-sha1)
 Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-struct=$(call Package/lua-eco/Module,struct pack)
-Package/lua-eco-network=$(call Package/lua-eco/Module,network utils)
-Package/lua-eco-netlink=$(call Package/lua-eco/Module,netlink)
+Package/lua-eco-netlink=$(call Package/lua-eco/Module,netlink,+lua-eco-socket)
+Package/lua-eco-ip=$(call Package/lua-eco/Module,ip utils,+lua-eco-netlink)
 Package/lua-eco-nl80211=$(call Package/lua-eco/Module,nl80211,+lua-eco-netlink)
 
 define Package/lua-eco-ssl/config
@@ -131,6 +132,11 @@ define Package/lua-eco-sha1/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/crypto/sha1.so $(1)/usr/lib/lua/eco/crypto
 endef
 
+define Package/lua-eco-md5/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/crypto
+	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/crypto/md5.so $(1)/usr/lib/lua/eco/crypto
+endef
+
 define Package/lua-eco-socket/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/core
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/socket.lua $(1)/usr/lib/lua/eco
@@ -179,16 +185,16 @@ define Package/lua-eco-struct/install
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/struct.so $(1)/usr/lib/lua/eco
 endef
 
-define Package/lua-eco-network/install
-	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
-	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/network.so $(1)/usr/lib/lua/eco
-endef
-
 define Package/lua-eco-netlink/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua/eco/core
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/{nl,genl}.lua $(1)/usr/lib/lua/eco
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/core/{nl,genl}.so $(1)/usr/lib/lua/eco/core
 	$(INSTALL_BIN) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/rtnl.so $(1)/usr/lib/lua/eco
+endef
+
+define Package/lua-eco-ip/install
+	$(INSTALL_DIR) $(1)/usr/lib/lua/eco
+	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/lib/lua/eco/ip.lua $(1)/usr/lib/lua/eco
 endef
 
 define Package/lua-eco-nl80211/install
@@ -203,6 +209,7 @@ $(eval $(call BuildPackage,lua-eco-sys))
 $(eval $(call BuildPackage,lua-eco-file))
 $(eval $(call BuildPackage,lua-eco-base64))
 $(eval $(call BuildPackage,lua-eco-sha1))
+$(eval $(call BuildPackage,lua-eco-md5))
 $(eval $(call BuildPackage,lua-eco-socket))
 $(eval $(call BuildPackage,lua-eco-dns))
 $(eval $(call BuildPackage,lua-eco-ssl))
@@ -211,6 +218,6 @@ $(eval $(call BuildPackage,lua-eco-http))
 $(eval $(call BuildPackage,lua-eco-mqtt))
 $(eval $(call BuildPackage,lua-eco-websocket))
 $(eval $(call BuildPackage,lua-eco-termios))
-$(eval $(call BuildPackage,lua-eco-network))
 $(eval $(call BuildPackage,lua-eco-netlink))
+$(eval $(call BuildPackage,lua-eco-ip))
 $(eval $(call BuildPackage,lua-eco-nl80211))
