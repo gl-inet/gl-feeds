@@ -516,7 +516,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
      if (!strcmp(aAction, "networkname"))
          blobmsg_add_string(&mBuf, "NetworkName", otThreadGetNetworkName(mController->GetInstance()));
      else if (!strcmp(aAction, "state"))
-@@ -1202,7 +1519,7 @@ int UbusServer::UbusGetInformation(struc
+@@ -1202,18 +1519,24 @@ int UbusServer::UbusGetInformation(struc
          otJoinerInfo joinerInfo;
          uint16_t     iterator        = 0;
          int          joinerNum       = 0;
@@ -525,7 +525,16 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
  
          blob_buf_init(&mBuf, 0);
  
-@@ -1214,6 +1531,7 @@ int UbusServer::UbusGetInformation(struc
+         jsonArray = blobmsg_open_array(&mBuf, "joinerList");
+         while (otCommissionerGetNextJoinerInfo(mController->GetInstance(), &iterator, &joinerInfo) == OT_ERROR_NONE)
+         {
++            if (joinerInfo.mExpirationTime > 86400 * 1000)
++            {
++                continue;
++            }
++
+             memset(eui64, 0, sizeof(eui64));
+ 
              jsonTable = blobmsg_open_table(&mBuf, nullptr);
  
              blobmsg_add_string(&mBuf, "pskd", joinerInfo.mPskd.m8);
@@ -533,7 +542,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
  
              switch (joinerInfo.mType)
              {
-@@ -1238,6 +1556,7 @@ int UbusServer::UbusGetInformation(struc
+@@ -1238,6 +1561,7 @@ int UbusServer::UbusGetInformation(struc
          }
          blobmsg_close_array(&mBuf, jsonArray);
  
@@ -541,7 +550,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
          blobmsg_add_u32(&mBuf, "joinernum", joinerNum);
      }
      else if (!strcmp(aAction, "macfilterstate"))
-@@ -1281,6 +1600,498 @@ int UbusServer::UbusGetInformation(struc
+@@ -1281,6 +1605,498 @@ int UbusServer::UbusGetInformation(struc
  
          blobmsg_close_array(&mBuf, sJsonUri);
      }
@@ -1040,7 +1049,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1422,9 +2233,10 @@ int UbusServer::UbusSetInformation(struc
+@@ -1422,9 +2238,10 @@ int UbusServer::UbusSetInformation(struc
  
      otError error = OT_ERROR_NONE;
  
@@ -1052,7 +1061,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
      if (!strcmp(aAction, "networkname"))
      {
          struct blob_attr *tb[SET_NETWORK_MAX];
-@@ -1457,6 +2269,7 @@ int UbusServer::UbusSetInformation(struc
+@@ -1457,6 +2274,7 @@ int UbusServer::UbusSetInformation(struc
              long  value;
              char *panid = blobmsg_get_string(tb[SETNETWORK]);
              SuccessOrExit(error = ParseLong(panid, value));
@@ -1060,7 +1069,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
              error = otLinkSetPanId(mController->GetInstance(), static_cast<otPanId>(value));
          }
      }
-@@ -1592,6 +2405,71 @@ int UbusServer::UbusSetInformation(struc
+@@ -1592,6 +2410,71 @@ int UbusServer::UbusSetInformation(struc
      {
          otLinkFilterClearAddresses(mController->GetInstance());
      }
@@ -1132,7 +1141,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1675,6 +2553,63 @@ void UbusServer::UbusConnectionLost(stru
+@@ -1675,6 +2558,63 @@ void UbusServer::UbusConnectionLost(stru
      UbusReconnTimer(nullptr);
  }
  
@@ -1196,7 +1205,7 @@ Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
  int UbusServer::DisplayUbusInit(const char *aPath)
  {
      uloop_init();
-@@ -1724,6 +2659,15 @@ void UbusServer::InstallUbusObject(void)
+@@ -1724,6 +2664,15 @@ void UbusServer::InstallUbusObject(void)
          return;
      }
  
