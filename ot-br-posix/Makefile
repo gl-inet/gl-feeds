@@ -131,6 +131,10 @@ ifdef CONFIG_OTBR_WEB
 	CMAKE_OPTIONS += -DOTBR_WEB=ON -DOTBR_REST=ON
 endif
 
+ifeq ($(CONFIG_TARGET_ath79_nand_DEVICE_glinet_gl-s200-nor-nand),y)
+	CMAKE_OPTIONS += -DOTBR_VENDOR_NAME="GL.iNET Inc." -DOTBR_PRODUCT_NAME="S200"
+endif
+
 define Package/ot-br-posix/install
 	$(INSTALL_DIR) $(1)/etc/openthread
 	$(FIND) files/ -name "*.gbl" -exec $(CP) {} $(1)/etc/openthread \;
