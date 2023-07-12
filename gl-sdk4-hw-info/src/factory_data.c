@@ -7,56 +7,48 @@
 #include <linux/mtd/mtd.h>
 #include <linux/blkdev.h>
 #include <linux/version.h>
+#include <linux/pagemap.h>
+
 #include "gl-hw-info.h"
 
-#define SECT_SIZE (1<<9)
-#define TO_SECTOR(x) (x>>9)
-#define TO_OFFSET(x) (x & (SECT_SIZE - 1))
-
-#define	MIN(a, b) (((a) < (b)) ? (a) : (b))
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-static unsigned char *partition_read_block(struct block_device *bdev, sector_t from, Sector *sector)
+static int block_part_read(const char *part, unsigned int from,
+			      void *val, size_t bytes)
 {
-    if (from >= get_capacity(bdev->bd_disk))
-        return NULL;
-    return read_dev_sector(bdev, from, sector);
-}
-
-static int partition_read(const char *part, u32 offset, void *dest,  int len)
-{
+    pgoff_t index = from >> PAGE_SHIFT;
+    int offset = from & (PAGE_SIZE - 1);
     const fmode_t mode = FMODE_READ;
     struct block_device *bdev;
-    unsigned char *buf;
-    Sector sector;
-    int ret = 0;
-    size_t n;
+    struct page *page;
+    char *buf = val;
+    int cpylen;
 
     bdev = blkdev_get_by_path(part, mode, NULL);
-    if(IS_ERR(bdev))
+    if (IS_ERR(bdev))
         return -1;
 
-    while (len > 0) {
-        buf = partition_read_block(bdev, TO_SECTOR(offset), &sector);
-        if(!buf) {
-            ret = -1;
-            break;
-        }
+    while (bytes) {
+        if ((offset + bytes) > PAGE_SIZE)
+            cpylen = PAGE_SIZE - offset;
+        else
+            cpylen = bytes;
+        bytes = bytes - cpylen;
 
-        n = MIN(len, SECT_SIZE - TO_OFFSET(offset));
+        page = read_mapping_page(bdev->bd_inode->i_mapping, index, NULL);
+        if (IS_ERR(page))
+            return PTR_ERR(page);
 
-        memcpy(dest, buf + TO_OFFSET(offset), n);
-        put_dev_sector(sector);
+        memcpy(buf, page_address(page) + offset, cpylen);
+        put_page(page);
 
-        offset += n;
-        dest += n;
-        len -= n;
+        buf += cpylen;
+        offset = 0;
+        index++;
     }
 
     blkdev_put(bdev, mode);
-    return ret;
+
+    return 0;
 }
-#endif
 
 #ifdef CONFIG_MTD
 static int parse_mtd_value(struct device_node *np, const char *prop,
@@ -73,10 +65,8 @@ static int parse_mtd_value(struct device_node *np, const char *prop,
     if (!of_property_read_string_index(np, prop, 1, &offset_str))
         offset = simple_strtoul(offset_str, NULL, 0);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
     if(!strncmp(part,"/dev/mmc",8))
-        return partition_read(part, offset, dest, len);
-#endif
+        return block_part_read(part, offset, dest, len);
 
     mtd = get_mtd_device_nm(part);
     if (IS_ERR(mtd))
