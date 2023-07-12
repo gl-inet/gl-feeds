@@ -11,7 +11,7 @@ case "${name:0:3}" in
         size=$(cat /sys/class/mtd/$name/size | awk '{printf("0x%x",$1)}')
         ;;
     mmc)
-        size=$(cat /sys/class/block/$name/size | awk '{printf("0x%x",$1)}')
+        size=$(cat /sys/class/block/$name/size | awk '{printf("0x%x",$1 * 512)}')
         ;;
     *)
         exit 0
