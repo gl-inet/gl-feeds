@@ -752,6 +752,9 @@ mwan3_set_policy()
 			is_lowest=1
 			total_weight_v4=$weight
 			lowest_metric_v4=$metric
+
+			echo "$iface" > $MWAN3_STATUS_DIR/indicator
+
 		elif [ "$metric" -eq "$lowest_metric_v4" ]; then
 		       	total_weight_v4=$(($total_weight_v4+$weight))
 			total_weight=$total_weight_v4
