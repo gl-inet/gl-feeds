@@ -9,17 +9,16 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openvpn
 
-PKG_VERSION:=2.5.0
-PKG_RELEASE:=1
+PKG_VERSION:=2.5.7
+PKG_RELEASE:=3
 
-PKG_SOURCE_PROTO:=git
-PKG_SOURCE_URL:=https://github.com/OpenVPN/openvpn.git
-PKG_SOURCE_DATE:=2020-07-12
-PKG_SOURCE_VERSION:=6168f53d6b7274026d4f392a22e64524a9b264d6
-PKG_MIRROR_HASH:=ddca6ffd1508625d3ddf6dee0aca917b7d408d305cdc9f38a06392a863d51b81
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.xz
+PKG_SOURCE_URL:=\
+	https://build.openvpn.net/downloads/releases/ \
+	https://swupdate.openvpn.net/community/releases/
+PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.xz
+PKG_HASH:=313bca7e996a4f59ef9940dd87c6c4b9168064db9be6cabebd37cd65f13759ed
 
-PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
+PKG_MAINTAINER:=Magnus Kroken <mkroken@gmail.com>
 
 PKG_INSTALL:=1
 PKG_FIXUP:=autoreconf
@@ -43,6 +42,7 @@ endef
 
 Package/openvpn-openssl=$(call Package/openvpn/Default,openssl,OpenSSL,+PACKAGE_openvpn-openssl:libopenssl)
 Package/openvpn-mbedtls=$(call Package/openvpn/Default,mbedtls,mbedTLS,+PACKAGE_openvpn-mbedtls:libmbedtls)
+Package/openvpn-wolfssl=$(call Package/openvpn/Default,wolfssl,WolfSSL \(experimental\),+PACKAGE_openvpn-wolfssl:libwolfssl)
 
 define Package/openvpn/config/Default
 	source "$(SOURCE)/Config-$(1).in"
@@ -50,6 +50,7 @@ endef
 
 Package/openvpn-openssl/config=$(call Package/openvpn/config/Default,openssl)
 Package/openvpn-mbedtls/config=$(call Package/openvpn/config/Default,mbedtls)
+Package/openvpn-wolfssl/config=$(call Package/openvpn/config/Default,wolfssl)
 
 ifeq ($(BUILD_VARIANT),mbedtls)
 CONFIG_OPENVPN_MBEDTLS:=y
@@ -57,10 +58,11 @@ endif
 ifeq ($(BUILD_VARIANT),openssl)
 CONFIG_OPENVPN_OPENSSL:=y
 endif
+ifeq ($(BUILD_VARIANT),wolfssl)
+CONFIG_OPENVPN_WOLFSSL:=y
+endif
 
 CONFIGURE_VARS += \
-	IFCONFIG=/sbin/ifconfig \
-	ROUTE=/sbin/route \
 	IPROUTE=/sbin/ip \
 	NETSTAT=/sbin/netstat
 
@@ -78,7 +80,6 @@ define Build/Configure
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_LZO),--enable,--disable)-lzo \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_LZ4),--enable,--disable)-lz4 \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_X509_ALT_USERNAME),--enable,--disable)-x509-alt-username \
-		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_SERVER),--enable,--disable)-server \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_MANAGEMENT),--enable,--disable)-management \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_FRAGMENT),--enable,--disable)-fragment \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_MULTIHOME),--enable,--disable)-multihome \
@@ -86,8 +87,9 @@ define Build/Configure
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_DEF_AUTH),--enable,--disable)-def-auth \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_PF),--enable,--disable)-pf \
 		$(if $(CONFIG_OPENVPN_$(BUILD_VARIANT)_ENABLE_PORT_SHARE),--enable,--disable)-port-share \
-		$(if $(CONFIG_OPENVPN_OPENSSL),--with-crypto-library=openssl) \
+		$(if $(CONFIG_OPENVPN_OPENSSL),--with-crypto-library=openssl --with-openssl-engine=no) \
 		$(if $(CONFIG_OPENVPN_MBEDTLS),--with-crypto-library=mbedtls) \
+		$(if $(CONFIG_OPENVPN_WOLFSSL),--with-crypto-library=wolfssl) \
 	)
 endef
 
@@ -103,6 +105,7 @@ define Package/openvpn-$(BUILD_VARIANT)/install
 		$(1)/etc/init.d \
 		$(1)/etc/config \
 		$(1)/etc/openvpn \
+		$(1)/lib/functions \
 		$(1)/lib/upgrade/keep.d \
 		$(1)/usr/libexec \
 		$(1)/etc/hotplug.d/openvpn
@@ -118,6 +121,10 @@ define Package/openvpn-$(BUILD_VARIANT)/install
 	$(INSTALL_BIN) \
 		files/usr/libexec/openvpn-hotplug \
 		$(1)/usr/libexec/openvpn-hotplug
+
+	$(INSTALL_DATA) \
+		files/lib/functions/openvpn.sh \
+		$(1)/lib/functions/openvpn.sh
 
 	$(INSTALL_DATA) \
 		files/etc/hotplug.d/openvpn/01-user \
@@ -141,3 +148,4 @@ endef
 
 $(eval $(call BuildPackage,openvpn-openssl))
 $(eval $(call BuildPackage,openvpn-mbedtls))
+$(eval $(call BuildPackage,openvpn-wolfssl))
