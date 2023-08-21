@@ -194,7 +194,17 @@ stop()
 		for table in $($IPT -S | awk '{print $2}' | grep mwan3 | sort -u); do
 			$IPT -X $table &> /dev/null
 		done
+
+		$IPT -S mwan3_hook | grep mwan3_hook &> /dev/null
+		if [ "$?" == "0" ]; then
+			$IPT -D PREROUTING -j mwan3_hook &> /dev/null
+			$IPT -D OUTPUT -j mwan3_hook &> /dev/null
+			$IPT -F mwan3_hook
+			$IPT -X mwan3_hook
+		fi
 	done
+
+	iptables -F FORWARD
 
 	for ipset in $($IPS -n list | grep mwan3_); do
 		$IPS -q destroy $ipset
