@@ -20,30 +20,43 @@ PKG_MIRROR_HASH:=892c3e70a9675d6ba4d1ae47a8dbc4d791664593d506f4d211ca08440b6b62a
 PKG_SOURCE_DATE:=2021-10-25
 PKG_SOURCE_VERSION:=0f3dda34a35d93b92aba39a6c7b30d1d23918812
 
-HOST_BUILD_DEPENDS:=lua/host
-
-include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/cmake.mk
 
-define Package/lua-cjson
+define Package/lua-cjson/default
   SUBMENU:=Lua
   SECTION:=lang
   CATEGORY:=Languages
   TITLE:=Lua CJSON parser
   URL:=https://github.com/mpx/lua-cjson
-  DEPENDS:= +lua
 endef
 
-define Package/lua-cjson/description
-  Lua CJSON is a fast JSON encoding/parsing module for Lua.
+define Package/lua-cjson
+  $(Package/lua-cjson/default)
+  DEPENDS+=+liblua
+  VARIANT:=lua-51
 endef
 
-CMAKE_OPTIONS += \
-	-DUSE_LUA=ON
+define Package/lua-cjson-lua5.3
+  $(Package/lua-cjson/default)
+  DEPENDS+=+liblua5.3
+  VARIANT:=lua-53
+endef
 
-CMAKE_HOST_OPTIONS += \
-	-DLUA_MATH_LIBRARY=m
+TARGET_CFLAGS += $(FPIC) -std=gnu99
+
+ifeq ($(BUILD_VARIANT),lua-53)
+  TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/lua5.3
+endif
+
+TARGET_LDFLAGS += -lm
+
+define Build/Compile
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) -shared \
+		$(PKG_BUILD_DIR)/fpconv.c \
+    $(PKG_BUILD_DIR)/lua_cjson.c \
+    $(PKG_BUILD_DIR)/strbuf.c \
+		-o $(PKG_BUILD_DIR)/cjson.so
+endef
 
 define Package/lua-cjson/install
 	$(INSTALL_DIR) $(1)/usr/lib/lua
@@ -53,5 +66,11 @@ define Package/lua-cjson/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/lua/cjson/util.lua $(1)/usr/lib/lua/cjson
 endef
 
-$(eval $(call HostBuild))
+define Package/lua-cjson-lua5.3/install
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/cjson
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/cjson.so $(1)/usr/local/lib/lua/5.3
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/lua/cjson/util.lua $(1)/usr/local/lib/lua/5.3/cjson
+endef
+
 $(eval $(call BuildPackage,lua-cjson))
+$(eval $(call BuildPackage,lua-cjson-lua5.3))
