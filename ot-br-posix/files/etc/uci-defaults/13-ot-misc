@@ -1,7 +1,0 @@
-#!/bin/sh
-
-# Set log size
-uci set system.@system[0].log_size=256
-uci commit system
-
-exit 0
