@@ -197,10 +197,18 @@ stop()
 
 		$IPT -S mwan3_hook | grep mwan3_hook &> /dev/null
 		if [ "$?" == "0" ]; then
-			$IPT -D PREROUTING -j mwan3_hook &> /dev/null
-			$IPT -D OUTPUT -j mwan3_hook &> /dev/null
-			$IPT -F mwan3_hook
-			$IPT -X mwan3_hook
+			if [ -n "$(which fw4)" ];then
+				local ip="ip"
+				[ "$IPT" = "$IPT6" ] && ip="ip6"
+				nft flush chain $ip mangle PREROUTING | grep mwan3_hook
+				nft flush chain $ip mangle OUTPUT | grep mwan3_hook
+				nft delete chain $ip mangle mwan3_hook
+			else
+				$IPT -D PREROUTING -j mwan3_hook &> /dev/null
+				$IPT -D OUTPUT -j mwan3_hook &> /dev/null
+				$IPT -F mwan3_hook
+				$IPT -X mwan3_hook
+			fi
 		fi
 	done
 
