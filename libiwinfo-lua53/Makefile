@@ -20,7 +20,7 @@ define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) -shared \
 		$(PKG_BUILD_DIR)/iwinfo.c \
 		-o $(PKG_BUILD_DIR)/iwinfo.so
- endef
+endef
 
 define Package/libiwinfo-lua53/install
 	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3
