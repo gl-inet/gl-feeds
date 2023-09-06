@@ -12,7 +12,7 @@ define Package/libuci-lua53
   TITLE:=Lua5.3 plugin for UCI
 endef
 
-TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/lua5.3
+TARGET_CFLAGS += $(FPIC) -I$(STAGING_DIR)/usr/include/lua5.3
 TARGET_LDFLAGS += -luci
 
 define Build/Compile
