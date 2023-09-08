@@ -5,9 +5,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://gitee.com/zhaojh329/lua-eco.git
-PKG_SOURCE_DATE:=2023-09-06
-PKG_SOURCE_VERSION:=b5b10186e14c361f78a2dea4c48beab25563c5b6
-PKG_MIRROR_HASH:=49a0ccf59e9ee3d91b40c311f2bdc484de4f7077983f88181d6d5c06df793fd2
+PKG_SOURCE_DATE:=2023-09-08
+PKG_SOURCE_VERSION:=148ba7164a1f13afaf22b134bad9855da22e3a71
+PKG_MIRROR_HASH:=ec6396360450c2652cf5d24122536e2344f0f912ae3519edca8a260b5a215309
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -127,13 +127,13 @@ define Package/lua-eco-base64/install
 endef
 
 define Package/lua-eco-sha1/install
-	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/crypto
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sha1.so $(1)/usr/local/lib/lua/5.3/eco/crypto
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/hash
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sha1.so $(1)/usr/local/lib/lua/5.3/eco/hash
 endef
 
 define Package/lua-eco-md5/install
-	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/crypto
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/md5.so $(1)/usr/local/lib/lua/5.3/eco/crypto
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/hash
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/md5.so $(1)/usr/local/lib/lua/5.3/eco/hash
 endef
 
 define Package/lua-eco-socket/install
