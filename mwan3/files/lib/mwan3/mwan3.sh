@@ -34,6 +34,18 @@ MM_BLACKHOLE=""
 MMX_UNREACHABLE=""
 MM_UNREACHABLE=""
 
+
+type timeout &>/dev/null && {
+	timeout -t 1 pwd &>/dev/null && {
+		TIMEOUT_LOCK="timeout -t 10 -s KILL lock"
+	} || {
+		TIMEOUT_LOCK="timeout -s KILL 10 lock"
+	}
+} || {
+	TIMEOUT_LOCK="lock"
+}
+
+
 command -v ip6tables > /dev/null
 NO_IPV6=$?
 
@@ -206,7 +218,7 @@ mwan3_init()
 }
 
 mwan3_lock() {
-	lock /var/run/mwan3.lock
+	$TIMEOUT_LOCK /var/run/mwan3.lock &>/dev/null || lock -u /var/run/mwan3.lock
 #	$LOG debug "$1 $2 (lock)"
 }
 

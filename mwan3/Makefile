@@ -32,6 +32,11 @@ define Package/mwan3
    PKGARCH:=all
 endef
 
+define Package/mwan3/config
+        select BUSYBOX_CUSTOM
+        select BUSYBOX_CONFIG_TIMEOUT
+endef
+
 define Package/mwan3/description
 Hotplug script which makes configuration of multiple WAN interfaces simple
 and manageable. With loadbalancing/failover support for up to 250 wan
