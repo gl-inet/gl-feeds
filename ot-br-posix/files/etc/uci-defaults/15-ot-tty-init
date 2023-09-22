@@ -27,6 +27,7 @@ case "$model" in
         uci set otbr.otbr.uart_fc="&uart-flow-control"
         uci set otbr.otbr.gpio_rst="2"
         uci set otbr.otbr.gpio_dfu="17"
+        uci set otbr.otbr.uart_tty='/dev/ttyCH343USB0'
         ;;
     "b1300th")
         tty=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
@@ -35,6 +36,7 @@ case "$model" in
         uci set otbr.otbr.uart_fc="&uart-flow-control"
         uci set otbr.otbr.gpio_rst="0"
         uci set otbr.otbr.gpio_dfu="1"
+        uci set otbr.otbr.uart_tty='/dev/ttyCH343USB0'
         ;;
     *)
         tty=$(ls /dev/ttyACM* 2>/dev/null)
