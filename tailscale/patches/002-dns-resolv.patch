@@ -1,0 +1,12 @@
+Index: b/net/dns/direct.go
+===================================================================
+--- a/net/dns/direct.go
++++ b/net/dns/direct.go
+@@ -283,6 +283,7 @@ func (m *directManager) SetDNS(config OS
+ 			err = nil
+ 		}
+ 	}()
++	return nil
+ 	var changed bool
+ 	if config.IsZero() {
+ 		changed, err = m.restoreBackup()
