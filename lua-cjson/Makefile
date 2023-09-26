@@ -20,6 +20,9 @@ PKG_MIRROR_HASH:=892c3e70a9675d6ba4d1ae47a8dbc4d791664593d506f4d211ca08440b6b62a
 PKG_SOURCE_DATE:=2021-10-25
 PKG_SOURCE_VERSION:=0f3dda34a35d93b92aba39a6c7b30d1d23918812
 
+# This is needed for openwrt-18.06
+PKG_BUILD_DIR = $(BUILD_DIR)/$(PKG_NAME)-$(BUILD_VARIANT)/$(PKG_NAME)-$(PKG_VERSION)
+
 include $(INCLUDE_DIR)/package.mk
 
 define Package/lua-cjson/default
