@@ -102,7 +102,7 @@ define Package/ot-br-posix/description
     A Thread border router for POSIX-based platforms.
 endef
 
-CMAKE_OPTIONS = \
+CMAKE_OPTIONS += \
 	-DBUILD_TESTING=OFF \
 	-DOT_PACKAGE_NAME=${PKG_NAME} \
 	-DOT_PACKAGE_VERSION=${PKG_VERSION} \
