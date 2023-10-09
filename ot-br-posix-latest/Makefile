@@ -50,7 +50,7 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_OTBR_WEB \
 	CONFIG_OTBR_TTY_DRIVER_CH343 \
 	CONFIG_OTBR_TTY_DRIVER_CDC_ACM
-
+	
 TARGET_CFLAGS += \
 	-DOPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME=\\\"/var/run/openthread-%s\\\" \
 	-DOPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES=100 \
@@ -79,18 +79,13 @@ config OTBR_WEB
 	bool "Enable OTBR_WEB"
 	default n
 
-choice
-	prompt "USB to UART Converter Driver Select"
-	default OTBR_TTY_DRIVER_CH343
+config OTBR_TTY_DRIVER_CH343
+	bool "USB to UART Converter Driver - CH343"
+	select PACKAGE_kmod-usb-serial-ch343
 
-	config OTBR_TTY_DRIVER_CH343
-		bool "CH343"
-		select PACKAGE_kmod-usb-serial-ch343
-
-	config OTBR_TTY_DRIVER_CDC_ACM
-		bool "CDC_ACM"
-		select PACKAGE_kmod-usb-acm
-endchoice
+config OTBR_TTY_DRIVER_CDC_ACM
+	bool "USB to UART Converter Driver - CDC_ACM"
+	select PACKAGE_kmod-usb-acm
 endmenu
 endef
 
