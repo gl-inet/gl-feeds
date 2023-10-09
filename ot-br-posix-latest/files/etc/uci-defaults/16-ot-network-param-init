@@ -1,0 +1,20 @@
+#!/bin/sh
+
+get_model() {
+    local model=`uci get board_special.hardware.model 2>/dev/null`
+    if [ -z "$model" ];then
+            model=`cat /proc/gl-hw-info/model`
+    fi
+    echo $model
+}
+
+[ -n "$(uci -q get otbr.otbr.eui64)" ] && exit 0
+
+model=$(echo $(get_model) | awk '{ print toupper($1); }')
+if [ -n "$model" -a -n "$(which gl-ot-inited)" ]; then
+    suffix=$(cat /proc/gl-hw-info/device_mac | sed 's/://g' | cut -c10-12)
+    def_network_name=GL-$model-$suffix
+    uci set otbr.otbr.networkname=$def_network_name
+    uci commit otbr
+fi
+

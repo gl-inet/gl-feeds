@@ -1,0 +1,1351 @@
+Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
+===================================================================
+--- ot-br-posix-2022-11-08-r4.2.3.orig/src/openwrt/ubus/otubus.cpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.cpp
+@@ -40,11 +40,15 @@
+ #include <sys/eventfd.h>
+ 
+ #include <openthread/commissioner.h>
++#include <openthread/logging.h>
++#include <openthread/srp_server.h>
+ #include <openthread/thread.h>
+ #include <openthread/thread_ftd.h>
+ 
+ #include "common/logging.hpp"
+ #include "ncp/ncp_openthread.hpp"
++#include "utils/uci.hpp"
++#include "utils/uci_config.hpp"
+ 
+ namespace otbr {
+ namespace ubus {
+@@ -93,6 +97,7 @@ enum
+ {
+     PSKD,
+     EUI64,
++    TIMEOUT,
+     ADD_JOINER_MAX,
+ };
+ 
+@@ -152,8 +157,9 @@ static const struct blobmsg_policy remov
+ };
+ 
+ static const struct blobmsg_policy addJoinerPolicy[ADD_JOINER_MAX] = {
+-    [PSKD]  = {.name = "pskd", .type = BLOBMSG_TYPE_STRING},
+-    [EUI64] = {.name = "eui64", .type = BLOBMSG_TYPE_STRING},
++    [PSKD]    = {.name = "pskd", .type = BLOBMSG_TYPE_STRING},
++    [EUI64]   = {.name = "eui64", .type = BLOBMSG_TYPE_STRING},
++    [TIMEOUT] = {.name = "timeout", .type = BLOBMSG_TYPE_INT32},
+ };
+ 
+ static const struct blobmsg_policy mgmtsetPolicy[MGMTSET_MAX] = {
+@@ -165,6 +171,100 @@ static const struct blobmsg_policy mgmts
+     [PSKC]        = {.name = "pskc", .type = BLOBMSG_TYPE_STRING},
+ };
+ 
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++#define OT_EVENT_OTBR_INIT 0
++#define OT_EVENT_OTBR_ENABLED 1
++#define OT_EVENT_OTBR_DISABLED 2
++#define OT_EVENT_OTBR_NEIGHBOR_TABLE_CHANGED 3
++#define OT_EVENT_OTBR_COMMISSIONER_ENABLED 4
++#define OT_EVENT_OTBR_COMMISSIONER_DISABLED 5
++#define OT_EVENT_OTBR_JOINING_START 6
++#define OT_EVENT_OTBR_JOINING_STOP 7
++#define OT_EVENT_OTBR_WATCHDOG 8
++
++enum
++{
++    ENABLE,
++    DOMAINNAME,
++    MINLEASE,
++    MAXLEASE,
++    KEYMINLEASE,
++    KEYMAXLEASE,
++    SEQNUM,
++    SET_SRPSRVCONFIG_MAX,
++};
++
++enum
++{
++    BBR_ENABLE,
++    BBR_SEQNO,
++    BBR_DELAY,
++    BBR_TIMEOUT,
++    BBR_JITTER,
++    SET_BBR_CONFIG_MAX,
++};
++
++static const struct blobmsg_policy setLogLevelPolicy[SET_NETWORK_MAX] = {
++    [SETNETWORK] = {.name = "loglevel", .type = BLOBMSG_TYPE_INT32},
++};
++
++static const struct blobmsg_policy setSrpSrvConfigPolicy[SET_SRPSRVCONFIG_MAX] = {
++    [ENABLE]      = {.name = "enable", .type = BLOBMSG_TYPE_BOOL},
++    [DOMAINNAME]  = {.name = "domain", .type = BLOBMSG_TYPE_STRING},
++    [MINLEASE]    = {.name = "minlease", .type = BLOBMSG_TYPE_INT32},
++    [MAXLEASE]    = {.name = "maxlease", .type = BLOBMSG_TYPE_INT32},
++    [KEYMINLEASE] = {.name = "keyminlease", .type = BLOBMSG_TYPE_INT32},
++    [KEYMAXLEASE] = {.name = "keymaxlease", .type = BLOBMSG_TYPE_INT32},
++    [SEQNUM]      = {.name = "seqnum", .type = BLOBMSG_TYPE_INT32},
++};
++
++static const struct blobmsg_policy setBBRConfigPolicy[SET_BBR_CONFIG_MAX] = {
++    [BBR_ENABLE]  = {.name = "enable", .type = BLOBMSG_TYPE_BOOL},
++    [BBR_SEQNO]   = {.name = "seqno", .type = BLOBMSG_TYPE_INT32},
++    [BBR_DELAY]   = {.name = "delay", .type = BLOBMSG_TYPE_INT32},
++    [BBR_TIMEOUT] = {.name = "timeout", .type = BLOBMSG_TYPE_INT32},
++    [BBR_JITTER]  = {.name = "jitter", .type = BLOBMSG_TYPE_INT32},
++};
++
++void UbusServer::SendEvent(int aEvent)
++{
++    struct ubus_context   *ctx;
++    const char            *ubus_socket = NULL;
++    static struct blob_buf b;
++    char                   outputKey[NETWORKKEY_LENGTH] = "";
++    otNetworkKey           key;
++    otOperationalDataset   dataset;
++
++    ctx = ubus_connect(ubus_socket);
++    if (!ctx)
++    {
++        otbrLogErr("Ubus connect failed");
++        return;
++    }
++
++    blob_buf_init(&b, 0);
++
++    blobmsg_add_u32(&b, "id", aEvent);
++    if (aEvent != OT_EVENT_OTBR_WATCHDOG)
++    {
++        blobmsg_add_string(&b, "NetworkName", otThreadGetNetworkName(mController->GetInstance()));
++        blobmsg_add_u16(&b, "Channel", otLinkGetChannel(mController->GetInstance()));
++        blobmsg_add_u32(&b, "PanId", otLinkGetPanId(mController->GetInstance()));
++
++        otThreadGetNetworkKey(mController->GetInstance(), &key);
++        OutputBytes(key.m8, OT_NETWORK_KEY_SIZE, outputKey);
++        blobmsg_add_string(&b, "Networkkey", outputKey);
++
++        otDatasetGetActive(mController->GetInstance(), &dataset);
++        blobmsg_add_u64(&b, "ActiveTimestamp", dataset.mActiveTimestamp.mSeconds);
++    }
++
++    ubus_send_event(ctx, "otbr-agent", b.head);
++
++    ubus_free(ctx);
++}
++#endif
++
+ static const struct ubus_method otbrMethods[] = {
+     {"scan", &UbusServer::UbusScanHandler, 0, 0, nullptr, 0},
+     {"channel", &UbusServer::UbusChannelHandler, 0, 0, nullptr, 0},
+@@ -195,7 +295,7 @@ static const struct ubus_method otbrMeth
+     {"networkdata", &UbusServer::UbusNetworkdataHandler, 0, 0, nullptr, 0},
+     {"commissionerstart", &UbusServer::UbusCommissionerStartHandler, 0, 0, nullptr, 0},
+     {"joinernum", &UbusServer::UbusJoinerNumHandler, 0, 0, nullptr, 0},
+-    {"joinerremove", &UbusServer::UbusJoinerRemoveHandler, 0, 0, nullptr, 0},
++    {"joinerremove", &UbusServer::UbusJoinerRemoveHandler, 0, 0, removeJoinerPolicy, ARRAY_SIZE(removeJoinerPolicy)},
+     {"macfiltersetstate", &UbusServer::UbusMacfilterSetStateHandler, 0, 0, macfilterSetStatePolicy,
+      ARRAY_SIZE(macfilterSetStatePolicy)},
+     {"macfilteradd", &UbusServer::UbusMacfilterAddHandler, 0, 0, macfilterAddPolicy, ARRAY_SIZE(macfilterAddPolicy)},
+@@ -206,6 +306,28 @@ static const struct ubus_method otbrMeth
+     {"macfilteraddr", &UbusServer::UbusMacfilterAddrHandler, 0, 0, nullptr, 0},
+     {"joineradd", &UbusServer::UbusJoinerAddHandler, 0, 0, addJoinerPolicy, ARRAY_SIZE(addJoinerPolicy)},
+     {"mgmtset", &UbusServer::UbusMgmtsetHandler, 0, 0, mgmtsetPolicy, ARRAY_SIZE(mgmtsetPolicy)},
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++    {"status", &UbusServer::UbusThreadStatusHandle, 0, 0, nullptr, 0},
++    {"txpower", &UbusServer::UbusTxPowerHandle, 0, 0, nullptr, 0},
++    {"joinerstate", &UbusServer::UbusJoinerStateHandle, 0, 0, nullptr, 0},
++    {"commissionerstop", &UbusServer::UbusCommissionerStopHandler, 0, 0, nullptr, 0},
++    {"commissionerstate", &UbusServer::UbusCommissionerStateHandler, 0, 0, nullptr, 0},
++#if OTBR_ENABLE_BACKBONE_ROUTER
++    {"bbrstatus", &UbusServer::UbusBackboneRouterStatusHandle, 0, 0, nullptr, 0},
++    {"setbbrconfig", &UbusServer::UbusSetBackboneRouterConfigHandler, 0, 0, setBBRConfigPolicy,
++     ARRAY_SIZE(setBBRConfigPolicy)},
++#endif
++    {"setloglevel", &UbusServer::UbusSetLogLevelHandler, 0, 0, setLogLevelPolicy, ARRAY_SIZE(setLogLevelPolicy)},
++    {"srpsrvconfig", &UbusServer::UbusSrpServerConfigHandler, 0, 0, nullptr, 0},
++    {"srpsrvservice", &UbusServer::UbusSrpServerServiceHandler, 0, 0, nullptr, 0},
++    {"setsrpsrvconfig", &UbusServer::UbusSetSrpServerConfigHandler, 0, 0, setSrpSrvConfigPolicy,
++     ARRAY_SIZE(setSrpSrvConfigPolicy)},
++    {"localaddr", &UbusServer::UbusLocalAddrHandler, 0, 0, nullptr, 0},
++    {"activetimestamp", &UbusServer::UbusActiveTimestampHandler, 0, 0, nullptr, 0},
++    {"bufferinfo", &UbusServer::UbusBufferInfoHandler, 0, 0, nullptr, 0},
++    {"services", &UbusServer::UbusServicesInfoHandler, 0, 0, nullptr, 0},
++    {"neighbortable", &UbusServer::UbusNeighborTableHandler, 0, 0, nullptr, 0},
++#endif
+ };
+ 
+ static struct ubus_object_type otbrObjType = {"otbr_prog", 0, otbrMethods, ARRAY_SIZE(otbrMethods)};
+@@ -655,6 +777,154 @@ int UbusServer::UbusMacfilterClearHandle
+     return GetInstance().UbusSetInformation(aContext, aObj, aRequest, aMethod, aMsg, "macfilterclear");
+ }
+ 
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++int UbusServer::UbusThreadStatusHandle(struct ubus_context      *aContext,
++                                       struct ubus_object       *aObj,
++                                       struct ubus_request_data *aRequest,
++                                       const char               *aMethod,
++                                       struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "status");
++}
++
++int UbusServer::UbusTxPowerHandle(struct ubus_context      *aContext,
++                                  struct ubus_object       *aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char               *aMethod,
++                                  struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "txpower");
++}
++
++int UbusServer::UbusJoinerStateHandle(struct ubus_context      *aContext,
++                                      struct ubus_object       *aObj,
++                                      struct ubus_request_data *aRequest,
++                                      const char               *aMethod,
++                                      struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "joinerstate");
++}
++
++int UbusServer::UbusCommissionerStopHandler(struct ubus_context      *aContext,
++                                            struct ubus_object       *aObj,
++                                            struct ubus_request_data *aRequest,
++                                            const char               *aMethod,
++                                            struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusCommissioner(aContext, aObj, aRequest, aMethod, aMsg, "stop");
++}
++
++int UbusServer::UbusCommissionerStateHandler(struct ubus_context      *aContext,
++                                             struct ubus_object       *aObj,
++                                             struct ubus_request_data *aRequest,
++                                             const char               *aMethod,
++                                             struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusCommissioner(aContext, aObj, aRequest, aMethod, aMsg, "state");
++}
++
++#if OTBR_ENABLE_BACKBONE_ROUTER
++int UbusServer::UbusBackboneRouterStatusHandle(struct ubus_context      *aContext,
++                                               struct ubus_object       *aObj,
++                                               struct ubus_request_data *aRequest,
++                                               const char               *aMethod,
++                                               struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "bbrstatus");
++}
++
++int UbusServer::UbusSetBackboneRouterConfigHandler(struct ubus_context      *aContext,
++                                                   struct ubus_object       *aObj,
++                                                   struct ubus_request_data *aRequest,
++                                                   const char               *aMethod,
++                                                   struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusSetInformation(aContext, aObj, aRequest, aMethod, aMsg, "setbbrconfig");
++}
++#endif
++
++int UbusServer::UbusSetLogLevelHandler(struct ubus_context      *aContext,
++                                       struct ubus_object       *aObj,
++                                       struct ubus_request_data *aRequest,
++                                       const char               *aMethod,
++                                       struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusSetInformation(aContext, aObj, aRequest, aMethod, aMsg, "setloglevel");
++}
++
++int UbusServer::UbusSrpServerConfigHandler(struct ubus_context      *aContext,
++                                           struct ubus_object       *aObj,
++                                           struct ubus_request_data *aRequest,
++                                           const char               *aMethod,
++                                           struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "srpsrvconfig");
++}
++
++int UbusServer::UbusSrpServerServiceHandler(struct ubus_context      *aContext,
++                                            struct ubus_object       *aObj,
++                                            struct ubus_request_data *aRequest,
++                                            const char               *aMethod,
++                                            struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "srpsrvservice");
++}
++
++int UbusServer::UbusSetSrpServerConfigHandler(struct ubus_context      *aContext,
++                                              struct ubus_object       *aObj,
++                                              struct ubus_request_data *aRequest,
++                                              const char               *aMethod,
++                                              struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusSetInformation(aContext, aObj, aRequest, aMethod, aMsg, "setsrpsrvconfig");
++}
++
++int UbusServer::UbusLocalAddrHandler(struct ubus_context      *aContext,
++                                     struct ubus_object       *aObj,
++                                     struct ubus_request_data *aRequest,
++                                     const char               *aMethod,
++                                     struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "localaddr");
++}
++
++int UbusServer::UbusActiveTimestampHandler(struct ubus_context      *aContext,
++                                           struct ubus_object       *aObj,
++                                           struct ubus_request_data *aRequest,
++                                           const char               *aMethod,
++                                           struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "activetimestamp");
++}
++
++int UbusServer::UbusBufferInfoHandler(struct ubus_context      *aContext,
++                                      struct ubus_object       *aObj,
++                                      struct ubus_request_data *aRequest,
++                                      const char               *aMethod,
++                                      struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "bufferinfo");
++}
++
++int UbusServer::UbusServicesInfoHandler(struct ubus_context      *aContext,
++                                        struct ubus_object       *aObj,
++                                        struct ubus_request_data *aRequest,
++                                        const char               *aMethod,
++                                        struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "services");
++}
++
++int UbusServer::UbusNeighborTableHandler(struct ubus_context      *aContext,
++                                         struct ubus_object       *aObj,
++                                         struct ubus_request_data *aRequest,
++                                         const char               *aMethod,
++                                         struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "neighbortable");
++}
++#endif
++
+ int UbusServer::UbusLeaveHandlerDetail(struct ubus_context *     aContext,
+                                        struct ubus_object *      aObj,
+                                        struct ubus_request_data *aRequest,
+@@ -700,17 +970,17 @@ int UbusServer::UbusThreadHandler(struct
+ 
+     otError error = OT_ERROR_NONE;
+ 
++    mNcpThreadMutex->lock();
++
+     blob_buf_init(&mBuf, 0);
+ 
+     if (!strcmp(aAction, "start"))
+     {
+-        mNcpThreadMutex->lock();
+         SuccessOrExit(error = otIp6SetEnabled(mController->GetInstance(), true));
+         SuccessOrExit(error = otThreadSetEnabled(mController->GetInstance(), true));
+     }
+     else if (!strcmp(aAction, "stop"))
+     {
+-        mNcpThreadMutex->lock();
+         SuccessOrExit(error = otThreadSetEnabled(mController->GetInstance(), false));
+         SuccessOrExit(error = otIp6SetEnabled(mController->GetInstance(), false));
+     }
+@@ -738,9 +1008,10 @@ int UbusServer::UbusParentHandlerDetail(
+     void *       jsonList                  = nullptr;
+     void *       jsonArray                 = nullptr;
+ 
++    mNcpThreadMutex->lock();
++
+     blob_buf_init(&mBuf, 0);
+ 
+-    mNcpThreadMutex->lock();
+     SuccessOrExit(error = otThreadGetParentInfo(mController->GetInstance(), &parentInfo));
+ 
+     jsonArray = blobmsg_open_array(&mBuf, "parent_list");
+@@ -785,11 +1056,12 @@ int UbusServer::UbusNeighborHandlerDetai
+     char                   mode[5]                   = "";
+     char                   extAddress[XPANID_LENGTH] = "";
+ 
++    mNcpThreadMutex->lock();
++
+     blob_buf_init(&mBuf, 0);
+ 
+     sJsonUri = blobmsg_open_array(&mBuf, "neighbor_list");
+ 
+-    mNcpThreadMutex->lock();
+     while (otThreadGetNextNeighborInfo(mController->GetInstance(), &iterator, &neighborInfo) == OT_ERROR_NONE)
+     {
+         jsonList = blobmsg_open_table(&mBuf, nullptr);
+@@ -860,6 +1132,10 @@ int UbusServer::UbusMgmtset(struct ubus_
+     long                 value;
+     int                  length = 0;
+ 
++    mNcpThreadMutex->lock();
++
++    blob_buf_init(&mBuf, 0);
++
+     SuccessOrExit(error = otDatasetGetActive(mController->GetInstance(), &dataset));
+ 
+     blobmsg_parse(mgmtsetPolicy, MGMTSET_MAX, tb, blob_data(aMsg), blob_len(aMsg));
+@@ -917,6 +1193,7 @@ int UbusServer::UbusMgmtset(struct ubus_
+                                                      static_cast<uint8_t>(length), /* aCallback */ nullptr,
+                                                      /* aContext */ nullptr));
+ exit:
++    mNcpThreadMutex->unlock();
+     AppendResult(error, aContext, aRequest);
+     return 0;
+ }
+@@ -936,8 +1213,13 @@ int UbusServer::UbusCommissioner(struct
+ 
+     mNcpThreadMutex->lock();
+ 
++    blob_buf_init(&mBuf, 0);
++
+     if (!strcmp(aAction, "start"))
+     {
++        VerifyOrExit(!(otThreadGetDeviceRole(mController->GetInstance()) == OT_DEVICE_ROLE_DISABLED),
++                     error = OT_ERROR_INVALID_STATE);
++
+         if (otCommissionerGetState(mController->GetInstance()) == OT_COMMISSIONER_STATE_DISABLED)
+         {
+             error = otCommissionerStart(mController->GetInstance(), &UbusServer::HandleStateChanged,
+@@ -950,6 +1232,7 @@ int UbusServer::UbusCommissioner(struct
+         otExtAddress        addr;
+         const otExtAddress *addrPtr = nullptr;
+         char *              pskd    = nullptr;
++        unsigned long       timeout = 0;
+ 
+         blobmsg_parse(addJoinerPolicy, ADD_JOINER_MAX, tb, blob_data(aMsg), blob_len(aMsg));
+         if (tb[PSKD] != nullptr)
+@@ -970,8 +1253,15 @@ int UbusServer::UbusCommissioner(struct
+                 addrPtr = &addr;
+             }
+         }
++        if (tb[TIMEOUT] != nullptr)
++        {
++            timeout = blobmsg_get_u32(tb[TIMEOUT]);
++        }
++        else
++        {
++            timeout = kDefaultJoinerTimeout;
++        }
+ 
+-        unsigned long timeout = kDefaultJoinerTimeout;
+         SuccessOrExit(
+             error = otCommissionerAddJoiner(mController->GetInstance(), addrPtr, pskd, static_cast<uint32_t>(timeout)));
+     }
+@@ -998,10 +1288,19 @@ int UbusServer::UbusCommissioner(struct
+ 
+         SuccessOrExit(error = otCommissionerRemoveJoiner(mController->GetInstance(), addrPtr));
+     }
++    else if (!strcmp(aAction, "stop"))
++    {
++        error = otCommissionerStop(mController->GetInstance());
++        if (error == OT_ERROR_ALREADY)
++            error = OT_ERROR_NONE;
++    }
++    else if (!strcmp(aAction, "state"))
++    {
++        blobmsg_add_u32(&mBuf, "State", otCommissionerGetState(mController->GetInstance()));
++    }
+ 
+ exit:
+     mNcpThreadMutex->unlock();
+-    blob_buf_init(&mBuf, 0);
+     AppendResult(error, aContext, aRequest);
+     return 0;
+ }
+@@ -1017,9 +1316,11 @@ void UbusServer::HandleStateChanged(otCo
+     {
+     case OT_COMMISSIONER_STATE_DISABLED:
+         otbrLogInfo("Commissioner state disabled");
++        otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_COMMISSIONER_DISABLED);
+         break;
+     case OT_COMMISSIONER_STATE_ACTIVE:
+         otbrLogInfo("Commissioner state active");
++        otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_COMMISSIONER_ENABLED);
+         break;
+     case OT_COMMISSIONER_STATE_PETITION:
+         otbrLogInfo("Commissioner state petition");
+@@ -1042,6 +1343,11 @@ void UbusServer::HandleJoinerEvent(otCom
+     OT_UNUSED_VARIABLE(aJoinerInfo);
+     OT_UNUSED_VARIABLE(aJoinerId);
+ 
++    char sEUI64[17]    = {0};
++    char sUciPath[128] = {0};
++    if (aJoinerInfo->mType == OT_JOINER_INFO_TYPE_EUI64)
++        OutputBytes(aJoinerInfo->mSharedId.mEui64.m8, OT_EXT_ADDRESS_SIZE, sEUI64);
++
+     switch (aEvent)
+     {
+     case OT_COMMISSIONER_JOINER_START:
+@@ -1052,12 +1358,22 @@ void UbusServer::HandleJoinerEvent(otCom
+         break;
+     case OT_COMMISSIONER_JOINER_FINALIZE:
+         otbrLogInfo("Joiner finalize");
++        if (aJoinerInfo->mType == OT_JOINER_INFO_TYPE_EUI64)
++        {
++            sprintf(sUciPath, "thread_devices.%s.Joined", sEUI64);
++            otbr::Utils::UciSet(sUciPath, (char *)"1");
++        }
+         break;
+     case OT_COMMISSIONER_JOINER_END:
+         otbrLogInfo("Joiner end");
+         break;
+     case OT_COMMISSIONER_JOINER_REMOVED:
+         otbrLogInfo("Joiner remove");
++        if (aJoinerInfo->mType == OT_JOINER_INFO_TYPE_EUI64)
++        {
++            sprintf(sUciPath, "thread_devices.%s.status", sEUI64);
++            otbr::Utils::UciDel(sUciPath);
++        }
+         break;
+     }
+ }
+@@ -1075,9 +1391,10 @@ int UbusServer::UbusGetInformation(struc
+ 
+     otError error = OT_ERROR_NONE;
+ 
++    mNcpThreadMutex->lock();
++
+     blob_buf_init(&mBuf, 0);
+ 
+-    mNcpThreadMutex->lock();
+     if (!strcmp(aAction, "networkname"))
+         blobmsg_add_string(&mBuf, "NetworkName", otThreadGetNetworkName(mController->GetInstance()));
+     else if (!strcmp(aAction, "state"))
+@@ -1202,18 +1519,24 @@ int UbusServer::UbusGetInformation(struc
+         otJoinerInfo joinerInfo;
+         uint16_t     iterator        = 0;
+         int          joinerNum       = 0;
+-        char         eui64[EXTPANID] = "";
++        char         eui64[17]       = "";
+ 
+         blob_buf_init(&mBuf, 0);
+ 
+         jsonArray = blobmsg_open_array(&mBuf, "joinerList");
+         while (otCommissionerGetNextJoinerInfo(mController->GetInstance(), &iterator, &joinerInfo) == OT_ERROR_NONE)
+         {
++            if (joinerInfo.mExpirationTime > 86400 * 1000)
++            {
++                continue;
++            }
++
+             memset(eui64, 0, sizeof(eui64));
+ 
+             jsonTable = blobmsg_open_table(&mBuf, nullptr);
+ 
+             blobmsg_add_string(&mBuf, "pskd", joinerInfo.mPskd.m8);
++            blobmsg_add_u64(&mBuf, "expiration_time", joinerInfo.mExpirationTime);
+ 
+             switch (joinerInfo.mType)
+             {
+@@ -1238,6 +1561,7 @@ int UbusServer::UbusGetInformation(struc
+         }
+         blobmsg_close_array(&mBuf, jsonArray);
+ 
++        blobmsg_add_u32(&mBuf, "joinernum_max", OPENTHREAD_CONFIG_COMMISSIONER_MAX_JOINER_ENTRIES);
+         blobmsg_add_u32(&mBuf, "joinernum", joinerNum);
+     }
+     else if (!strcmp(aAction, "macfilterstate"))
+@@ -1281,6 +1605,498 @@ int UbusServer::UbusGetInformation(struc
+ 
+         blobmsg_close_array(&mBuf, sJsonUri);
+     }
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++    else if (!strcmp(aAction, "status"))
++    {
++        blobmsg_add_u16(&mBuf, "OpenThreadVersionAPI", OPENTHREAD_API_VERSION);
++        blobmsg_add_string(&mBuf, "OTBRVersion", otGetVersionString());
++        if (otThreadGetVersion() == 4)
++            blobmsg_add_string(&mBuf, "ThreadVersion", "v1.3");
++        else if (otThreadGetVersion() == 3)
++            blobmsg_add_string(&mBuf, "ThreadVersion", "v1.2");
++        else if (otThreadGetVersion() == 2)
++            blobmsg_add_string(&mBuf, "ThreadVersion", "v1.1");
++        else
++            blobmsg_add_string(&mBuf, "ThreadVersion", "unknown");
++
++        char extPanId[17]    = {0};
++        char networkKey[33]  = {0};
++        char PSKc[33]        = {0};
++        char extAddress[17]  = {0};
++        char passphrase[256] = {0};
++
++        char activeDataset[OT_OPERATIONAL_DATASET_MAX_LENGTH] = {0};
++
++        uint8_t rloc = otThreadGetDeviceRole(mController->GetInstance());
++
++        /* Network Item */
++        void *pNetwork = NULL;
++        pNetwork       = blobmsg_open_table(&mBuf, "Network");
++        blobmsg_add_u16(&mBuf, "Channel", otLinkGetChannel(mController->GetInstance()));
++
++        const uint8_t *pExtPanId =
++            reinterpret_cast<const uint8_t *>(otThreadGetExtendedPanId(mController->GetInstance()));
++        OutputBytes(pExtPanId, OT_EXT_PAN_ID_SIZE, extPanId);
++        blobmsg_add_string(&mBuf, "ExtPanId", extPanId);
++
++        otNetworkKey t_networkKey;
++        otThreadGetNetworkKey(mController->GetInstance(), &t_networkKey);
++        const uint8_t *pNetworkKey = reinterpret_cast<const uint8_t *>(t_networkKey.m8);
++        OutputBytes(pNetworkKey, OT_NETWORK_KEY_SIZE, networkKey);
++        blobmsg_add_string(&mBuf, "NetworkKey", networkKey);
++
++        blobmsg_add_string(&mBuf, "NetworkName", otThreadGetNetworkName(mController->GetInstance()));
++        blobmsg_add_u32(&mBuf, "PanId", otLinkGetPanId(mController->GetInstance()));
++
++        otPskc t_pskc;
++        otThreadGetPskc(mController->GetInstance(), &t_pskc);
++        const uint8_t *pPSKc = reinterpret_cast<const uint8_t *>(t_pskc.m8);
++        OutputBytes(pPSKc, OT_PSKC_MAX_SIZE, PSKc);
++        blobmsg_add_string(&mBuf, "PSKc", PSKc);
++
++        otbr::Utils::UciGet("otbr.otbr.passphrase", passphrase);
++        if (strlen(passphrase) != 0)
++            blobmsg_add_string(&mBuf, "Passphrase", passphrase);
++        // DefaultRouter
++        void *pOnMeshPrefix = nullptr;
++        pOnMeshPrefix       = blobmsg_open_array(&mBuf, "OnMeshPrefix");
++        if (pOnMeshPrefix)
++        {
++            otNetworkDataIterator iterator = OT_NETWORK_DATA_ITERATOR_INIT;
++            otBorderRouterConfig  config;
++            while (otNetDataGetNextOnMeshPrefix(mController->GetInstance(), &iterator, &config) == OT_ERROR_NONE)
++            {
++                char str[OT_IP6_ADDRESS_STRING_SIZE] = {0};
++                otIp6PrefixToString(&config.mPrefix, str, sizeof(str));
++                blobmsg_add_string(&mBuf, nullptr, str);
++            }
++            blobmsg_close_array(&mBuf, pOnMeshPrefix);
++        }
++
++        if (rloc != OT_DEVICE_ROLE_DISABLED && rloc != OT_DEVICE_ROLE_DETACHED)
++        {
++            void        *pLeaderdata = NULL;
++            otLeaderData leaderData;
++
++            pLeaderdata = blobmsg_open_table(&mBuf, "LeaderData");
++            if (pLeaderdata)
++            {
++                otThreadGetLeaderData(mController->GetInstance(), &leaderData);
++                blobmsg_add_u32(&mBuf, "PartitionId", leaderData.mPartitionId);
++                blobmsg_add_u32(&mBuf, "Weighting", leaderData.mWeighting);
++                blobmsg_add_u32(&mBuf, "DataVersion", leaderData.mDataVersion);
++                blobmsg_add_u32(&mBuf, "StableDataVersion", leaderData.mStableDataVersion);
++                blobmsg_add_u32(&mBuf, "LeaderRouterId", leaderData.mLeaderRouterId);
++                blobmsg_close_table(&mBuf, pLeaderdata);
++            }
++        }
++
++        char                     meshLocalPrefix[32] = {0};
++        const otMeshLocalPrefix *aPrefix             = otThreadGetMeshLocalPrefix(mController->GetInstance());
++        if (aPrefix != NULL)
++        {
++            sprintf(meshLocalPrefix, "%x:%x:%x:%x:", (aPrefix->m8[0] << 8) | aPrefix->m8[1],
++                    (aPrefix->m8[2] << 8) | aPrefix->m8[3], (aPrefix->m8[4] << 8) | aPrefix->m8[5],
++                    (aPrefix->m8[6] << 8) | aPrefix->m8[7]);
++            blobmsg_add_string(&mBuf, "MeshLocalPrefix", meshLocalPrefix);
++        }
++
++        void *pIPv6 = NULL;
++        pIPv6       = blobmsg_open_table(&mBuf, "IPv6");
++        if (pIPv6)
++        {
++            const otNetifAddress *unicastAddrs = otIp6GetUnicastAddresses(mController->GetInstance());
++            for (const otNetifAddress *addr = unicastAddrs; addr; addr = addr->mNext)
++            {
++                char string[OT_IP6_ADDRESS_STRING_SIZE];
++                otIp6AddressToString(&addr->mAddress, string, sizeof(string));
++                blobmsg_add_string(&mBuf, nullptr, string);
++            }
++            blobmsg_close_table(&mBuf, pIPv6);
++        }
++
++        otOperationalDatasetTlvs dataset;
++        otDatasetGetActiveTlvs(mController->GetInstance(), &dataset);
++        OutputBytes(dataset.mTlvs, dataset.mLength, activeDataset);
++        blobmsg_add_string(&mBuf, "ActiveDataset", activeDataset);
++
++        blobmsg_close_table(&mBuf, pNetwork);
++
++        /* RCP Item */
++        void *pRCP = NULL;
++        pRCP       = blobmsg_open_table(&mBuf, "RCP");
++        if (pRCP)
++        {
++            if (rloc == OT_DEVICE_ROLE_DISABLED)
++                blobmsg_add_u16(&mBuf, "State", 0);
++            else if (rloc == OT_DEVICE_ROLE_DETACHED)
++                blobmsg_add_u16(&mBuf, "State", 1);
++            else if (rloc == OT_DEVICE_ROLE_CHILD)
++                blobmsg_add_u16(&mBuf, "State", 2);
++            else if (rloc == OT_DEVICE_ROLE_ROUTER)
++                blobmsg_add_u16(&mBuf, "State", 3);
++            else if (rloc == OT_DEVICE_ROLE_LEADER)
++                blobmsg_add_u16(&mBuf, "State", 4);
++            const uint8_t *pExtAddress =
++                reinterpret_cast<const uint8_t *>(otLinkGetExtendedAddress(mController->GetInstance()));
++            OutputBytes(pExtAddress, OT_EXT_ADDRESS_SIZE, extAddress);
++            blobmsg_add_string(&mBuf, "ExtAddress", extAddress);
++            blobmsg_add_u32(&mBuf, "Rloc16", otThreadGetRloc16(mController->GetInstance()));
++            blobmsg_close_table(&mBuf, pRCP);
++        }
++
++        /* SRP Item */
++        void *pSRP = NULL;
++        pSRP       = blobmsg_open_table(&mBuf, "SRP");
++        if (pSRP)
++        {
++            blobmsg_add_u32(&mBuf, "ServerState", otSrpServerGetState(mController->GetInstance()));
++            blobmsg_add_string(&mBuf, "ServerDomain", otSrpServerGetDomain(mController->GetInstance()));
++            blobmsg_close_table(&mBuf, pSRP);
++        }
++
++        /* Commissioner Item*/
++        void *pCommissioner = NULL;
++        pCommissioner       = blobmsg_open_table(&mBuf, "Commissioner");
++        if (pCommissioner)
++        {
++            blobmsg_add_u32(&mBuf, "State", otCommissionerGetState(mController->GetInstance()));
++            blobmsg_close_table(&mBuf, pCommissioner);
++        }
++    }
++    else if (!strcmp(aAction, "txpower"))
++    {
++        int8_t power;
++        otPlatRadioGetTransmitPower(mController->GetInstance(), &power);
++        blobmsg_add_u32(&mBuf, "TXPower", power);
++    }
++    else if (!strcmp(aAction, "joinerstate"))
++    {
++        blobmsg_add_u32(&mBuf, "State", otJoinerGetState(mController->GetInstance()));
++    }
++#if OTBR_ENABLE_BACKBONE_ROUTER
++    else if (!strcmp(aAction, "bbrstatus"))
++    {
++        switch (otBackboneRouterGetState(mController->GetInstance()))
++        {
++        case OT_BACKBONE_ROUTER_STATE_DISABLED:
++            blobmsg_add_string(&mBuf, "State", "Disabled");
++            break;
++        case OT_BACKBONE_ROUTER_STATE_SECONDARY:
++            blobmsg_add_string(&mBuf, "State", "Secondary");
++            break;
++        case OT_BACKBONE_ROUTER_STATE_PRIMARY:
++            blobmsg_add_string(&mBuf, "State", "Primary");
++            break;
++        default:
++            blobmsg_add_string(&mBuf, "State", "Disabled");
++            break;
++        }
++
++        otBackboneRouterConfig config;
++        if (otBackboneRouterGetPrimary(mController->GetInstance(), &config) == OT_ERROR_NONE)
++        {
++            blobmsg_add_u32(&mBuf, "MlrTimeout", config.mMlrTimeout);
++            blobmsg_add_u32(&mBuf, "SequenceNumber", config.mReregistrationDelay);
++            blobmsg_add_u32(&mBuf, "ReregistrationDelay", config.mReregistrationDelay);
++            blobmsg_add_u32(&mBuf, "Jitter", otBackboneRouterGetRegistrationJitter(mController->GetInstance()));
++        }
++    }
++#endif
++    else if (!strcmp(aAction, "srpsrvconfig"))
++    {
++        otSrpServerLeaseConfig leaseConfig;
++        otSrpServerGetLeaseConfig(mController->GetInstance(), &leaseConfig);
++        blobmsg_add_u32(&mBuf, "MinLease", leaseConfig.mMinLease);
++        blobmsg_add_u32(&mBuf, "MaxLease", leaseConfig.mMaxLease);
++        blobmsg_add_u32(&mBuf, "MinKeyLease", leaseConfig.mMinKeyLease);
++        blobmsg_add_u32(&mBuf, "MaxKeyLease", leaseConfig.mMaxKeyLease);
++        blobmsg_add_u8(&mBuf, "Enable", (otSrpServerGetState(mController->GetInstance()) == 1) ? true : false);
++        blobmsg_add_string(&mBuf, "DomainName", otSrpServerGetDomain(mController->GetInstance()));
++        blobmsg_add_u32(&mBuf, "SeqNum", otSrpServerGetAnycastModeSequenceNumber(mController->GetInstance()));
++    }
++    else if (!strcmp(aAction, "srpsrvservice"))
++    {
++        static constexpr char *kAnyServiceName  = nullptr;
++        static constexpr char *kAnyInstanceName = nullptr;
++
++        const otSrpServerHost *host = nullptr;
++
++        void *pServices = nullptr;
++        pServices       = blobmsg_open_array(&mBuf, "Services");
++
++        while ((host = otSrpServerGetNextHost(mController->GetInstance(), host)) != nullptr)
++        {
++            const otSrpServerService *service = nullptr;
++
++            while ((service = otSrpServerHostFindNextService(host, service, OT_SRP_SERVER_FLAGS_BASE_TYPE_SERVICE_ONLY,
++                                                             kAnyServiceName, kAnyInstanceName)) != nullptr)
++            {
++                bool                      isDeleted    = otSrpServerServiceIsDeleted(service);
++                const char               *instanceName = otSrpServerServiceGetInstanceName(service);
++                const otSrpServerService *subService   = nullptr;
++                const uint8_t            *txtData;
++                uint16_t                  txtDataLength;
++                bool                      hasSubType = false;
++                otSrpServerLeaseInfo      leaseInfo;
++
++                void *pService = blobmsg_open_table(&mBuf, nullptr);
++                if (pService)
++                {
++                    blobmsg_add_string(&mBuf, "InstanceName", instanceName);
++                    blobmsg_add_u8(&mBuf, "Deleted", isDeleted);
++
++                    if (isDeleted)
++                    {
++                        blobmsg_close_table(&mBuf, pService);
++                        continue;
++                    }
++
++                    otSrpServerServiceGetLeaseInfo(service, &leaseInfo);
++                    blobmsg_add_u32(&mBuf, "Lease", leaseInfo.mLease / 1000);
++                    blobmsg_add_u32(&mBuf, "KeyLease", leaseInfo.mKeyLease / 1000);
++
++                    char subtypes[256] = {0};
++                    while ((subService = otSrpServerHostFindNextService(
++                                host, subService,
++                                (OT_SRP_SERVER_SERVICE_FLAG_SUB_TYPE | OT_SRP_SERVER_SERVICE_FLAG_ACTIVE),
++                                kAnyServiceName, instanceName)) != nullptr)
++                    {
++                        char subLabel[OT_DNS_MAX_LABEL_SIZE];
++                        otSrpServerServiceGetServiceSubTypeLabel(subService, subLabel, sizeof(subLabel));
++                        if (!hasSubType)
++                        {
++                            strcat(subtypes, subLabel);
++                        }
++                        else
++                        {
++                            strcat(subtypes, ",");
++                            strcat(subtypes, subLabel);
++                        }
++                        hasSubType = true;
++                    }
++                    blobmsg_add_string(&mBuf, "Subtypes", subtypes);
++
++                    blobmsg_add_u32(&mBuf, "Port", otSrpServerServiceGetPort(service));
++                    blobmsg_add_u32(&mBuf, "Priority", otSrpServerServiceGetPriority(service));
++                    blobmsg_add_u32(&mBuf, "Weight", otSrpServerServiceGetWeight(service));
++                    blobmsg_add_u32(&mBuf, "Ttl", otSrpServerServiceGetTtl(service));
++
++                    txtData = otSrpServerServiceGetTxtData(service, &txtDataLength);
++                    if (txtDataLength > 0)
++                    {
++                        otDnsTxtEntry         entry;
++                        otDnsTxtEntryIterator iterator;
++
++                        void *pTXT = blobmsg_open_array(&mBuf, "TXT");
++                        if (pTXT)
++                        {
++                            otDnsInitTxtEntryIterator(&iterator, txtData, txtDataLength);
++
++                            while (otDnsGetNextTxtEntry(&iterator, &entry) == OT_ERROR_NONE)
++                            {
++                                char item[256] = {0};
++                                if (entry.mKey == nullptr)
++                                {
++                                    OutputBytes(entry.mValue, entry.mValueLength, item);
++                                }
++                                else
++                                {
++                                    strcat(item, entry.mKey);
++
++                                    if (entry.mValue != nullptr)
++                                    {
++                                        char value[256] = {0};
++                                        strcat(item, "=");
++                                        snprintf(value, entry.mValueLength + 1, "%s", entry.mValue);
++                                        strcat(item, value);
++                                    }
++                                }
++                                blobmsg_add_string(&mBuf, nullptr, item);
++                            }
++                            blobmsg_close_array(&mBuf, pTXT);
++                        }
++                    }
++
++                    blobmsg_add_string(&mBuf, "Host", otSrpServerHostGetFullName(host));
++
++                    void *pAddress = NULL;
++                    pAddress       = blobmsg_open_array(&mBuf, "Address");
++                    if (pAddress)
++                    {
++                        const otIp6Address *addresses;
++                        uint8_t             addressesNum;
++
++                        addresses = otSrpServerHostGetAddresses(host, &addressesNum);
++
++                        for (uint8_t i = 0; i < addressesNum; ++i)
++                        {
++                            char string[OT_IP6_ADDRESS_STRING_SIZE];
++                            otIp6AddressToString(&addresses[i], string, sizeof(string));
++                            blobmsg_add_string(&mBuf, nullptr, string);
++                        }
++                        blobmsg_close_array(&mBuf, pAddress);
++                    }
++                    blobmsg_close_table(&mBuf, pService);
++                }
++            }
++        }
++        blobmsg_close_array(&mBuf, pServices);
++    }
++    else if (!strcmp(aAction, "localaddr"))
++    {
++        char address[OT_IP6_ADDRESS_STRING_SIZE];
++
++        memset(address, 0, sizeof(address));
++
++        const otNetifAddress *unicastAddrs = otIp6GetUnicastAddresses(mController->GetInstance());
++        for (const otNetifAddress *addr = unicastAddrs; addr; addr = addr->mNext)
++        {
++            if (addr->mAddressOrigin == OT_ADDRESS_ORIGIN_SLAAC)
++            {
++                otIp6AddressToString(&addr->mAddress, address, sizeof(address));
++                break;
++            }
++        }
++
++        blobmsg_add_string(&mBuf, "localaddr", address);
++    }
++    else if (!strcmp(aAction, "activetimestamp"))
++    {
++        otOperationalDataset dataset;
++        SuccessOrExit(error = otDatasetGetActive(mController->GetInstance(), &dataset));
++        blobmsg_add_u64(&mBuf, "ActiveTimestamp", dataset.mActiveTimestamp.mSeconds);
++    }
++    else if (!strcmp(aAction, "bufferinfo"))
++    {
++        otBufferInfo bufferInfo;
++        otMessageGetBufferInfo(mController->GetInstance(), &bufferInfo);
++
++        blobmsg_add_u32(&mBuf, "TotalBuffers", bufferInfo.mTotalBuffers);
++        blobmsg_add_u32(&mBuf, "FreeBuffers", bufferInfo.mFreeBuffers);
++
++        blobmsg_add_u32(&mBuf, "6loSendQueue.NumMessages", bufferInfo.m6loSendQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "6loSendQueue.NumBuffers", bufferInfo.m6loSendQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "6loSendQueue.TotalBytes", bufferInfo.m6loSendQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "6loReassemblyQueue.NumMessages", bufferInfo.m6loReassemblyQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "6loReassemblyQueue.NumBuffers", bufferInfo.m6loReassemblyQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "6loReassemblyQueue.TotalBytes", bufferInfo.m6loReassemblyQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "Ip6Queue.NumMessages", bufferInfo.mIp6Queue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "Ip6Queue.NumBuffers", bufferInfo.mIp6Queue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "Ip6Queue.TotalBytes", bufferInfo.mIp6Queue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "MplQueue.NumMessages", bufferInfo.mMplQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "MplQueue.NumBuffers", bufferInfo.mMplQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "MplQueue.TotalBytes", bufferInfo.mMplQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "MleQueue.NumMessages", bufferInfo.mMleQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "MleQueue.NumBuffers", bufferInfo.mMleQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "MleQueue.TotalBytes", bufferInfo.mMleQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "CoapQueue.NumMessages", bufferInfo.mCoapQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "CoapQueue.NumBuffers", bufferInfo.mCoapQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "CoapQueue.TotalBytes", bufferInfo.mCoapQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "CoapSecureQueue.NumMessages", bufferInfo.mCoapSecureQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "CoapSecureQueue.NumBuffers", bufferInfo.mCoapSecureQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "CoapSecureQueue.TotalBytes", bufferInfo.mCoapSecureQueue.mTotalBytes);
++
++        blobmsg_add_u32(&mBuf, "ApplicationCoapQueue.NumMessages", bufferInfo.mApplicationCoapQueue.mNumMessages);
++        blobmsg_add_u32(&mBuf, "ApplicationCoapQueue.NumBuffers", bufferInfo.mApplicationCoapQueue.mNumBuffers);
++        blobmsg_add_u32(&mBuf, "ApplicationCoapQueue.TotalBytes", bufferInfo.mApplicationCoapQueue.mTotalBytes);
++    }
++    else if (!strcmp(aAction, "services"))
++    {
++        otNetworkDataIterator iterator = OT_NETWORK_DATA_ITERATOR_INIT;
++        otServiceConfig       config;
++
++        void *pServices = nullptr;
++        pServices       = blobmsg_open_array(&mBuf, "Services");
++        if (pServices)
++        {
++            while (otNetDataGetNextService(mController->GetInstance(), &iterator, &config) == OT_ERROR_NONE)
++            {
++                void *pService = blobmsg_open_table(&mBuf, nullptr);
++                if (pService)
++                {
++                    char aServicesData[64] = {0};
++                    char aServerData[64]   = {0};
++
++                    blobmsg_add_u16(&mBuf, "ServiceId", config.mServiceId);
++                    blobmsg_add_u32(&mBuf, "EnterpriseNumber", config.mEnterpriseNumber);
++                    blobmsg_add_u16(&mBuf, "ServiceDataLength", config.mServiceDataLength);
++                    OutputBytes(config.mServiceData, config.mServiceDataLength, aServicesData);
++                    blobmsg_add_string(&mBuf, "ServicesData", aServicesData);
++                    if (!strcmp(aServicesData, "01"))
++                    {
++                        blobmsg_add_string(&mBuf, "ServicesName", "BBR");
++                    }
++                    else if (!strcmp(aServicesData, "5d"))
++                    {
++                        blobmsg_add_string(&mBuf, "ServicesName", "SRP server");
++                    }
++
++                    blobmsg_add_u16(&mBuf, "ServerDataLength", config.mServerConfig.mServerDataLength);
++                    OutputBytes(config.mServerConfig.mServerData, config.mServerConfig.mServerDataLength, aServerData);
++                    blobmsg_add_string(&mBuf, "ServerData", aServerData);
++                    blobmsg_add_u8(&mBuf, "Stable", config.mServerConfig.mStable);
++                    blobmsg_add_u32(&mBuf, "Rloc16", config.mServerConfig.mRloc16);
++                    blobmsg_close_table(&mBuf, pService);
++                }
++            }
++            blobmsg_close_table(&mBuf, pServices);
++        }
++    }
++    else if (!strcmp(aAction, "neighbortable"))
++    {
++        otNeighborInfo         neighborInfo;
++        otNeighborInfoIterator iterator                  = OT_NEIGHBOR_INFO_ITERATOR_INIT;
++        void                  *jsonList                  = nullptr;
++        char                   extAddress[XPANID_LENGTH] = "";
++        void                  *pMode                     = nullptr;
++        uint16_t               NeighborNumber            = 0;
++        void                  *pNeighborList             = nullptr;
++
++        pNeighborList = blobmsg_open_array(&mBuf, "NeighborList");
++        while (otThreadGetNextNeighborInfo(mController->GetInstance(), &iterator, &neighborInfo) == OT_ERROR_NONE)
++        {
++            jsonList = blobmsg_open_table(&mBuf, nullptr);
++
++            blobmsg_add_string(&mBuf, "Role", neighborInfo.mIsChild ? "C" : "R");
++
++            blobmsg_add_u32(&mBuf, "Rloc16", neighborInfo.mRloc16);
++
++            blobmsg_add_u32(&mBuf, "Age", neighborInfo.mAge);
++
++            blobmsg_add_u32(&mBuf, "AvgRssi", neighborInfo.mAverageRssi);
++
++            blobmsg_add_u32(&mBuf, "LastRssi", neighborInfo.mLastRssi);
++
++            pMode = blobmsg_open_table(&mBuf, "Mode");
++            if (pMode)
++            {
++                blobmsg_add_u32(&mBuf, "RxOnWhenIdle", neighborInfo.mRxOnWhenIdle);
++                blobmsg_add_u32(&mBuf, "DeviceType", neighborInfo.mFullThreadDevice);
++                blobmsg_add_u32(&mBuf, "NetworkData", neighborInfo.mFullNetworkData);
++                blobmsg_close_table(&mBuf, pMode);
++            }
++
++            OutputBytes(neighborInfo.mExtAddress.m8, sizeof(neighborInfo.mExtAddress.m8), extAddress);
++            blobmsg_add_string(&mBuf, "ExtAddress", extAddress);
++
++            blobmsg_add_u16(&mBuf, "LinkQualityIn", neighborInfo.mLinkQualityIn);
++
++            blobmsg_close_table(&mBuf, jsonList);
++
++            memset(extAddress, 0, sizeof(extAddress));
++            NeighborNumber++;
++        }
++        blobmsg_close_array(&mBuf, pNeighborList);
++        blobmsg_add_u32(&mBuf, "NeighborNumber", NeighborNumber);
++    }
++#endif
+     else
+     {
+         perror("invalid argument in get information ubus\n");
+@@ -1422,9 +2238,10 @@ int UbusServer::UbusSetInformation(struc
+ 
+     otError error = OT_ERROR_NONE;
+ 
++    mNcpThreadMutex->lock();
++
+     blob_buf_init(&mBuf, 0);
+ 
+-    mNcpThreadMutex->lock();
+     if (!strcmp(aAction, "networkname"))
+     {
+         struct blob_attr *tb[SET_NETWORK_MAX];
+@@ -1457,6 +2274,7 @@ int UbusServer::UbusSetInformation(struc
+             long  value;
+             char *panid = blobmsg_get_string(tb[SETNETWORK]);
+             SuccessOrExit(error = ParseLong(panid, value));
++            SuccessOrExit(error = (value > 65535) ? OT_ERROR_INVALID_ARGS : OT_ERROR_NONE);
+             error = otLinkSetPanId(mController->GetInstance(), static_cast<otPanId>(value));
+         }
+     }
+@@ -1592,6 +2410,71 @@ int UbusServer::UbusSetInformation(struc
+     {
+         otLinkFilterClearAddresses(mController->GetInstance());
+     }
++    else if (!strcmp(aAction, "loglevel"))
++    {
++        struct blob_attr *tb[SET_NETWORK_MAX];
++        blobmsg_parse(setLogLevelPolicy, SET_NETWORK_MAX, tb, blob_data(aMsg), blob_len(aMsg));
++        if (tb[SETNETWORK] != nullptr)
++        {
++            uint8_t level = blobmsg_get_u32(tb[SETNETWORK]);
++            SuccessOrExit(error = otLoggingSetLevel(static_cast<otLogLevel>(level)));
++        }
++    }
++    else if (!strcmp(aAction, "setsrpsrvconfig"))
++    {
++        struct blob_attr *tb[SET_SRPSRVCONFIG_MAX];
++        blobmsg_parse(setSrpSrvConfigPolicy, SET_SRPSRVCONFIG_MAX, tb, blob_data(aMsg), blob_len(aMsg));
++
++        otSrpServerSetEnabled(mController->GetInstance(), false);
++
++        if ((tb[MINLEASE] != nullptr) && (tb[MAXLEASE] != nullptr) && (tb[KEYMINLEASE] != nullptr) &&
++            (tb[KEYMAXLEASE] != nullptr))
++        {
++            otSrpServerLeaseConfig leaseConfig;
++            leaseConfig.mMinLease    = blobmsg_get_u32(tb[MINLEASE]);
++            leaseConfig.mMaxLease    = blobmsg_get_u32(tb[MAXLEASE]);
++            leaseConfig.mMinKeyLease = blobmsg_get_u32(tb[KEYMINLEASE]);
++            leaseConfig.mMaxKeyLease = blobmsg_get_u32(tb[KEYMAXLEASE]);
++            SuccessOrExit(error = otSrpServerSetLeaseConfig(mController->GetInstance(), &leaseConfig));
++        }
++        if (tb[DOMAINNAME] != nullptr)
++        {
++            otSrpServerSetDomain(mController->GetInstance(), blobmsg_get_string(tb[DOMAINNAME]));
++        }
++        if (tb[SEQNUM] != nullptr)
++        {
++            SuccessOrExit(error = otSrpServerSetAnycastModeSequenceNumber(mController->GetInstance(),
++                                                                          blobmsg_get_u16(tb[SEQNUM])));
++        }
++        if (tb[ENABLE] != nullptr)
++        {
++            otSrpServerSetEnabled(mController->GetInstance(), blobmsg_get_bool(tb[ENABLE]));
++        }
++    }
++#if OTBR_ENABLE_BACKBONE_ROUTER
++    else if (!strcmp(aAction, "setbbrconfig"))
++    {
++        struct blob_attr *tb[SET_BBR_CONFIG_MAX];
++        blobmsg_parse(setBBRConfigPolicy, SET_BBR_CONFIG_MAX, tb, blob_data(aMsg), blob_len(aMsg));
++        if (tb[BBR_ENABLE] != nullptr)
++        {
++            otBackboneRouterSetEnabled(mController->GetInstance(), blobmsg_get_bool(tb[BBR_ENABLE]));
++        }
++        if ((tb[BBR_SEQNO] != nullptr) || (tb[BBR_DELAY] != nullptr) || (tb[BBR_TIMEOUT] != nullptr))
++        {
++            otBackboneRouterConfig config;
++            otBackboneRouterGetConfig(mController->GetInstance(), &config);
++            config.mSequenceNumber      = blobmsg_get_u32(tb[BBR_SEQNO]);
++            config.mReregistrationDelay = blobmsg_get_u32(tb[BBR_DELAY]);
++            config.mMlrTimeout          = blobmsg_get_u32(tb[BBR_TIMEOUT]);
++            SuccessOrExit(error = otBackboneRouterSetConfig(mController->GetInstance(), &config));
++        }
++        if (tb[BBR_JITTER] != nullptr)
++        {
++            otBackboneRouterSetRegistrationJitter(mController->GetInstance(), blobmsg_get_u32(tb[BBR_JITTER]));
++        }
++    }
++#endif
+     else
+     {
+         perror("invalid argument in get information ubus\n");
+@@ -1675,6 +2558,63 @@ void UbusServer::UbusConnectionLost(stru
+     UbusReconnTimer(nullptr);
+ }
+ 
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++void UbusServer::UbusWatchdogTimer(struct uloop_timeout *aTimeout)
++{
++    GetInstance().UbusWatchdogTimerDetail(aTimeout);
++}
++
++void UbusServer::UbusWatchdogTimerDetail(struct uloop_timeout *aTimeout)
++{
++    OT_UNUSED_VARIABLE(aTimeout);
++
++    static struct uloop_timeout retry = {
++        list : {},
++        pending : false,
++        cb : UbusWatchdogTimer,
++        time : {},
++    };
++    int time = 30;
++
++    otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_WATCHDOG);
++
++    uloop_timeout_set(&retry, time * 1000);
++}
++
++void UbusServer::HandleNetifStateChanged(uint32_t aFlags, void *aContext)
++{
++    OT_UNUSED_VARIABLE(aFlags);
++    if ((aFlags & OT_CHANGED_THREAD_ROLE) != 0)
++    {
++        switch (otThreadGetDeviceRole(static_cast<otInstance *>(aContext)))
++        {
++        case OT_DEVICE_ROLE_DISABLED:
++            otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_DISABLED);
++            break;
++        case OT_DEVICE_ROLE_CHILD:
++        case OT_DEVICE_ROLE_ROUTER:
++        case OT_DEVICE_ROLE_LEADER:
++            otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_ENABLED);
++            break;
++        default:
++            break;
++        }
++    }
++}
++
++void UbusServer::HandleNeighborTableChanged(otNeighborTableEvent aEvent, const otNeighborTableEntryInfo *aEntry)
++{
++    GetInstance().HandleNeighborTableChanged(aEvent, *aEntry);
++}
++
++void UbusServer::HandleNeighborTableChanged(otNeighborTableEvent aEvent, const otNeighborTableEntryInfo &aEntry)
++{
++    OT_UNUSED_VARIABLE(aEvent);
++    OT_UNUSED_VARIABLE(aEntry);
++    otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_NEIGHBOR_TABLE_CHANGED);
++}
++#endif
++
+ int UbusServer::DisplayUbusInit(const char *aPath)
+ {
+     uloop_init();
+@@ -1724,6 +2664,15 @@ void UbusServer::InstallUbusObject(void)
+         return;
+     }
+ 
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++    otSetStateChangedCallback(mController->GetInstance(), &UbusServer::HandleNetifStateChanged,
++                              mController->GetInstance());
++    otThreadRegisterNeighborTableCallback(mController->GetInstance(), &UbusServer::HandleNeighborTableChanged);
++    otbr::ubus::UbusServer::GetInstance().SendEvent(OT_EVENT_OTBR_INIT);
++
++    UbusWatchdogTimer(nullptr);
++#endif
++
+     otbrLogInfo("Uloop run");
+     uloop_run();
+ 
+Index: ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.hpp
+===================================================================
+--- ot-br-posix-2022-11-08-r4.2.3.orig/src/openwrt/ubus/otubus.hpp
++++ ot-br-posix-2022-11-08-r4.2.3/src/openwrt/ubus/otubus.hpp
+@@ -42,6 +42,7 @@
+ #include <openthread/ip6.h>
+ #include <openthread/link.h>
+ #include <openthread/netdiag.h>
++#include <openthread/thread_ftd.h>
+ #include <openthread/udp.h>
+ 
+ #include "common/code_utils.hpp"
+@@ -768,6 +769,98 @@ public:
+      */
+     void HandleDiagnosticGetResponse(otError aError, otMessage *aMessage, const otMessageInfo *aMessageInfo);
+ 
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++    void SendEvent(int aEvent);
++
++    static int UbusThreadStatusHandle(struct ubus_context *     aContext,
++                                      struct ubus_object *      aObj,
++                                      struct ubus_request_data *aRequest,
++                                      const char *              aMethod,
++                                      struct blob_attr *        aMsg);
++    static int UbusThreadGraphHandle(struct ubus_context *     aContext,
++                                     struct ubus_object *      aObj,
++                                     struct ubus_request_data *aRequest,
++                                     const char *              aMethod,
++                                     struct blob_attr *        aMsg);
++    static int UbusTxPowerHandle(struct ubus_context *     aContext,
++                                 struct ubus_object *      aObj,
++                                 struct ubus_request_data *aRequest,
++                                 const char *              aMethod,
++                                 struct blob_attr *        aMsg);
++    static int UbusJoinerStateHandle(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusCommissionerStopHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusCommissionerStateHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++#if OTBR_ENABLE_BACKBONE_ROUTER
++    static int UbusBackboneRouterStatusHandle(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusSetBackboneRouterConfigHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++#endif
++    static int UbusSetLogLevelHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusSrpServerConfigHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusSrpServerServiceHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusSetSrpServerConfigHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusLocalAddrHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusActiveTimestampHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusBufferInfoHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusServicesInfoHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++    static int UbusNeighborTableHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
++#endif
++
+ private:
+     bool                       mIfFinishScan;
+     struct ubus_context *      mContext;
+@@ -1123,6 +1216,16 @@ private:
+      *
+      */
+     void AppendResult(otError aError, struct ubus_context *aContext, struct ubus_request_data *aRequest);
++
++#if OPENTHREAD_CONFIG_OPENWRT_EXTENSION
++    static void UbusWatchdogTimer(struct uloop_timeout *aTimeout);
++    void UbusWatchdogTimerDetail(struct uloop_timeout *aTimeout);
++
++    static void HandleNetifStateChanged(uint32_t aFlags, void *aContext);
++
++    static void HandleNeighborTableChanged(otNeighborTableEvent aEvent, const otNeighborTableEntryInfo *aEntry);
++    void        HandleNeighborTableChanged(otNeighborTableEvent aEvent, const otNeighborTableEntryInfo &aEntry);
++#endif
+ };
+ 
+ class UBusAgent : public MainloopProcessor
