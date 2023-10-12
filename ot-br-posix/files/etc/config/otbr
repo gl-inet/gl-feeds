@@ -1,16 +1,15 @@
 
 config service 'otbr'
+    option disabled '1'
     option log_level '3'
     option txpower '20'
     option channel '26'
 
 config service 'srp_server'
-    option enable '0'
     option min_lease '1800'
     option max_lease '86400'
     option min_key_lease '86400'
     option max_key_lease '1209600'
 
 config service 'bbr'
-    option enable '1'
     option ifname 'br-lan'
