@@ -1,12 +1,15 @@
-Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
+Index: ot-br-posix-2023-7-12-r4.3.1/src/openwrt/ubus/otubus.cpp
 ===================================================================
---- ot-br-posix-2023-5-17-r4.3.0.orig/src/openwrt/ubus/otubus.cpp
-+++ ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
-@@ -40,11 +40,15 @@
+--- ot-br-posix-2023-7-12-r4.3.1.orig/src/openwrt/ubus/otubus.cpp
++++ ot-br-posix-2023-7-12-r4.3.1/src/openwrt/ubus/otubus.cpp
+@@ -39,12 +39,18 @@
+ #include <arpa/inet.h>
  #include <sys/eventfd.h>
  
++#include <openthread/border_agent.h>
  #include <openthread/commissioner.h>
 +#include <openthread/logging.h>
++#include <openthread/nat64.h>
 +#include <openthread/srp_server.h>
  #include <openthread/thread.h>
  #include <openthread/thread_ftd.h>
@@ -18,7 +21,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  
  namespace otbr {
  namespace ubus {
-@@ -93,6 +97,7 @@ enum
+@@ -93,6 +99,7 @@ enum
  {
      PSKD,
      EUI64,
@@ -26,7 +29,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      ADD_JOINER_MAX,
  };
  
-@@ -154,6 +159,7 @@ static const struct blobmsg_policy remov
+@@ -154,6 +161,7 @@ static const struct blobmsg_policy remov
  static const struct blobmsg_policy addJoinerPolicy[ADD_JOINER_MAX] = {
      [PSKD]  = {.name = "pskd", .type = BLOBMSG_TYPE_STRING},
      [EUI64] = {.name = "eui64", .type = BLOBMSG_TYPE_STRING},
@@ -34,7 +37,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  };
  
  static const struct blobmsg_policy mgmtsetPolicy[MGMTSET_MAX] = {
-@@ -165,6 +171,100 @@ static const struct blobmsg_policy mgmts
+@@ -165,6 +173,100 @@ static const struct blobmsg_policy mgmts
      [PSKC]        = {.name = "pskc", .type = BLOBMSG_TYPE_STRING},
  };
  
@@ -135,7 +138,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  static const struct ubus_method otbrMethods[] = {
      {"scan", &UbusServer::UbusScanHandler, 0, 0, nullptr, 0},
      {"channel", &UbusServer::UbusChannelHandler, 0, 0, nullptr, 0},
-@@ -195,7 +295,7 @@ static const struct ubus_method otbrMeth
+@@ -195,7 +297,7 @@ static const struct ubus_method otbrMeth
      {"networkdata", &UbusServer::UbusNetworkdataHandler, 0, 0, nullptr, 0},
      {"commissionerstart", &UbusServer::UbusCommissionerStartHandler, 0, 0, nullptr, 0},
      {"joinernum", &UbusServer::UbusJoinerNumHandler, 0, 0, nullptr, 0},
@@ -144,7 +147,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      {"macfiltersetstate", &UbusServer::UbusMacfilterSetStateHandler, 0, 0, macfilterSetStatePolicy,
       ARRAY_SIZE(macfilterSetStatePolicy)},
      {"macfilteradd", &UbusServer::UbusMacfilterAddHandler, 0, 0, macfilterAddPolicy, ARRAY_SIZE(macfilterAddPolicy)},
-@@ -207,6 +307,28 @@ static const struct ubus_method otbrMeth
+@@ -207,6 +309,29 @@ static const struct ubus_method otbrMeth
      {"joineradd", &UbusServer::UbusJoinerAddHandler, 0, 0, addJoinerPolicy, ARRAY_SIZE(addJoinerPolicy)},
      {"mgmtset", &UbusServer::UbusMgmtsetHandler, 0, 0, mgmtsetPolicy, ARRAY_SIZE(mgmtsetPolicy)},
      {"interfacename", &UbusServer::UbusInterfaceNameHandler, 0, 0, nullptr, 0},
@@ -169,11 +172,12 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
 +    {"bufferinfo", &UbusServer::UbusBufferInfoHandler, 0, 0, nullptr, 0},
 +    {"services", &UbusServer::UbusServicesInfoHandler, 0, 0, nullptr, 0},
 +    {"neighbortable", &UbusServer::UbusNeighborTableHandler, 0, 0, nullptr, 0},
++    {"nat64status", &UbusServer::UbusNat64StatusHandler, 0, 0, nullptr, 0},
 +#endif
  };
  
  static struct ubus_object_type otbrObjType = {"otbr_prog", 0, otbrMethods, ARRAY_SIZE(otbrMethods)};
-@@ -665,6 +787,154 @@ int UbusServer::UbusMacfilterClearHandle
+@@ -665,6 +790,163 @@ int UbusServer::UbusMacfilterClearHandle
      return GetInstance().UbusSetInformation(aContext, aObj, aRequest, aMethod, aMsg, "macfilterclear");
  }
  
@@ -323,12 +327,21 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
 +{
 +    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "neighbortable");
 +}
++
++int UbusServer::UbusNat64StatusHandler(struct ubus_context      *aContext,
++                                         struct ubus_object       *aObj,
++                                         struct ubus_request_data *aRequest,
++                                         const char               *aMethod,
++                                         struct blob_attr         *aMsg)
++{
++    return GetInstance().UbusGetInformation(aContext, aObj, aRequest, aMethod, aMsg, "nat64status");
++}
 +#endif
 +
  int UbusServer::UbusLeaveHandlerDetail(struct ubus_context      *aContext,
                                         struct ubus_object       *aObj,
                                         struct ubus_request_data *aRequest,
-@@ -710,17 +980,17 @@ int UbusServer::UbusThreadHandler(struct
+@@ -710,17 +992,17 @@ int UbusServer::UbusThreadHandler(struct
  
      otError error = OT_ERROR_NONE;
  
@@ -348,7 +361,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          SuccessOrExit(error = otThreadSetEnabled(mController->GetInstance(), false));
          SuccessOrExit(error = otIp6SetEnabled(mController->GetInstance(), false));
      }
-@@ -748,9 +1018,10 @@ int UbusServer::UbusParentHandlerDetail(
+@@ -748,9 +1030,10 @@ int UbusServer::UbusParentHandlerDetail(
      void        *jsonList                  = nullptr;
      void        *jsonArray                 = nullptr;
  
@@ -360,7 +373,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      SuccessOrExit(error = otThreadGetParentInfo(mController->GetInstance(), &parentInfo));
  
      jsonArray = blobmsg_open_array(&mBuf, "parent_list");
-@@ -795,11 +1066,12 @@ int UbusServer::UbusNeighborHandlerDetai
+@@ -795,11 +1078,12 @@ int UbusServer::UbusNeighborHandlerDetai
      char                   mode[5]                   = "";
      char                   extAddress[XPANID_LENGTH] = "";
  
@@ -374,7 +387,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      while (otThreadGetNextNeighborInfo(mController->GetInstance(), &iterator, &neighborInfo) == OT_ERROR_NONE)
      {
          jsonList = blobmsg_open_table(&mBuf, nullptr);
-@@ -870,6 +1142,10 @@ int UbusServer::UbusMgmtset(struct ubus_
+@@ -870,6 +1154,10 @@ int UbusServer::UbusMgmtset(struct ubus_
      long                 value;
      int                  length = 0;
  
@@ -385,7 +398,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      SuccessOrExit(error = otDatasetGetActive(mController->GetInstance(), &dataset));
  
      blobmsg_parse(mgmtsetPolicy, MGMTSET_MAX, tb, blob_data(aMsg), blob_len(aMsg));
-@@ -927,6 +1203,7 @@ int UbusServer::UbusMgmtset(struct ubus_
+@@ -927,6 +1215,7 @@ int UbusServer::UbusMgmtset(struct ubus_
                                                       static_cast<uint8_t>(length), /* aCallback */ nullptr,
                                                       /* aContext */ nullptr));
  exit:
@@ -393,7 +406,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      AppendResult(error, aContext, aRequest);
      return 0;
  }
-@@ -946,8 +1223,13 @@ int UbusServer::UbusCommissioner(struct
+@@ -946,8 +1235,13 @@ int UbusServer::UbusCommissioner(struct
  
      mNcpThreadMutex->lock();
  
@@ -407,7 +420,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          if (otCommissionerGetState(mController->GetInstance()) == OT_COMMISSIONER_STATE_DISABLED)
          {
              error = otCommissionerStart(mController->GetInstance(), &UbusServer::HandleStateChanged,
-@@ -960,6 +1242,7 @@ int UbusServer::UbusCommissioner(struct
+@@ -960,6 +1254,7 @@ int UbusServer::UbusCommissioner(struct
          otExtAddress        addr;
          const otExtAddress *addrPtr = nullptr;
          char               *pskd    = nullptr;
@@ -415,7 +428,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  
          blobmsg_parse(addJoinerPolicy, ADD_JOINER_MAX, tb, blob_data(aMsg), blob_len(aMsg));
          if (tb[PSKD] != nullptr)
-@@ -981,7 +1264,15 @@ int UbusServer::UbusCommissioner(struct
+@@ -981,7 +1276,15 @@ int UbusServer::UbusCommissioner(struct
              }
          }
  
@@ -432,7 +445,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          SuccessOrExit(
              error = otCommissionerAddJoiner(mController->GetInstance(), addrPtr, pskd, static_cast<uint32_t>(timeout)));
      }
-@@ -1008,10 +1299,19 @@ int UbusServer::UbusCommissioner(struct
+@@ -1008,10 +1311,19 @@ int UbusServer::UbusCommissioner(struct
  
          SuccessOrExit(error = otCommissionerRemoveJoiner(mController->GetInstance(), addrPtr));
      }
@@ -453,7 +466,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      AppendResult(error, aContext, aRequest);
      return 0;
  }
-@@ -1027,9 +1327,11 @@ void UbusServer::HandleStateChanged(otCo
+@@ -1027,9 +1339,11 @@ void UbusServer::HandleStateChanged(otCo
      {
      case OT_COMMISSIONER_STATE_DISABLED:
          otbrLogInfo("Commissioner state disabled");
@@ -465,7 +478,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          break;
      case OT_COMMISSIONER_STATE_PETITION:
          otbrLogInfo("Commissioner state petition");
-@@ -1052,6 +1354,11 @@ void UbusServer::HandleJoinerEvent(otCom
+@@ -1052,6 +1366,11 @@ void UbusServer::HandleJoinerEvent(otCom
      OT_UNUSED_VARIABLE(aJoinerInfo);
      OT_UNUSED_VARIABLE(aJoinerId);
  
@@ -477,7 +490,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      switch (aEvent)
      {
      case OT_COMMISSIONER_JOINER_START:
-@@ -1062,12 +1369,22 @@ void UbusServer::HandleJoinerEvent(otCom
+@@ -1062,12 +1381,22 @@ void UbusServer::HandleJoinerEvent(otCom
          break;
      case OT_COMMISSIONER_JOINER_FINALIZE:
          otbrLogInfo("Joiner finalize");
@@ -500,7 +513,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          break;
      }
  }
-@@ -1085,9 +1402,10 @@ int UbusServer::UbusGetInformation(struc
+@@ -1085,9 +1414,10 @@ int UbusServer::UbusGetInformation(struc
  
      otError error = OT_ERROR_NONE;
  
@@ -512,7 +525,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      if (!strcmp(aAction, "networkname"))
          blobmsg_add_string(&mBuf, "NetworkName", otThreadGetNetworkName(mController->GetInstance()));
      else if (!strcmp(aAction, "interfacename"))
-@@ -1216,18 +1534,24 @@ int UbusServer::UbusGetInformation(struc
+@@ -1216,18 +1546,24 @@ int UbusServer::UbusGetInformation(struc
          otJoinerInfo joinerInfo;
          uint16_t     iterator        = 0;
          int          joinerNum       = 0;
@@ -538,7 +551,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  
              switch (joinerInfo.mType)
              {
-@@ -1252,6 +1576,7 @@ int UbusServer::UbusGetInformation(struc
+@@ -1252,6 +1588,7 @@ int UbusServer::UbusGetInformation(struc
          }
          blobmsg_close_array(&mBuf, jsonArray);
  
@@ -546,7 +559,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
          blobmsg_add_u32(&mBuf, "joinernum", joinerNum);
      }
      else if (!strcmp(aAction, "macfilterstate"))
-@@ -1295,6 +1620,498 @@ int UbusServer::UbusGetInformation(struc
+@@ -1295,6 +1632,536 @@ int UbusServer::UbusGetInformation(struc
  
          blobmsg_close_array(&mBuf, sJsonUri);
      }
@@ -664,6 +677,12 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
 +        otDatasetGetActiveTlvs(mController->GetInstance(), &dataset);
 +        OutputBytes(dataset.mTlvs, dataset.mLength, activeDataset);
 +        blobmsg_add_string(&mBuf, "ActiveDataset", activeDataset);
++
++        char borderAgentIdString[OT_BORDER_AGENT_ID_LENGTH * 2 + 1] = {0};
++        otBorderAgentId id;
++        otBorderAgentGetId(mController->GetInstance(), &id);
++        OutputBytes(id.mId, OT_BORDER_AGENT_ID_LENGTH, borderAgentIdString);
++        blobmsg_add_string(&mBuf, "BorderAgentID", borderAgentIdString);
 +
 +        blobmsg_close_table(&mBuf, pNetwork);
 +
@@ -1041,11 +1060,43 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
 +        blobmsg_close_array(&mBuf, pNeighborList);
 +        blobmsg_add_u32(&mBuf, "NeighborNumber", NeighborNumber);
 +    }
++    else if (!strcmp(aAction, "nat64status"))
++    {
++        static const char *const kNat64State[] = {"Disabled", "NotRunning", "Idle", "Active"};
++        blobmsg_add_string(&mBuf, "PrefixManager", kNat64State[otNat64GetPrefixManagerState(mController->GetInstance())]);
++        blobmsg_add_string(&mBuf, "Translator", kNat64State[otNat64GetTranslatorState(mController->GetInstance())]);
++
++        otIp4Cidr cidr;
++        char cidrString[OT_IP4_CIDR_STRING_SIZE];
++        otNat64GetCidr(mController->GetInstance(), &cidr);
++        otIp4CidrToString(&cidr, cidrString, sizeof(cidrString));
++        blobmsg_add_string(&mBuf, "Cidr", cidrString);
++
++        void *pMappings = nullptr;
++        otNat64AddressMappingIterator iterator;
++        otNat64AddressMapping         mapping;
++        pMappings = blobmsg_open_array(&mBuf, "Mappings");
++        otNat64InitAddressMappingIterator(mController->GetInstance(), &iterator);
++        while (otNat64GetNextAddressMapping(mController->GetInstance(), &iterator, &mapping) == OT_ERROR_NONE)
++        {
++            char ip4AddressString[OT_IP4_ADDRESS_STRING_SIZE];
++            char ip6AddressString[OT_IP6_PREFIX_STRING_SIZE];
++            otIp6AddressToString(&mapping.mIp6, ip6AddressString, sizeof(ip6AddressString));
++            otIp4AddressToString(&mapping.mIp4, ip4AddressString, sizeof(ip4AddressString));
++
++            void *item = nullptr;
++            item = blobmsg_open_table(&mBuf, nullptr);
++            blobmsg_add_string(&mBuf, "ipv4", ip4AddressString);
++            blobmsg_add_string(&mBuf, "ipv6", ip6AddressString);
++            blobmsg_close_table(&mBuf, item);
++        }
++        blobmsg_close_array(&mBuf, pMappings);
++    }
 +#endif
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1436,9 +2253,10 @@ int UbusServer::UbusSetInformation(struc
+@@ -1436,9 +2303,10 @@ int UbusServer::UbusSetInformation(struc
  
      otError error = OT_ERROR_NONE;
  
@@ -1057,7 +1108,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      if (!strcmp(aAction, "networkname"))
      {
          struct blob_attr *tb[SET_NETWORK_MAX];
-@@ -1471,6 +2289,7 @@ int UbusServer::UbusSetInformation(struc
+@@ -1471,6 +2339,7 @@ int UbusServer::UbusSetInformation(struc
              long  value;
              char *panid = blobmsg_get_string(tb[SETNETWORK]);
              SuccessOrExit(error = ParseLong(panid, value));
@@ -1065,7 +1116,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
              error = otLinkSetPanId(mController->GetInstance(), static_cast<otPanId>(value));
          }
      }
-@@ -1606,6 +2425,71 @@ int UbusServer::UbusSetInformation(struc
+@@ -1606,6 +2475,71 @@ int UbusServer::UbusSetInformation(struc
      {
          otLinkFilterClearAddresses(mController->GetInstance());
      }
@@ -1137,7 +1188,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      else
      {
          perror("invalid argument in get information ubus\n");
-@@ -1689,6 +2573,63 @@ void UbusServer::UbusConnectionLost(stru
+@@ -1689,6 +2623,63 @@ void UbusServer::UbusConnectionLost(stru
      UbusReconnTimer(nullptr);
  }
  
@@ -1201,7 +1252,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
  int UbusServer::DisplayUbusInit(const char *aPath)
  {
      uloop_init();
-@@ -1738,6 +2679,15 @@ void UbusServer::InstallUbusObject(void)
+@@ -1738,6 +2729,15 @@ void UbusServer::InstallUbusObject(void)
          return;
      }
  
@@ -1217,10 +1268,10 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.cpp
      otbrLogInfo("Uloop run");
      uloop_run();
  
-Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.hpp
+Index: ot-br-posix-2023-7-12-r4.3.1/src/openwrt/ubus/otubus.hpp
 ===================================================================
---- ot-br-posix-2023-5-17-r4.3.0.orig/src/openwrt/ubus/otubus.hpp
-+++ ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.hpp
+--- ot-br-posix-2023-7-12-r4.3.1.orig/src/openwrt/ubus/otubus.hpp
++++ ot-br-posix-2023-7-12-r4.3.1/src/openwrt/ubus/otubus.hpp
 @@ -42,6 +42,7 @@
  #include <openthread/ip6.h>
  #include <openthread/link.h>
@@ -1229,7 +1280,7 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.hpp
  #include <openthread/udp.h>
  
  #include "common/code_utils.hpp"
-@@ -786,6 +787,98 @@ public:
+@@ -786,6 +787,103 @@ public:
       */
      void HandleDiagnosticGetResponse(otError aError, otMessage *aMessage, const otMessageInfo *aMessageInfo);
  
@@ -1323,12 +1374,17 @@ Index: ot-br-posix-2023-5-17-r4.3.0/src/openwrt/ubus/otubus.hpp
 +                                  struct ubus_request_data *aRequest,
 +                                  const char *              aMethod,
 +                                  struct blob_attr *        aMsg);
++    static int UbusNat64StatusHandler(struct ubus_context *     aContext,
++                                  struct ubus_object *      aObj,
++                                  struct ubus_request_data *aRequest,
++                                  const char *              aMethod,
++                                  struct blob_attr *        aMsg);
 +#endif
 +
  private:
      bool                       mIfFinishScan;
      struct ubus_context       *mContext;
-@@ -1141,6 +1234,16 @@ private:
+@@ -1141,6 +1239,16 @@ private:
       *
       */
      void AppendResult(otError aError, struct ubus_context *aContext, struct ubus_request_data *aRequest);
