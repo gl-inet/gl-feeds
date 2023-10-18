@@ -11,7 +11,6 @@ echo "net.ipv6.conf.default.accept_ra=1" >>/etc/sysctl.conf
 echo "net.ipv6.conf.wpan0.accept_ra=1" >>/etc/sysctl.conf
 echo "net.ipv6.conf.wpan0.disable_ipv6=0" >>/etc/sysctl.conf
 echo "net.ipv6.conf.wpan0.forwarding=1" >>/etc/sysctl.conf
-echo "net.ipv6.conf.br-guest.disable_ipv6=1" >>/etc/sysctl.conf
 sysctl -p /etc/sysctl.conf
 
 exit 0
