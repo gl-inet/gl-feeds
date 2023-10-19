@@ -13,3 +13,6 @@ config service 'srp_server'
 
 config service 'bbr'
     option ifname 'br-lan'
+
+config service 'nat64'
+    option disabled '0'
