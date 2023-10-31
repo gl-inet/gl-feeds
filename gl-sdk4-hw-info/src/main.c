@@ -25,12 +25,14 @@ static int gl_hw_info_probe(struct platform_device *pdev)
 #ifdef CONFIG_OF
     struct property *pp = NULL;
     struct device_node *np = pdev->dev.of_node;
-    struct device_node *data_np = of_find_node_by_name(np, "factory_data");
+    struct device_node *data_np = of_find_node_by_name(NULL, "factory_data");
     static char flash_size_str[64] = "";
     int flash_size = 0;
 
-    if (data_np)
+    if (data_np) {
         make_factory_data(data_np);
+        of_node_put(data_np);
+    }
 
     of_property_read_u32(np, "flash_size", &flash_size);
     sprintf(flash_size_str, "%d MiB", flash_size);
