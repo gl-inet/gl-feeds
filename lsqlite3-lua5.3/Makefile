@@ -7,7 +7,7 @@
 
 include $(TOPDIR)/rules.mk
 
-PKG_NAME:=lsqlite3-lua5.3
+PKG_NAME:=lsqlite3-lua5.3-gl
 PKG_VERSION:=0.9.5
 PKG_RELEASE:=1
 
@@ -22,7 +22,7 @@ PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)/$(basename $(PKG_SOURCE))
 
 include $(INCLUDE_DIR)/package.mk
 
-define Package/lsqlite3-lua5.3
+define Package/lsqlite3-lua5.3-gl
   SUBMENU:=Lua
   SECTION:=lang
   CATEGORY:=Languages
@@ -47,9 +47,9 @@ define Build/Compile
 		-o $(PKG_BUILD_DIR)/lsqlite3.so
 endef
 
-define Package/lsqlite3-lua5.3/install
+define Package/lsqlite3-lua5.3-gl/install
 	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3
 	$(CP) $(PKG_BUILD_DIR)/*.so $(1)/usr/local/lib/lua/5.3
 endef
 
-$(eval $(call BuildPackage,lsqlite3-lua5.3))
+$(eval $(call BuildPackage,lsqlite3-lua5.3-gl))
