@@ -5,9 +5,9 @@ PKG_RELEASE:=1
 
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco.git
-PKG_SOURCE_DATE:=2023-11-22
-PKG_SOURCE_VERSION:=d98ae89f97b1c054585f7f0efd258899cb7cbd71
-PKG_MIRROR_HASH:=8874c20d973d628fc1fa2dd875e760a463c90239271a1aed447b5c29ee02fc73
+PKG_SOURCE_DATE:=2023-11-07
+PKG_SOURCE_VERSION:=c3f349961befbaf2321fc2e441efae7a4315d71d
+PKG_MIRROR_HASH:=26a9c9ea8f6dd1cdaa0246e2238b845b4029fae4c846322451e4270a9776f52d
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -62,7 +62,6 @@ Package/lua-eco-termios=$(call Package/lua-eco/Module,termios)
 Package/lua-eco-netlink=$(call Package/lua-eco/Module,netlink,+lua-eco-socket)
 Package/lua-eco-ip=$(call Package/lua-eco/Module,ip utils,+lua-eco-netlink)
 Package/lua-eco-nl80211=$(call Package/lua-eco/Module,nl80211,+lua-eco-netlink)
-Package/lua-eco-ssh=$(call Package/lua-eco/Module,ssh,+lua-eco-socket +libssh2)
 
 define Package/lua-eco-ssl/config
 	choice
@@ -184,12 +183,6 @@ define Package/lua-eco-nl80211/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/nl80211.so $(1)/usr/local/lib/lua/5.3/eco/core
 endef
 
-define Package/lua-eco-ssh/install
-	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/core
-	$(INSTALL_DATA) $(PKG_BUILD_DIR)/ssh.lua $(1)/usr/local/lib/lua/5.3/eco
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/ssh.so $(1)/usr/local/lib/lua/5.3/eco/core
-endef
-
 $(eval $(call BuildPackage,lua-eco))
 $(eval $(call BuildPackage,lua-eco-log))
 $(eval $(call BuildPackage,lua-eco-base64))
@@ -206,4 +199,3 @@ $(eval $(call BuildPackage,lua-eco-termios))
 $(eval $(call BuildPackage,lua-eco-netlink))
 $(eval $(call BuildPackage,lua-eco-ip))
 $(eval $(call BuildPackage,lua-eco-nl80211))
-$(eval $(call BuildPackage,lua-eco-ssh))
