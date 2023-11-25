@@ -34,30 +34,6 @@
 #define DPRINTF(...) do {} while (0)
 #endif
 
-#if !defined LUA_VERSION_NUM || LUA_VERSION_NUM==501
-
-int luaopen_uci(lua_State *L);
-
-/*
- * ** Adapted from Lua 5.2.0
- * */
-static void luaL_setfuncs (lua_State *L, const luaL_Reg *l, int nup) {
-	luaL_checkstack(L, nup+1, "too many upvalues");
-	for (; l->name != NULL; l++) {  /* fill the table with given functions */
-		int i;
-		lua_pushstring(L, l->name);
-		for (i = 0; i < nup; i++)  /* copy upvalues to the top */
-			lua_pushvalue(L, -(nup+1));
-		lua_pushcclosure(L, l->func, nup);  /* closure with those upvalues */
-		lua_settable(L, -(nup + 3));
-	}
-	lua_pop(L, nup);  /* remove upvalues */
-}
-
-#define lua_rawlen(L, i) lua_objlen(L, i)
-
-#endif
-
 static struct uci_context *global_ctx = NULL;
 
 static struct uci_context *
@@ -367,6 +343,89 @@ uci_lua_foreach(lua_State *L)
 
 done:
 	lua_pushboolean(L, ret);
+	return 1;
+}
+
+
+
+static int
+uci_lua_each_iter(lua_State *L)
+{
+	const char *type = lua_tostring(L, lua_upvalueindex(1));
+	const const struct uci_list *list = lua_topointer(L, lua_upvalueindex(2));
+	struct uci_element *e = (struct uci_element *)lua_topointer(L, lua_upvalueindex(3));
+	struct uci_element *tmp = (struct uci_element *)lua_topointer(L, lua_upvalueindex(4));
+	int i = lua_tointeger(L, lua_upvalueindex(5));
+	struct uci_section *s;
+
+again:
+	if (i) {
+		e = tmp;
+		tmp = list_to_element(e->list.next);
+	}
+
+	if (&e->list == list)
+		return 0;
+
+	s = uci_to_section(e);
+
+	i++;
+
+	if (type && (strcmp(s->type, type) != 0))
+		goto again;
+
+	lua_pushlightuserdata(L, tmp);
+	lua_replace(L, lua_upvalueindex(4));
+
+	lua_pushlightuserdata(L, e);
+	lua_replace(L, lua_upvalueindex(3));
+
+	lua_pushinteger(L, i);
+	lua_replace(L, lua_upvalueindex(5));
+
+	uci_push_section(L, s, i - 1);
+
+	return 1;
+}
+
+static int
+uci_lua_each(lua_State *L)
+{
+	struct uci_context *ctx;
+	struct uci_package *p;
+	struct uci_element *e, *tmp;
+	const char *package, *type;
+	int offset = 0;
+	int i = 0;
+
+	ctx = find_context(L, &offset);
+	package = luaL_checkstring(L, 1 + offset);
+
+	if (lua_isnil(L, 2 + offset))
+		type = NULL;
+	else
+		type = luaL_checkstring(L, 2 + offset);
+
+	p = find_package(L, ctx, package, true);
+	if (!p) {
+		lua_pushnil(L);
+		return 1;
+	}
+
+	e = list_to_element(p->sections.next);
+	tmp = list_to_element(e->list.next);
+
+	if (type)
+		lua_pushstring(L, type);
+	else
+		lua_pushnil(L);
+
+	lua_pushlightuserdata(L, &p->sections);
+	lua_pushlightuserdata(L, tmp);
+	lua_pushlightuserdata(L, e);
+	lua_pushinteger(L, i);
+
+	lua_pushcclosure(L, uci_lua_each_iter, 5);
 	return 1;
 }
 
@@ -1025,6 +1084,7 @@ static const luaL_Reg uci[] = {
 	{ "reorder", uci_lua_reorder },
 	{ "changes", uci_lua_changes },
 	{ "foreach", uci_lua_foreach },
+	{ "each", uci_lua_each },
 	{ "add_history", uci_lua_add_delta },
 	{ "add_delta", uci_lua_add_delta },
 	{ "get_confdir", uci_lua_get_confdir },
