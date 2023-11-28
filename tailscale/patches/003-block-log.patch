@@ -1,0 +1,12 @@
+Index: b/logtail/logtail.go
+===================================================================
+--- a/logtail/logtail.go
++++ b/logtail/logtail.go
+@@ -654,6 +654,7 @@ func (l *Logger) Logf(format string, arg
+ //
+ // This is intended as an interface for the stdlib "log" package.
+ func (l *Logger) Write(buf []byte) (int, error) {
++	return 0, nil
+ 	if len(buf) == 0 {
+ 		return 0, nil
+ 	}
