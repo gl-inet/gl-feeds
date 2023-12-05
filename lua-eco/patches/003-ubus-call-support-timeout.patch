@@ -1,0 +1,36 @@
+--- a/ubus.lua
++++ b/ubus.lua
+@@ -33,7 +33,7 @@ function methods:close()
+     con:close()
+ end
+ 
+-function methods:call(object, method, params)
++function methods:call(object, method, params, timeout)
+     if self.done.v then
+         return nil, 'closed'
+     end
+@@ -58,7 +58,7 @@ function methods:call(object, method, pa
+         return nil, err
+     end
+ 
+-    local ok = w:wait(30)
++    local ok = w:wait(timeout or 30)
+     if not ok then
+         req:abort()
+         return nil, 'timeout'
+@@ -171,13 +171,13 @@ function M.connect(path)
+     }, metatable)
+ end
+ 
+-function M.call(object, method, params)
++function M.call(object, method, params, timeout)
+     local con, err = M.connect()
+     if not con then
+         return nil, err
+     end
+ 
+-    local res, err = con:call(object, method, params)
++    local res, err = con:call(object, method, params, timeout)
+     con:close()
+     return res, err
+ end
