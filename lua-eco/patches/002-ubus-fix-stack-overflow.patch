@@ -1,0 +1,11 @@
+--- a/ubus.c
++++ b/ubus.c
+@@ -439,6 +439,8 @@ static int ubus_method_handler(struct ub
+     if (lua_isnumber(L, -1))
+ 		rv = lua_tonumber(L, -1);
+ 
++	lua_pop(L, 1);
++
+     return rv;
+ }
+ 
