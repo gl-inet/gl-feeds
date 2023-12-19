@@ -8,17 +8,17 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mDNSResponder
-PKG_VERSION:=1310.80.1
+PKG_VERSION:=1790.80.10
 PKG_RELEASE:=1
 
 PKG_SOURCE:=mDNSResponder-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://opensource.apple.com/tarballs/mDNSResponder/
-PKG_HASH:=097662447e1535573484697861d9f50eceaf2c52ec2742e451ee6ffe9bbf3e75
+PKG_HASH:=ffb990231639dfe8c7f0b15d0665206a9013f1aacfb2cbb934eb87f6a57f38b7
 PKG_MAINTAINER:=
 PKG_LICENSE:=Apache-2.0
 PKG_CPE_ID:=cpe:/a:apple:mdnsresponder
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/mDNSResponder-$(PKG_VERSION)
+PKG_BUILD_DIR:=$(BUILD_DIR)/mDNSResponder-mDNSResponder-$(PKG_VERSION)
 
 PKG_BUILD_PARALLEL:=0
 PKG_INSTALL:=1
@@ -96,7 +96,9 @@ MAKE_FLAGS += \
 	MANPATH="$(PKG_INSTALL_DIR)/usr/man" \
 	STARTUPSCRIPTDIR="$(PKG_INSTALL_DIR)/etc/init.d" \
 	RUNLEVELSCRIPTSDIR="$(PKG_INSTALL_DIR)/etc/rc.d" \
-	os=linux-uclibc
+	os=linux-uclibc \
+	tls=no
+
 MAKE_PATH = mDNSPosix
 
 define Build/Compile
