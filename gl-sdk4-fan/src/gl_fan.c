@@ -5,6 +5,8 @@
 #include <getopt.h>
 #include <sys/stat.h>
 #include <stdbool.h>
+#include <gl-utils/ubus.h>
+#include <jansson.h>
 //#include <gl_log.h>
 //#include <gl-utils/files.h>
 
@@ -76,13 +78,118 @@ static size_t write_file(const char *path, char *buf, size_t len)
     return size;
 }
 
+static bool modem_temperature_info(char *recv_buf)
+{
+    if (0 == access("/proc/gl-hw-info/build-in-modem", F_OK)) {
+        char *ptr = NULL;
+        json_t *parameter = json_object();
+        json_object_set_new(parameter, "cmd", json_string("AT+QTEMP"));
+        gl_ubus_par_call("AT", "get_result", json_dumps(parameter, 0), 6 * 1000, &ptr);
+
+        if (NULL != ptr) {
+            json_error_t error;
+            json_t *tmp = json_loads(ptr, 0, &error);
+            const char *result = json_string_value(json_object_get(tmp, "data"));
+            strcpy(recv_buf, result);
+            return true;
+        } else {
+            return false;
+        }
+    }
+}
+
+static int get_cell_param(char *buf, char sli, int number, char *result)
+{
+    int i = 0;
+    int cunt = -1;
+    char *start = buf;
+    int len;
+    if (buf == NULL) {
+        return -1;
+    }
+    if (start[0] == '"') { //remove '"'
+        start++;
+    }
+    while ((buf[i] != '\0') && (buf[i] != '\r') && (buf[i] != '\n')) {
+        if (buf[i] == sli) {
+            if (++cunt == number) {
+                len = buf + i - start;
+                if (buf[i - 1] == '"') { //remove '"'
+                    len--;
+                }
+                memcpy(result, start, len);
+                result[len] = '\0';
+                return 0;
+            }
+            start = buf + i + 1;
+
+            if (start[0] == '"') { //remove '"'
+                start++;
+            }
+        }
+        i++;
+    }
+
+    char tmp[24];
+    strcpy(tmp, buf + i);
+    if ((buf[i] == '\r') && (++cunt == number) && (start != buf)) { //get the end param
+        len = buf + i - start;
+        if (buf[i - 1] == '"') { //remove '"'
+            len--;
+        }
+        memcpy(result, start, len);
+        result[len] = '\0';
+
+        return 0;
+    }
+    return -1;
+}
+
+int is_ok(char *buf)
+{
+    int i = 0;
+    for (i = 0; buf[i] != '\0'; i++) {
+        if (buf[i] == 'O')
+            if (buf[i + 1] == 'K')
+                if ((buf[i + 2] == '\r') || (buf[i + 2] == '\n'))
+                    return 1;
+    }
+    return 0;
+}
 
 int get_cpu_temp(int *temp)
 {
     char tmp[8] = {0};
+    char modem_info[128] = {0};
+    int modem_cpu_temp = 0;
+    if (modem_temperature_info(modem_info)){
+        if (is_ok(modem_info)) {
+            char buf[128] = {0};
+            char modem_temperature[8] = {0};
+            char *recv = modem_info;
+            for (recv = strstr(recv, "+QTEMP:"); recv != NULL ; recv = strstr(recv, "+QTEMP:")) {
+                memset(buf, 0, sizeof(buf));
+                sscanf(recv, "%1000[^]%*[^\r\n]", buf);
+                strcat(buf, "\r");
+                if(strstr(buf, "soc-thermal")){
+                    if(0 == get_cell_param(buf + 8, ',', 1, modem_temperature)){
+                        modem_cpu_temp = atoi(modem_temperature);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     if (check_file_is_exist(CPU_TEMP_FILE)) {
         read_file_oneline(CPU_TEMP_FILE, tmp, 0);
-        *temp = atoi(tmp) / temp_div;
+        int cpu_temp = atoi(tmp) / temp_div;
+        cpu_temp = 40;
+        if (modem_cpu_temp > cpu_temp)
+            *temp = modem_cpu_temp;
+        else
+            *temp = cpu_temp;
+
         if (*temp <= 0 || *temp >= 150) {
             //gl_log_err("%d :It's not a normal temperature\n", *temp);
             return -2;
