@@ -184,7 +184,6 @@ int get_cpu_temp(int *temp)
     if (check_file_is_exist(CPU_TEMP_FILE)) {
         read_file_oneline(CPU_TEMP_FILE, tmp, 0);
         int cpu_temp = atoi(tmp) / temp_div;
-        cpu_temp = 40;
         if (modem_cpu_temp > cpu_temp)
             *temp = modem_cpu_temp;
         else
