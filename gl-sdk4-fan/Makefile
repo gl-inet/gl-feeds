@@ -19,7 +19,7 @@ include $(INCLUDE_DIR)/cmake.mk
 define KernelPackage/$(PKG_NAME)
 	CATEGORY:=gl-sdk4
 	SUBMENU:=Kernel modules
-	DEPENDS:= +kmod-hwmon-pwmfan +libc +gl-sdk4-utils +jansson
+	DEPENDS:= +kmod-hwmon-pwmfan +libc
 	TITLE:= glinet SDK4 fan module
 	FILES:=$(PKG_BUILD_DIR)/driver/gl_fan_driver.ko
 	AUTOLOAD:=$(call AutoLoad,81,gl_fan_driver,1)
