@@ -220,4 +220,5 @@ void make_factory_data(struct device_node *np)
     make_device_sn_bak(np);
     make_device_cert(np);
     make_device_country_code(np);
+    make_device_submodel(np);
 }
