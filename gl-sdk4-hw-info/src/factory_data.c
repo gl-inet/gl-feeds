@@ -12,7 +12,7 @@
 #include "gl-hw-info.h"
 
 static int block_part_read(const char *part, unsigned int from,
-			      void *val, size_t bytes)
+                  void *val, size_t bytes)
 {
     pgoff_t index = from >> PAGE_SHIFT;
     int offset = from & (PAGE_SIZE - 1);
