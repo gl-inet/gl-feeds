@@ -174,6 +174,44 @@ static void make_device_cert(struct device_node *np)
 #endif
 }
 
+static void make_device_submodel(struct device_node *np)
+{
+#ifdef CONFIG_MTD
+    size_t submodel_len;
+    size_t i;
+    bool all_ff = true;
+    char *p;
+
+    if (parse_mtd_value(np, "device_submodel", gl_hw_info.device_submodel, SUBMODEL_LEN))
+        return;
+
+    p = gl_hw_info.device_submodel;
+
+    // 检查字符串中是否全都是0xff或0x00字节
+    for (i = 0; i < SUBMODEL_LEN; i++) {
+        if (p[i] != 0xffffffff || p[i] != 0x00) {
+          all_ff = false;
+          break;
+        }
+    }
+
+    if (!all_ff) {
+    // 如果不全都是0xff字节，确定第一个0xff或0x00字节的位置
+        for (i = 0; i < SUBMODEL_LEN; i++) {
+            if (p[i] == 0xffffffff || p[i] == 0x00) {
+                submodel_len = i ;
+                break;
+            }
+        }
+        // 截取子设备型号字符串（字符串长度为submodel_len，从第一个字符开始截取）
+        strncpy(gl_hw_info.device_submodel, p, submodel_len);
+        gl_hw_info.device_submodel[submodel_len] = '\0'; // 添加结束符'\0'
+    }
+
+    create_proc_node("device_submodel", gl_hw_info.device_submodel);
+#endif
+}
+
 void make_factory_data(struct device_node *np)
 {
     make_device_mac(np);
