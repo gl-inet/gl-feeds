@@ -125,6 +125,8 @@ int sfe_cm_recv(struct sk_buff *skb)
 {
 	struct net_device *dev;
 
+	if (strstr(skb->dev->name, "3g-modem"))
+		return 0;
 	/*
 	 * We know that for the vast majority of packets we need the transport
 	 * layer header so we may as well start to fetch it now!
