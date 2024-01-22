@@ -340,7 +340,7 @@ fi
 get_registered_ip REGISTERED_IP "NO_RETRY"
 ERR_LAST=$?
 #     No error    or     No IP set	 otherwise retry
-[ $ERR_LAST -eq 0 -o $ERR_LAST -eq 127 ] || get_registered_ip REGISTERED_IP
+[ $ERR_LAST -eq 0 -o $ERR_LAST -eq 127 ] || get_registered_ip REGISTERED_IP "NO_RETRY"
 # on IPv6 we use expanded version to be shure when comparing
 [ $use_ipv6 -eq 1 ] && expand_ipv6 "$REGISTERED_IP" REGISTERED_IP
 
@@ -361,7 +361,7 @@ while : ; do
 
 	# send update when current time > next time or current ip different from registered ip
 	if [ $CURR_TIME -ge $NEXT_TIME -o "$CURRENT_IP" != "$REGISTERED_IP" ]; then
-		if [ $DRY_RUN -ge 1 ]; then
+		if [ $VERBOSE -gt 2 ]; then
 			write_log 7 "Dry Run: NO UPDATE send"
 		elif [ "$CURRENT_IP" != "$REGISTERED_IP" ]; then
 			write_log 7 "Update needed - L: '$CURRENT_IP' <> R: '$REGISTERED_IP'"
@@ -370,7 +370,7 @@ while : ; do
 		fi
 
 		ERR_LAST=0
-		[ $DRY_RUN -eq 0 ] && {
+		[ $VERBOSE -lt 3 ] && {
 			send_update "$CURRENT_IP"
 			ERR_LAST=$?	# save return value
 		}
@@ -395,7 +395,7 @@ while : ; do
 	fi
 
 	# now we wait for check interval before testing if update was recognized
-	[ $DRY_RUN -eq 0 ] && {
+	[ $VERBOSE -le 2 ] && {
 		write_log 7 "Waiting $CHECK_SECONDS seconds (Check Interval)"
 		sleep $CHECK_SECONDS &
 		PID_SLEEP=$!

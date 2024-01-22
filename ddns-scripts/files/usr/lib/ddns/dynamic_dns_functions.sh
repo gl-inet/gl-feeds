@@ -188,11 +188,20 @@ start_daemon_for_all_ddns_sections()
 	local __SECTIONS=""
 	local __SECTIONID=""
 	local __IFACE=""
+	local __IPV6=""
+	local __MODE="$(uci -q get glconfig.general.mode)"
 
 	load_all_service_sections __SECTIONS
 	for __SECTIONID in $__SECTIONS; do
-		config_get __IFACE "$__SECTIONID" interface "wan"
-		[ -z "$__EVENTIF" -o "$__IFACE" = "$__EVENTIF" ] || continue
+		if [ ! ${__MODE} = "router" ];then
+		    __IFACE = "lan"
+		else
+		    config_get __IFACE "$__SECTIONID" interface "wan"
+		fi
+		config_get __IPV6 "$__SECTIONID" use_ipv6 "0"
+		[ "$__IPV6" = "1" ] && [ "$(uci -q get glipv6.globals.enabled)" = "0" ]  && continue
+		[ "$(uci -q get network.${__IFACE}.disabled)" = "1" ] && continue
+		#[ -z "$__EVENTIF" -o "$__IFACE" = "$__EVENTIF" ] || continue
 		if [ $VERBOSE -eq 0 ]; then	# start in background
 			/usr/lib/ddns/dynamic_dns_updater.sh -v 0 -S "$__SECTIONID" -- start &
 		else

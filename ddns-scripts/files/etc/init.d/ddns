@@ -2,26 +2,44 @@
 START=95
 STOP=10
 
+PROG=/usr/lib/ddns/dynamic_dns_updater.sh
+bypassvpn=`uci -q get vpnpolicy.global.service_policy`
+
+if [ $bypassvpn = 1 ];then
+	PROG="sudo -g nonevpn /usr/lib/ddns/dynamic_dns_updater.sh"
+else
+	PROG=/usr/lib/ddns/dynamic_dns_updater.sh
+fi
+
+
+
 boot() {
 	return 0
 }
 
 reload() {
-	/usr/lib/ddns/dynamic_dns_updater.sh -- reload
+	$PROG -- reload
 	return 0
 }
 
 restart() {
-	/usr/lib/ddns/dynamic_dns_updater.sh -- stop
-	sleep 1	# give time to shutdown
-	/usr/lib/ddns/dynamic_dns_updater.sh -- start
+	$PROG -- stop
+	sleep 1 # give time to shutdown
+	enable=`uci -q get ddns.glddns.enabled`
+	if [ "$enable" = 1 ];then
+		$PROG -- start
+	fi
 }
 
 start() {
-	/usr/lib/ddns/dynamic_dns_updater.sh -- start
+	enable=`uci -q get ddns.glddns.enabled`
+	if [ "$enable" = 1 ];then
+		$PROG -- start
+	fi
 }
 
 stop() {
-	/usr/lib/ddns/dynamic_dns_updater.sh -- stop
+	$PROG -- stop
 	return 0
 }
+
