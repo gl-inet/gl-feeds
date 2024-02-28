@@ -346,6 +346,7 @@ ERR_LAST=$?
 
 # loop endlessly, checking ip every check_interval and forcing an updating once every force_interval
 write_log 6 "Starting main loop at $(eval $DATE_PROG)"
+FIRST_UPDATE=1
 while : ; do
 
 	get_current_ip CURRENT_IP		# read current IP
@@ -359,8 +360,9 @@ while : ; do
 
 	get_uptime CURR_TIME		# get current uptime
 
-	# send update when current time > next time or current ip different from registered ip
-	if [ $CURR_TIME -ge $NEXT_TIME -o "$CURRENT_IP" != "$REGISTERED_IP" ]; then
+	# send update when current time > next time or current ip different from registered ip or first start
+	if [ $CURR_TIME -ge $NEXT_TIME -o "$CURRENT_IP" != "$REGISTERED_IP" -o $FIRST_UPDATE -eq 1 ]; then
+		FIRST_UPDATE=0
 		if [ $VERBOSE -gt 2 ]; then
 			write_log 7 "Dry Run: NO UPDATE send"
 		elif [ "$CURRENT_IP" != "$REGISTERED_IP" ]; then
