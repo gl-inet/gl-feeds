@@ -1,0 +1,35 @@
+--- a/dns.lua
++++ b/dns.lua
+@@ -62,7 +62,8 @@ local function parse_resolvconf()
+     local conf = {}
+ 
+     if not file.access('/etc/resolv.conf') then
+-        return nil, 'no /etc/resolv.conf'
++        conf.nameservers = {{ '127.0.0.1', 53 }}
++        return conf
+     end
+ 
+     for line in io.lines('/etc/resolv.conf') do
+@@ -81,6 +82,10 @@ local function parse_resolvconf()
+         end
+     end
+ 
++    if #nameservers == 0 then
++        nameservers[#nameservers + 1] = { '127.0.0.1', 53 }
++    end
++
+     conf.nameservers = nameservers
+ 
+     return conf
+@@ -567,10 +572,7 @@ function M.query(qname, opts)
+         nameservers[#nameservers + 1] = { host, port, socket.is_ipv6_address(host) }
+     end
+ 
+-    local resolvconf, err = parse_resolvconf()
+-    if not resolvconf then
+-        return nil, err
+-    end
++    local resolvconf = parse_resolvconf()
+ 
+     for _, nameserver in ipairs(resolvconf.nameservers) do
+         nameservers[#nameservers + 1] = nameserver
