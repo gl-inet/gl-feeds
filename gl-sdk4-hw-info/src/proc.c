@@ -19,7 +19,11 @@ static int proc_show(struct seq_file *s, void *v)
 
 static int proc_open(struct inode *inode, struct file *file)
 {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 17, 0)
     return single_open(file, proc_show, PDE_DATA(inode));
+#else
+    return single_open(file, proc_show, pde_data(inode));
+#endif
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
