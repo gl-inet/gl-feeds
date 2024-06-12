@@ -1,0 +1,13 @@
+Index: vsftpd-3.0.3/twoprocess.c
+===================================================================
+--- vsftpd-3.0.3.orig/twoprocess.c
++++ vsftpd-3.0.3/twoprocess.c
+@@ -449,7 +449,7 @@ common_do_login(struct vsf_session* p_se
+     {
+       secutil_option |= VSF_SECUTIL_OPTION_CHANGE_EUID;
+     }
+-    if (!was_anon && tunable_allow_writeable_chroot)
++    if (tunable_allow_writeable_chroot)
+     {
+       secutil_option |= VSF_SECUTIL_OPTION_ALLOW_WRITEABLE_ROOT;
+     }

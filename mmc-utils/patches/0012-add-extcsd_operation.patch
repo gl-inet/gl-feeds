@@ -1,0 +1,109 @@
+Index: mmc-utils-2019-10-10-73d6c59a/mmc.c
+===================================================================
+--- mmc-utils-2019-10-10-73d6c59a.orig/mmc.c
++++ mmc-utils-2019-10-10-73d6c59a/mmc.c
+@@ -215,6 +215,16 @@ static struct Command commands[] = {
+ 		"Run Field Firmware Update with <image name> on <device>.\n",
+ 	  NULL
+ 	},
++	{ do_write_extcsd, -3,
++	  "extcsd write", "<device> <reg_index> <value>\n"
++		"Write the value to ext_csd register index.\n",
++	  NULL
++	},
++	{ do_read_extcsd_index, -2,
++	  "extcsd read-index", "<device> <reg_index>\n"
++		"Read ext_csd register index.\n",
++	  NULL
++	},
+ 	{ 0, 0, 0, 0 }
+ };
+ 
+Index: mmc-utils-2019-10-10-73d6c59a/mmc_cmds.c
+===================================================================
+--- mmc-utils-2019-10-10-73d6c59a.orig/mmc_cmds.c
++++ mmc-utils-2019-10-10-73d6c59a/mmc_cmds.c
+@@ -2675,3 +2675,70 @@ out:
+ 	return ret;
+ #endif
+ }
++
++
++int do_write_extcsd(int nargs, char **argv)
++{
++	int fd, ret;
++	char *device;
++	int reg_index, value;
++
++	if (nargs != 4) {
++	       fprintf(stderr, "mmc extcsd read <device> </path/to/mmcblkX> <reg_index> <value>\n");
++	       exit(1);
++	}
++
++	device = argv[1];
++	reg_index = strtol(argv[2], NULL, 10);
++	value = strtol(argv[3], NULL, 16);
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		perror("open");
++		exit(1);
++	}
++
++	ret = write_extcsd_value(fd, reg_index, value);
++	if (ret) {
++		fprintf(stderr,
++			"Could not write 0x%02x to EXT_CSD[%d] in %s\n",
++			value, reg_index, device);
++		close(fd);
++		exit(1);
++	}
++
++	close(fd);
++	return ret;
++}
++
++int do_read_extcsd_index(int nargs, char **argv)
++{
++	__u8 ext_csd[512];
++	int fd, ret;
++	char *device;
++	int reg_index;
++
++	if (nargs != 3) {
++		fprintf(stderr, "Usage: mmc extcsd read </path/to/mmcblkX> <reg_index>\n");
++		exit(1);
++	}
++
++	device = argv[1];
++	reg_index = strtol(argv[2], NULL, 10);
++
++	fd = open(device, O_RDWR);
++	if (fd < 0) {
++		perror("open");
++		exit(1);
++	}
++
++	ret = read_extcsd(fd, ext_csd);
++	if (ret) {
++		fprintf(stderr, "Could not read EXT_CSD from %s\n", device);
++		close(fd);
++		exit(1);
++	}
++	printf("EXT_CSD[%d]=0x%02x\n",reg_index,ext_csd[reg_index]);
++	close(fd);
++	return ret;
++}
+\ No newline at end of file
+Index: mmc-utils-2019-10-10-73d6c59a/mmc_cmds.h
+===================================================================
+--- mmc-utils-2019-10-10-73d6c59a.orig/mmc_cmds.h
++++ mmc-utils-2019-10-10-73d6c59a/mmc_cmds.h
+@@ -19,6 +19,7 @@
+ 
+ /* mmc_cmds.c */
+ int do_read_extcsd(int nargs, char **argv);
++int do_read_extcsd_index(int nargs, char **argv);
+ int do_write_extcsd(int nargs, char **argv);
+ int do_writeprotect_boot_get(int nargs, char **argv);
+ int do_writeprotect_boot_set(int nargs, char **argv);

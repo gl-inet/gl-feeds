@@ -1,0 +1,10 @@
+--- a/rtnl.c
++++ b/rtnl.c
+@@ -280,7 +280,6 @@ int luaopen_eco_rtnl(lua_State *L)
+     lua_add_constant(L, "IFA_CACHEINFO", IFA_CACHEINFO);
+     lua_add_constant(L, "IFA_MULTICAST", IFA_MULTICAST);
+     lua_add_constant(L, "IFA_FLAGS", IFA_FLAGS);
+-    lua_add_constant(L, "IFA_RT_PRIORITY", IFA_RT_PRIORITY);
+ 
+     lua_add_constant(L, "RTNLGRP_LINK", RTNLGRP_LINK);
+     lua_add_constant(L, "RTNLGRP_NOTIFY", RTNLGRP_NOTIFY);

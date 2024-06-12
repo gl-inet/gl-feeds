@@ -1,0 +1,13 @@
+Index: ot-br-posix-2022-06-02/src/rest/json.cpp
+===================================================================
+--- ot-br-posix-2022-06-02.orig/src/rest/json.cpp
++++ ot-br-posix-2022-06-02/src/rest/json.cpp
+@@ -79,7 +79,7 @@ std::string Json2String(const cJSON *aJs
+ 
+     VerifyOrExit(aJson != nullptr);
+ 
+-    jsonOut = cJSON_Print(aJson);
++    jsonOut = cJSON_PrintUnformatted(aJson);
+     ret     = jsonOut;
+     if (jsonOut != nullptr)
+     {

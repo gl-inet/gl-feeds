@@ -1,0 +1,27 @@
+From 5abf120d8ac4b34fe1170e283a398495fb28b91f Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Wed, 10 Nov 2021 08:05:57 +0000
+Subject: [PATCH] feat: gzip: support "application/json"
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ src/file.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/file.c b/src/file.c
+index bca99a8..f3549e3 100644
+--- a/src/file.c
++++ b/src/file.c
+@@ -206,7 +206,8 @@ static void file_if_gzip(struct uh_connection *conn, const char *path, const cha
+     if (!hdr.p || !memmem(hdr.p, hdr.len, "gzip", 4))
+         return;
+ 
+-    if (strcmp(mime, "text/css") && strcmp(mime, "text/javascript") && strcmp(mime, "text/html"))
++    if (strcmp(mime, "text/css") && strcmp(mime, "text/javascript") && strcmp(mime, "text/html") &&
++        strcmp(mime, "application/json"))
+         return;
+ 
+     fd = open(path, O_RDONLY);
+-- 
+2.25.1
+

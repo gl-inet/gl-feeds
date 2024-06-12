@@ -1,0 +1,14 @@
+--- a/lua_cjson.c
++++ b/lua_cjson.c
+@@ -1348,6 +1348,11 @@ static void json_process_value(lua_State
+         lua_pushlstring(l, token->value.string, token->string_len);
+         break;;
+     case T_NUMBER:
++#if LUA_VERSION_NUM > 502
++        if ((lua_Integer)token->value.number == token->value.number)
++            lua_pushinteger(l, (lua_Integer)token->value.number);
++        else
++#endif
+         lua_pushnumber(l, token->value.number);
+         break;;
+     case T_BOOLEAN:

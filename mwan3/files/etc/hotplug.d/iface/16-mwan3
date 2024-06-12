@@ -1,0 +1,29 @@
+#!/bin/sh
+
+. /lib/functions.sh
+. /lib/functions/network.sh
+. /lib/mwan3/mwan3.sh
+
+
+config_load mwan3
+config_get_bool enabled globals 'enabled' '0'
+[ "${enabled}" -gt 0 ] || {
+	exit 0
+}
+
+if [ "$ACTION" = "ifup" ]; then
+	mwan3_rtmon
+fi
+
+mwan3_lock "$ACTION" "mwan3rtmon"
+
+config_get_bool enabled "$INTERFACE" 'enabled' '0'
+[ "${enabled}" -eq 0 ] || {
+	mwan3_flush_conntrack "$INTERFACE" "$ACTION"
+}
+
+[ "$(uci -q get gl_mwan3.mwan3.flush_track)" = "1" ] && /usr/bin/clean_client_conntrack
+
+mwan3_unlock "$ACTION" "mwan3rtmon"
+
+exit 0

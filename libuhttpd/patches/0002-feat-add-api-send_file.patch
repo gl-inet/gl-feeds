@@ -1,0 +1,77 @@
+From 5816775684388693238743116bd41551e8f6013c Mon Sep 17 00:00:00 2001
+From: gl-zhaojianhui <jianhui.zhao@gl-inet.com>
+Date: Tue, 23 Nov 2021 14:32:23 +0800
+Subject: [PATCH] feat: add api: send_file
+
+Signed-off-by: gl-zhaojianhui <jianhui.zhao@gl-inet.com>
+---
+ src/connection.c | 27 +++++++++++++++++++++++++++
+ src/uhttpd.h     |  2 ++
+ 2 files changed, 29 insertions(+)
+
+Index: libuhttpd-3.14.1/src/connection.c
+===================================================================
+--- libuhttpd-3.14.1.orig/src/connection.c
++++ libuhttpd-3.14.1/src/connection.c
+@@ -332,6 +332,39 @@ static bool conn_https_redirect(struct u
+     return true;
+ }
+ 
++static void conn_send_file(struct uh_connection *conn, const char *path, off_t offset, int64_t len)
++{
++    struct uh_connection_internal *conni = (struct uh_connection_internal *)conn;
++    int fd = -1;
++
++	fd = open(path, O_RDONLY);
++    if (fd < 0) {
++        log_err("open: %s\n", strerror(errno));
++        return;
++    }
++
++    if (lseek(fd, offset, SEEK_SET) == -1) {
++        log_err("lseek: %s\n", strerror(errno));
++        close(fd);
++        return;
++    }
++
++    /* If the file is greater than 2K, use sendfile */
++    if (len > 2048) {
++        conni->file.size = len;
++        conni->file.fd = fd;
++#ifdef SSL_SUPPORT
++        if (conni->ssl)
++            fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
++#endif
++    } else {
++        while (len)
++            len -= buffer_put_fd(&conni->wb, fd, len, NULL);
++
++        close(fd);
++    }
++}
++
+ static void conn_check_expect_100_continue(struct uh_connection *conn)
+ {
+     struct uh_str expect = conn->get_header(conn, "Expect");
+@@ -1065,6 +1098,8 @@ static void conn_init_cb(struct uh_conne
+     conn->send_redirect = conn_send_redirect;
+     conn->https_redirect = conn_https_redirect;
+ 
++    conn->send_file = conn_send_file;
++
+     conn->check_expect_100_continue = conn_check_expect_100_continue;
+ 
+     conn->end_response = conn_end_response;
+Index: libuhttpd-3.14.1/src/uhttpd.h
+===================================================================
+--- libuhttpd-3.14.1.orig/src/uhttpd.h
++++ libuhttpd-3.14.1/src/uhttpd.h
+@@ -122,6 +122,8 @@ struct uh_connection {
+     /* restriction: cannot send over 6553 bytes */
+     void (*vprintf)(struct uh_connection *conn, const char *format, va_list arg);
+ 
++    void (*send_file)(struct uh_connection *conn, const char *path, off_t offset, int64_t len);
++
+     /* Tells libuhttpd that we has replied all data to the client, no any more data to send */
+     void (*end_response)(struct uh_connection *conn);
+ 

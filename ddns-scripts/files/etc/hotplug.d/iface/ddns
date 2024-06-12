@@ -1,0 +1,19 @@
+#!/bin/sh
+
+enable=`uci -q get ddns.glddns.enabled`
+if [ "$enable" = 1 -a "$INTERFACE" != "lan" ];then
+	case "$ACTION" in
+	ifdown |\
+	ifup)
+		/etc/init.d/ddns restart
+	;;
+	esac
+fi
+
+if [ "$enable" = 0 -a "$INTERFACE" != "lan" ];then
+        case "$ACTION" in
+        ifdown)
+        /etc/init.d/ddns stop
+        ;;
+        esac
+fi

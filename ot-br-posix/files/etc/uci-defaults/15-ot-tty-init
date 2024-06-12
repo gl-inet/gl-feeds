@@ -1,0 +1,55 @@
+#!/bin/sh
+
+get_model() {
+	local board boardname
+
+	. /lib/functions.sh
+	
+	board=$(board_name)
+	boardname="${board#*-}"
+
+	[ -n "$boardname" ] || {
+		loger "Unsupported model (model not in support-list)"
+		echo ""
+		return
+	}
+	
+	echo "$boardname"
+}
+
+tty=""
+model=$(get_model)
+case "$model" in
+    "s200-nor-nand")
+        tty=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$tty"
+        uci set otbr.otbr.uart_baudrate="1000000"
+        uci set otbr.otbr.uart_fc="&uart-flow-control"
+        uci set otbr.otbr.gpio_rst="2"
+        uci set otbr.otbr.gpio_dfu="17"
+        uci set otbr.otbr.uart_tty='/dev/ttyCH343USB0'
+        ;;
+    "b1300th")
+        tty=$(ls /dev/ttyCH343USB*|awk 'NR==1{print $1}')
+        uci set otbr.otbr.uart_tty="$tty"
+        uci set otbr.otbr.uart_baudrate="1000000"
+        uci set otbr.otbr.uart_fc="&uart-flow-control"
+        uci set otbr.otbr.gpio_rst="0"
+        uci set otbr.otbr.gpio_dfu="1"
+        uci set otbr.otbr.uart_tty='/dev/ttyCH343USB0'
+        ;;
+    *)
+        tty=$(ls /dev/ttyACM* 2>/dev/null)
+        [ -z "$tty" ] && tty=$(ls /dev/ttyUSB0 2>/dev/null)
+        [ -n "$tty" ] && {
+            uci set otbr.otbr.uart_tty="$tty"
+            uci set otbr.otbr.uart_baudrate="1000000"
+        }
+        ;;
+esac
+
+uci commit otbr
+
+[ -f /usr/etc/cpcd.conf ] && sed -i "/uart_device_file:/c\uart_device_file: $tty" /usr/etc/cpcd.conf
+
+exit 0
