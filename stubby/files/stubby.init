@@ -238,6 +238,9 @@ start_service() {
                 return 0
             fi
         fi
+
+	/etc/init.d/stubby-vpn start
+
         procd_open_instance "stubby"
         procd_set_param command "$stubby" -C "$stubby_config"
         if [ -n "$log_level" ]; then
@@ -272,4 +275,9 @@ service_triggers()
     done
 
     procd_add_reload_trigger "stubby"
+}
+
+stop_service()
+{
+    /etc/init.d/stubby-vpn stop
 }
