@@ -1,0 +1,3 @@
+[submodule "wifidog-ng"]
+	path = wifidog-ng
+	url = https://github.com/zhaojh329/wifidog-ng.git
