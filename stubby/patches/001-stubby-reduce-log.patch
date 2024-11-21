@@ -1,0 +1,32 @@
+--- a/src/server.c
++++ b/src/server.c
+@@ -332,6 +332,7 @@ static void incoming_request_handler(get
+         getdns_list *additional;
+         getdns_dict *rr;
+         uint32_t rr_type;
++        static uint8_t getdns_general_failed = 0;
+ 
+         (void)callback_type;
+         (void)userarg;
+@@ -418,13 +419,18 @@ static void incoming_request_handler(get
+                     stubby_getdns_strerror(r));
+ 
+         else if ((r = getdns_general(context, qname_str, qtype,
+-            qext, msg, &transaction_id, request_cb)))
+-                stubby_error("Could not schedule query: %s",
+-                    stubby_getdns_strerror(r));
++            qext, msg, &transaction_id, request_cb))) {
++                if (!getdns_general_failed) {
++                        stubby_error("Could not schedule query: %s",
++                            stubby_getdns_strerror(r));
++                        getdns_general_failed = 1; // flag: indicate that the error msg has been printed.
++                }
++        }
+         else {
+                 DEBUG_SERVER("scheduled: %p %"PRIu64" for %s %d\n",
+                     (void *)msg, transaction_id, qname_str, (int)qtype);
+                 getdns_dict_destroy(qext);
++                getdns_general_failed = 0;
+                 free(qname_str);
+                 return;
+         }
