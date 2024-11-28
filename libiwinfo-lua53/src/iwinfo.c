@@ -31,6 +31,8 @@ static int lua_iwinfo_info(lua_State *L)
         lua_setfield(L, -2, "bssid");
     }
 
+    memset(buf, 0, sizeof(buf));
+
     if (!iw->channel(ifname, &num)) {
         lua_pushinteger(L, num);
         lua_setfield(L, -2, "channel");
@@ -61,7 +63,7 @@ static int lua_iwinfo_freqlist(lua_State *L)
 {
     const char *ifname = luaL_checkstring(L, 1);
     const struct iwinfo_ops *iw = iwinfo_backend(ifname);
-	struct iwinfo_freqlist_entry *e;
+    struct iwinfo_freqlist_entry *e;
     char buf[IWINFO_BUFSIZE];
     int i, j, len, freq;
     int ret = 1;
