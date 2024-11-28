@@ -31,6 +31,8 @@ static int lua_iwinfo_info(lua_State *L)
         lua_setfield(L, -2, "bssid");
     }
 
+    memset(buf, 0, sizeof(buf));
+
     if (!iw->channel(ifname, &num)) {
         lua_pushinteger(L, num);
         lua_setfield(L, -2, "channel");
