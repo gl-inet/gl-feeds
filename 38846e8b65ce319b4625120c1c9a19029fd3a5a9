@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "e58a485e_87eaaf63",
+        "filename": "libiwinfo-lua53/src/iwinfo.c",
+        "patchSetId": 3
+      },
+      "lineNbr": 34,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2024-11-28T09:15:20Z",
+      "side": 1,
+      "message": "看不出为啥呢？",
+      "revId": "38846e8b65ce319b4625120c1c9a19029fd3a5a9",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
