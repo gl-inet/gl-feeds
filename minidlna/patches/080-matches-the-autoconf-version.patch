@@ -1,0 +1,24 @@
+Index: minidlna-1.3.0/configure.ac
+===================================================================
+--- minidlna-1.3.0.orig/configure.ac
++++ minidlna-1.3.0/configure.ac
+@@ -414,7 +414,10 @@ for dir in "" /usr/local $SEARCH_DIR; do
+     AC_CHECK_LIB([id3tag -lz], [id3_file_open], [LIBID3TAG_LIBS="-lid3tag -lz"], [unset ac_cv_lib_id3tag_id3_file_open; LDFLAGS="$LDFLAGS_SAVE"; continue])
+     break
+ done
+-test x"$ac_cv_lib_id3tag__lz___id3_file_open" = x"yes" || AC_MSG_ERROR([Could not find libid3tag])
++if test x"$ac_cv_lib_id3tag__lz___id3_file_open" != x"yes" &&
++   test x"$ac_cv_lib_id3tag__lz_id3_file_open" != x"yes"; then
++   AC_MSG_ERROR([Could not find libid3tag])
++fi
+ AC_SUBST(LIBID3TAG_LIBS)
+ 
+ LDFLAGS_SAVE="$LDFLAGS"
+@@ -441,6 +444,7 @@ for dir in "" /usr/local $SEARCH_DIR; do
+     break
+ done
+ if test x"$ac_cv_lib_avformat__lavcodec__lavutil__lz___av_open_input_file" != x"yes" &&
++   test x"$ac_cv_lib_avformat__lavcodec__lavutil__lz_avformat_open_input" != x"yes" &&
+    test x"$ac_cv_lib_avformat__lavcodec__lavutil__lz___avformat_open_input" != x"yes"; then
+    AC_MSG_ERROR([Could not find libavformat - part of ffmpeg])
+ fi
