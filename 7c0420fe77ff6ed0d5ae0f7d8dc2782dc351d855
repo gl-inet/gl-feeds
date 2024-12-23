@@ -1,0 +1,51 @@
+{
+  "comments": [],
+  "submitRequirementResults": [
+    {
+      "submitRequirement": {
+        "name": "Code-Review",
+        "description": {},
+        "applicabilityExpression": {},
+        "submittabilityExpression": {
+          "expressionString": "label:Code-Review\u003dMAX"
+        },
+        "overrideExpression": {},
+        "allowOverrideInChildProjects": false
+      },
+      "applicabilityExpressionResult": {},
+      "submittabilityExpressionResult": {
+        "value": {"expression":{"expressionString":"label:Code-Review=MAX"},"status":"FAIL","errorMessage":{"value":null},"passingAtoms":[],"failingAtoms":["label:Code-Review=MAX"]}
+      },
+      "overrideExpressionResult": {},
+      "patchSetCommitId": "7c0420fe77ff6ed0d5ae0f7d8dc2782dc351d855",
+      "legacy": {
+        "value": false
+      },
+      "forced": {},
+      "hidden": {}
+    },
+    {
+      "submitRequirement": {
+        "name": "Verified",
+        "description": {},
+        "applicabilityExpression": {},
+        "submittabilityExpression": {
+          "expressionString": "label:Verified\u003dMAX"
+        },
+        "overrideExpression": {},
+        "allowOverrideInChildProjects": false
+      },
+      "applicabilityExpressionResult": {},
+      "submittabilityExpressionResult": {
+        "value": {"expression":{"expressionString":"label:Verified=MAX"},"status":"PASS","errorMessage":{"value":null},"passingAtoms":["label:Verified=MAX"],"failingAtoms":[]}
+      },
+      "overrideExpressionResult": {},
+      "patchSetCommitId": "7c0420fe77ff6ed0d5ae0f7d8dc2782dc351d855",
+      "legacy": {
+        "value": false
+      },
+      "forced": {},
+      "hidden": {}
+    }
+  ]
+}
