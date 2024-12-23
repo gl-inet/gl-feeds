@@ -1,0 +1,172 @@
+From aea6857e7227fb2421ab3ce772a7fe5b70e8cdba Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Fri, 20 Dec 2024 16:13:12 +0800
+Subject: [PATCH 3/3] feat(hash): add support hmac
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ CMakeLists.txt         |  5 ++++
+ examples/hash/hmac.lua | 17 +++++++++++
+ hmac.lua               | 65 ++++++++++++++++++++++++++++++++++++++++++
+ md5.c                  |  3 ++
+ sha1.c                 |  3 ++
+ sha256.c               |  3 ++
+ 6 files changed, 96 insertions(+)
+ create mode 100755 examples/hash/hmac.lua
+ create mode 100644 hmac.lua
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d4e9af2..d0849d8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -192,6 +192,11 @@ install(
+     DESTINATION ${LUA_INSTALL_PREFIX}/eco/hash
+ )
+ 
++install(
++    FILES hmac.lua
++    DESTINATION ${LUA_INSTALL_PREFIX}/eco/hash
++)
++
+ install(
+     FILES time.lua sys.lua file.lua dns.lua socket.lua packet.lua mqtt.lua
+         websocket.lua sync.lua channel.lua nl.lua genl.lua ip.lua nl80211.lua
+diff --git a/examples/hash/hmac.lua b/examples/hash/hmac.lua
+new file mode 100755
+index 0000000..9ba7548
+--- /dev/null
++++ b/examples/hash/hmac.lua
+@@ -0,0 +1,17 @@
++#!/usr/bin/env eco
++
++local sha256 = require 'eco.hash.sha256'
++local hmac = require 'eco.hash.hmac'
++local hex = require 'eco.encoding.hex'
++
++-- also, you can use other hash modules, such as sha1, md5.
++local ctx = hmac.new(sha256, 'key')
++
++ctx:update('12')
++ctx:update('34')
++
++local hash = ctx:final()
++print(hex.encode(hash))
++
++hash = hmac.sum(sha256, 'key', '1234')
++print(hex.encode(hash))
+diff --git a/hmac.lua b/hmac.lua
+new file mode 100644
+index 0000000..a95e0ee
+--- /dev/null
++++ b/hmac.lua
+@@ -0,0 +1,65 @@
++-- SPDX-License-Identifier: MIT
++-- Author: Jianhui Zhao <zhaojh329@gmail.com>
++
++local M = {}
++
++local blocksize = 64
++
++local methods = {}
++
++function methods:update(data)
++    assert(type(data) == 'string', 'expecting data to be a string')
++
++    self.ctx:update(data)
++end
++
++function methods:final()
++    return self.hash.sum(self.key .. self.ctx:final())
++end
++
++local metatable = {
++    __index = methods
++}
++
++function M.new(hash, key)
++    local mtname = hash and hash.mtname
++
++    assert(mtname == 'eco{md5}'
++        or mtname == 'eco{sha1}'
++        or mtname == 'eco{sha256}',
++        'expecting hash to be a hash module')
++
++    assert(type(key) == 'string', 'expecting key to be a string')
++
++    if #key > blocksize then
++        key = hash.sum(key)
++    end
++
++    local key_xord_with_0x36 = key:gsub('.', function(c)
++        return string.char(c:byte() ~ 0x36)
++    end) .. string.rep(string.char(0x36), blocksize - #key)
++
++    local key_xord_with_0x5c = key:gsub('.', function(c)
++        return string.char(c:byte() ~ 0x5c)
++    end) .. string.rep(string.char(0x5c), blocksize - #key)
++
++    local ctx = hash.new()
++
++    ctx:update(key_xord_with_0x36)
++
++    return setmetatable({
++        ctx = ctx,
++        hash = hash,
++        key = key_xord_with_0x5c
++    }, metatable)
++end
++
++function M.sum(hash, key, data)
++    local ctx = M.new(hash, key)
++
++    ctx:update(data)
++
++    return ctx:final()
++end
++
++return M
+diff --git a/md5.c b/md5.c
+index d2afb17..0a4de23 100644
+--- a/md5.c
++++ b/md5.c
+@@ -330,6 +330,9 @@ int luaopen_eco_hash_md5(lua_State *L)
+ {
+     lua_newtable(L);
+ 
++    lua_pushstring(L, ECO_MD5_MT);
++    lua_setfield(L, -2, "mtname");
++
+     lua_pushcfunction(L, lua_md5_sum);
+     lua_setfield(L, -2, "sum");
+ 
+diff --git a/sha1.c b/sha1.c
+index 8975adf..27619de 100644
+--- a/sha1.c
++++ b/sha1.c
+@@ -272,6 +272,9 @@ int luaopen_eco_hash_sha1(lua_State *L)
+ {
+     lua_newtable(L);
+ 
++    lua_pushstring(L, ECO_SHA1_MT);
++    lua_setfield(L, -2, "mtname");
++
+     lua_pushcfunction(L, lua_sha1_sum);
+     lua_setfield(L, -2, "sum");
+ 
+diff --git a/sha256.c b/sha256.c
+index a615bd8..3552fd3 100644
+--- a/sha256.c
++++ b/sha256.c
+@@ -220,6 +220,9 @@ int luaopen_eco_hash_sha256(lua_State *L)
+ {
+     lua_newtable(L);
+ 
++    lua_pushstring(L, ECO_SHA256_MT);
++    lua_setfield(L, -2, "mtname");
++
+     lua_pushcfunction(L, lua_sha256_sum);
+     lua_setfield(L, -2, "sum");
+ 
+-- 
+2.34.1
+
