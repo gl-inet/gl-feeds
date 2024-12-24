@@ -41,3 +41,4 @@ stop_service() {
     kill -9 $(pgrep -f '/usr/bin/gl_fan') 2>/dev/null
     echo 0 > /sys/class/thermal/cooling_device0/cur_state
 }
+
