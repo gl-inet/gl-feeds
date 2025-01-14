@@ -10,6 +10,17 @@
 #define GL_HW_INFO_DRV_NAME "gl-hw-info_v1.0"
 #define PROC_DIR "gl-hw-info"
 
+#define GL_DEVICE_FILE_PATH        "/lib/firmware/sn.data"
+#define GL_DEVICE_BUFFER_SIZE      1024
+
+#define GL_DEVICE_SN               "device_sn="
+#define GL_DEVICE_DDNS             "device_ddns="
+#define GL_DEVICE_MAC              "device_mac="
+#define GL_DEVICE_MODEL            "model="
+#define GL_DEVICE_COUNTRY_CODE     "country_code="
+#define GL_DEVICE_LAN              "eth1="
+#define GL_DEVICE_WAN              "eth0="
+
 #define MAC_LEN 6
 #define SN_LEN 16
 #define DDNS_LEN 7
