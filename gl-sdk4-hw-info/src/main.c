@@ -17,6 +17,12 @@
 #include <linux/etherdevice.h>
 #include <linux/mtd/mtd.h>
 #include "gl-hw-info.h"
+#ifdef __x86_64__
+#include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
+#include <linux/string.h>
+#endif
 
 struct glinet_hw_info gl_hw_info = {};
 
@@ -80,16 +86,77 @@ static struct platform_driver gl_hw_info_driver = {
     }
 };
 
+#ifdef __x86_64__
+static void gl_create_x86_proc(void)
+{
+    struct file *           file;
+    loff_t                  offset      = 0;
+    ssize_t                 bytes_read;
+    char *                  buffer;
+    char *                  token;
+    char *                  line;
+
+    create_proc_node("lan", X86_HWINFO_LAN);
+    create_proc_node("wan", X86_HWINFO_WAN);
+
+    buffer = kmalloc(X86_DEVICE_BUFFER_SIZE, GFP_KERNEL);
+    if (!buffer)
+        goto out;
+
+    if (IS_ERR(file = filp_open(X86_DEVICE_FILE_PATH, O_RDONLY, 0))) {
+        goto free;
+    }
+
+    bytes_read = kernel_read(file, buffer, X86_DEVICE_BUFFER_SIZE - 1, &offset);
+    if (bytes_read < 0) {
+        goto close;
+    }
+    buffer[bytes_read] = '\0';
+
+    line = buffer;
+    while ((line = strsep(&buffer, "\n")) != NULL) {
+        if (strncmp(line, X86_DEVICE_MAC, sizeof(X86_DEVICE_MAC)-1) == 0) {
+            token = line + sizeof(X86_DEVICE_MAC)-1;
+            create_proc_node("device_mac", token);
+        } else if (strncmp(line, X86_DEVICE_SN, sizeof(X86_DEVICE_SN)-1) == 0) {
+            token = line + sizeof(X86_DEVICE_SN)-1;
+            create_proc_node("device_sn", token);
+        } else if (strncmp(line, X86_DEVICE_DDNS, sizeof(X86_DEVICE_DDNS)-1) == 0) {
+            token = line + sizeof(X86_DEVICE_DDNS)-1;
+            create_proc_node("device_ddns", token);
+        } else if (strncmp(line, X86_DEVICE_MODEL, sizeof(X86_DEVICE_MODEL)-1) == 0) {
+            token = line + sizeof(X86_DEVICE_MODEL)-1;
+            create_proc_node("model", token);
+        } else if (strncmp(line, X86_DEVICE_COUNTRY_CODE, sizeof(X86_DEVICE_COUNTRY_CODE)-1) == 0) {
+            token = line + sizeof(X86_DEVICE_COUNTRY_CODE)-1;
+            create_proc_node("country_code", token);
+        }
+    }
+
+close:
+    filp_close(file, NULL);
+free:
+    kfree(buffer);
+out:
+    return ;
+}
+#endif
+
 static int __init gl_hw_info_init(void)
 {
     int ret;
     ret = proc_init_gl_hw_info();
     if (ret)
         goto err_out;
+
+#ifdef __x86_64__
+    gl_create_x86_proc();
+    return ret;
+#endif
+
     ret = platform_driver_register(&gl_hw_info_driver);
     if (ret)
         goto err_proc_exit;
-
 
     return ret;
 err_proc_exit:
