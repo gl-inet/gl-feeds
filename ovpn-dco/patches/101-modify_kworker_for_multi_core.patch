@@ -1,0 +1,144 @@
+Index: ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/ovpn.c
+===================================================================
+--- ovpn-dco-0.2.20241216.orig/drivers/net/ovpn-dco/ovpn.c
++++ ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/ovpn.c
+@@ -68,7 +68,7 @@ int ovpn_struct_init(struct net_device *
+ 	spin_lock_init(&ovpn->peers.lock);
+ 
+ 	ovpn->crypto_wq = alloc_workqueue("ovpn-crypto-wq-%s",
+-					  WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 0,
++					  WQ_UNBOUND | WQ_CPU_INTENSIVE | WQ_MEM_RECLAIM, 0,
+ 					  dev->name);
+ 	if (!ovpn->crypto_wq)
+ 		return -ENOMEM;
+@@ -161,10 +161,17 @@ int ovpn_napi_poll(struct napi_struct *n
+  */
+ int ovpn_recv(struct ovpn_struct *ovpn, struct ovpn_peer *peer, struct sk_buff *skb)
+ {
++	struct work_struct *act = NULL;
++
+ 	if (unlikely(ptr_ring_produce_bh(&peer->rx_ring, skb) < 0))
+ 		return -ENOSPC;
++	
++	spin_lock(&(peer->de_work_indx_lock));
++	act = &((peer->decrypt_work)[peer->de_node_index].real_work);
++	peer->de_node_index = (peer->de_node_index + 1)%PEER_WORK_NODE_NUM;
++	spin_unlock(&(peer->de_work_indx_lock));
+ 
+-	if (!queue_work(ovpn->crypto_wq, &peer->decrypt_work))
++	if (!queue_work(ovpn->crypto_wq, act))
+ 		ovpn_peer_put(peer);
+ 
+ 	return 0;
+@@ -262,8 +269,10 @@ void ovpn_decrypt_work(struct work_struc
+ {
+ 	struct ovpn_peer *peer;
+ 	struct sk_buff *skb;
++	struct work_node *w_node;
+ 
+-	peer = container_of(work, struct ovpn_peer, decrypt_work);
++	w_node = container_of(work, struct work_node, real_work);
++	peer = w_node->peer;
+ 	while ((skb = ptr_ring_consume_bh(&peer->rx_ring))) {
+ 		if (likely(ovpn_decrypt_one(peer, skb) == 0)) {
+ 			/* if a packet has been enqueued for NAPI, signal
+@@ -333,8 +342,10 @@ void ovpn_encrypt_work(struct work_struc
+ {
+ 	struct sk_buff *skb, *curr, *next;
+ 	struct ovpn_peer *peer;
++	struct work_node *w_node;
+ 
+-	peer = container_of(work, struct ovpn_peer, encrypt_work);
++	w_node = container_of(work, struct work_node, real_work);
++	peer = w_node->peer;	
+ 	while ((skb = ptr_ring_consume_bh(&peer->tx_ring))) {
+ 		/* this might be a GSO-segmented skb list: process each skb
+ 		 * independently
+@@ -384,6 +395,7 @@ void ovpn_encrypt_work(struct work_struc
+ static void ovpn_queue_skb(struct ovpn_struct *ovpn, struct sk_buff *skb, struct ovpn_peer *peer)
+ {
+ 	int ret;
++	struct work_struct *act = NULL;
+ 
+ 	if (likely(!peer))
+ 		peer = ovpn_peer_lookup_vpn_addr(ovpn, skb, false);
+@@ -398,7 +410,12 @@ static void ovpn_queue_skb(struct ovpn_s
+ 		goto drop;
+ 	}
+ 
+-	if (!queue_work(ovpn->crypto_wq, &peer->encrypt_work))
++	spin_lock(&(peer->en_work_indx_lock));
++	act = &((peer->encrypt_work)[peer->en_node_index].real_work);
++	peer->en_node_index = (peer->en_node_index + 1)%PEER_WORK_NODE_NUM;
++	spin_unlock(&(peer->en_work_indx_lock));
++
++	if (!queue_work(ovpn->crypto_wq, act))
+ 		ovpn_peer_put(peer);
+ 
+ 	return;
+Index: ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/peer.c
+===================================================================
+--- ovpn-dco-0.2.20241216.orig/drivers/net/ovpn-dco/peer.c
++++ ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/peer.c
+@@ -41,6 +41,7 @@ static struct ovpn_peer *ovpn_peer_creat
+ {
+ 	struct ovpn_peer *peer;
+ 	int ret;
++	int tmp_i;
+ 
+ 	/* alloc and init peer object */
+ 	peer = kzalloc(sizeof(*peer), GFP_KERNEL);
+@@ -61,8 +62,16 @@ static struct ovpn_peer *ovpn_peer_creat
+ 	ovpn_peer_stats_init(&peer->vpn_stats);
+ 	ovpn_peer_stats_init(&peer->link_stats);
+ 
+-	INIT_WORK(&peer->encrypt_work, ovpn_encrypt_work);
+-	INIT_WORK(&peer->decrypt_work, ovpn_decrypt_work);
++	//INIT_WORK(&peer->encrypt_work, ovpn_encrypt_work);
++	//INIT_WORK(&peer->decrypt_work, ovpn_decrypt_work);
++	spin_lock_init(&(peer->de_work_indx_lock));
++	spin_lock_init(&(peer->en_work_indx_lock));
++	for(tmp_i = 0; tmp_i < PEER_WORK_NODE_NUM; tmp_i++){
++		(peer->encrypt_work)[tmp_i].peer = peer;
++		INIT_WORK(&((peer->encrypt_work)[tmp_i].real_work), ovpn_encrypt_work);
++		(peer->decrypt_work)[tmp_i].peer = peer;
++		INIT_WORK(&((peer->decrypt_work)[tmp_i].real_work), ovpn_decrypt_work);
++	}
+ 
+ 	ret = dst_cache_init(&peer->dst_cache, GFP_KERNEL);
+ 	if (ret < 0) {
+Index: ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/peer.h
+===================================================================
+--- ovpn-dco-0.2.20241216.orig/drivers/net/ovpn-dco/peer.h
++++ ovpn-dco-0.2.20241216/drivers/net/ovpn-dco/peer.h
+@@ -19,6 +19,13 @@
+ #include <linux/ptr_ring.h>
+ #include <net/dst_cache.h>
+ 
++#define PEER_WORK_NODE_NUM 5
++
++struct work_node {
++	struct ovpn_peer *peer;
++	struct work_struct real_work;
++};
++
+ struct ovpn_peer {
+ 	struct ovpn_struct *ovpn;
+ 
+@@ -37,8 +44,14 @@ struct ovpn_peer {
+ 	/* work objects to handle encryption/decryption of packets.
+ 	 * these works are queued on the ovpn->crypt_wq workqueue.
+ 	 */
+-	struct work_struct encrypt_work;
+-	struct work_struct decrypt_work;
++	//struct work_struct encrypt_work;
++	//struct work_struct decrypt_work;
++	int en_node_index;
++	int de_node_index;
++	spinlock_t en_work_indx_lock;
++	spinlock_t de_work_indx_lock;
++	struct work_node encrypt_work[PEER_WORK_NODE_NUM];
++	struct work_node decrypt_work[PEER_WORK_NODE_NUM];
+ 
+ 	struct ptr_ring tx_ring;
+ 	struct ptr_ring rx_ring;
