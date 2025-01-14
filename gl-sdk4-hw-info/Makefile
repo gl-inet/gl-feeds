@@ -46,6 +46,10 @@ endef
 define KernelPackage/gl-sdk4-hw-info/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_DATA) ./files/gl-hw-env.default $(1)/etc/uci-defaults/00-gl-hw-env
+ifeq ($(ARCH),x86_64)
+	$(INSTALL_DIR) $(1)/lib/firmware/
+	$(INSTALL_DATA) ./files/lib/firmware/sn.data $(1)/lib/firmware/sn.data
+endif
 endef
 
 $(eval $(call KernelPackage,gl-sdk4-hw-info))
