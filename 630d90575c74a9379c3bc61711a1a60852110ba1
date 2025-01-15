@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "34d44627_b7d46f24",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 5
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000016
+      },
+      "writtenOn": "2025-01-15T08:42:26Z",
+      "side": 1,
+      "message": "之前更新的版本有问题，需要回退",
+      "revId": "630d90575c74a9379c3bc61711a1a60852110ba1",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
