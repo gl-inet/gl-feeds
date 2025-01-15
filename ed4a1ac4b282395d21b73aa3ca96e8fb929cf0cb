@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "037c2bef_83749b1c",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000016
+      },
+      "writtenOn": "2025-01-15T08:47:33Z",
+      "side": 1,
+      "message": "支持日本MIC功率限制，修改功率限制配置文件，当wireless配置文件的txpower_lvl\u003d0参数时才使用配置文件的功率，当国家码为JP时配置该值为0。",
+      "revId": "ed4a1ac4b282395d21b73aa3ca96e8fb929cf0cb",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
