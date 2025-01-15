@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "e6fae103_41165f7d",
+        "filename": "gl-sdk4-hw-info/src/gl-hw-info.h",
+        "patchSetId": 4
+      },
+      "lineNbr": 22,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2025-01-15T07:32:26Z",
+      "side": 1,
+      "message": "```\nlan\u003d\nwan\u003d\n```",
+      "revId": "ac36d8c7d815f49247ff3e527407709bcaf785bc",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "373a338a_bf363dd5",
+        "filename": "gl-sdk4-hw-info/src/main.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 82,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2025-01-15T07:32:26Z",
+      "side": 1,
+      "message": "格式改动需单独提交",
+      "revId": "ac36d8c7d815f49247ff3e527407709bcaf785bc",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
