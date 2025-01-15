@@ -1,0 +1,38 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "3da13459_1034a4e2",
+        "filename": "gl-sdk4-hw-info/Makefile",
+        "patchSetId": 2
+      },
+      "lineNbr": 52,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2025-01-15T01:47:26Z",
+      "side": 1,
+      "message": "不要安装这个，系统运行中，动态创建",
+      "revId": "552cc57bc10e81045a0c5b20baa616e634eca99e",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    },
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "2e995d1c_dd11d168",
+        "filename": "gl-sdk4-hw-info/src/gl-hw-info.h",
+        "patchSetId": 2
+      },
+      "lineNbr": 27,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2025-01-15T01:47:26Z",
+      "side": 1,
+      "message": "不要引入 X86 区分，做成统一的。\n如果dts不存在，则判断是否存在 /lib/firmware/sn.data，如果存在，则从 /lib/firmware/sn.data 读取数据。",
+      "revId": "552cc57bc10e81045a0c5b20baa616e634eca99e",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
