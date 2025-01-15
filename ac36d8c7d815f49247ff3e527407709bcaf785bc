@@ -18,6 +18,24 @@
       "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
     },
     {
+      "unresolved": false,
+      "key": {
+        "uuid": "2874b907_9326ac5d",
+        "filename": "gl-sdk4-hw-info/src/gl-hw-info.h",
+        "patchSetId": 4
+      },
+      "lineNbr": 22,
+      "author": {
+        "id": 1000049
+      },
+      "writtenOn": "2025-01-15T09:10:24Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "e6fae103_41165f7d",
+      "revId": "ac36d8c7d815f49247ff3e527407709bcaf785bc",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    },
+    {
       "unresolved": true,
       "key": {
         "uuid": "373a338a_bf363dd5",
@@ -46,6 +64,24 @@
         "id": 1000010
       },
       "writtenOn": "2025-01-15T09:09:36Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "373a338a_bf363dd5",
+      "revId": "ac36d8c7d815f49247ff3e527407709bcaf785bc",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "f981b617_3df1a08c",
+        "filename": "gl-sdk4-hw-info/src/main.c",
+        "patchSetId": 4
+      },
+      "lineNbr": 82,
+      "author": {
+        "id": 1000049
+      },
+      "writtenOn": "2025-01-15T09:10:24Z",
       "side": 1,
       "message": "Done",
       "parentUuid": "373a338a_bf363dd5",
