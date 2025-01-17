@@ -57,8 +57,8 @@ insmod_umac(){
     custregd=${custregd-0}
     lp_clk_ppm=${lp_clk_ppm-1000}
     addr_maskall=${addr_maskall-1}
-    not_send_null=${not_send_null-1}
-    ps_on=${ps_on-1}
+    not_send_null=${not_send_null-0}
+    ps_on=${ps_on-0}
     tx_lft=${tx_lft-100}
     tdls=${tdls-1}
     txpower_lvl=${txpower_lvl-1}
@@ -86,8 +86,8 @@ insmod_umac(){
     ant_div=${ant_div-1}
     tx_queue_num=${tx_queue_num-5}
     "
-    if [ sf16a18_smac == "$1" ]; then
-        if [ lb == $2 ];then
+    if [ sf16a18_smac = "$1" ]; then
+        if [ lb = $2 ];then
             all_modparams="is_hb=0"$modparams$smac_modparams
             extra_user_args="force_mod_name=sf16a18_lb_smac"
         else
@@ -95,7 +95,7 @@ insmod_umac(){
             extra_user_args="force_mod_name=sf16a18_hb_smac"
         fi
     else
-        if [ lb == $2 ];then
+        if [ lb = $2 ];then
             all_modparams="is_hb=${is_hb-0}"$modparams$fmac_modparams
             extra_user_args="force_mod_name=sf16a18_lb_fmac"
         else
