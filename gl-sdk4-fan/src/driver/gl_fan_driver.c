@@ -45,10 +45,10 @@ static irqreturn_t handle_gpio_irq(int irq, void *data)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 static ssize_t fan_speed_show(struct class *class, struct class_attribute *attr,
-			char *buf)
+                              char *buf)
 #else
 static ssize_t fan_speed_show(const struct class *class, const struct class_attribute *attr,
-			  char *buf)
+                              char *buf)
 #endif
 {
     if (gl_fan.refresh) {
@@ -64,10 +64,10 @@ static ssize_t fan_speed_show(const struct class *class, const struct class_attr
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 static ssize_t fan_speed_store(struct class *class, struct class_attribute *attr,
-			const char *buf, size_t count)
+                               const char *buf, size_t count)
 #else
 static ssize_t fan_speed_store(const struct class *class, const struct class_attribute *attr,
-			   const char *buf, size_t count)
+                               const char *buf, size_t count)
 #endif
 {
     if (!strstr(buf, "refresh")) {
