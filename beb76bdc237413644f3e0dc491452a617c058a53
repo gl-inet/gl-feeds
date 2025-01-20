@@ -14,7 +14,7 @@
       },
       "applicabilityExpressionResult": {},
       "submittabilityExpressionResult": {
-        "value": {"expression":{"expressionString":"label:Code-Review=MAX"},"status":"FAIL","errorMessage":{"value":null},"passingAtoms":[],"failingAtoms":["label:Code-Review=MAX"]}
+        "value": {"expression":{"expressionString":"label:Code-Review=MAX"},"status":"PASS","errorMessage":{"value":null},"passingAtoms":["label:Code-Review=MAX"],"failingAtoms":[]}
       },
       "overrideExpressionResult": {},
       "patchSetCommitId": "beb76bdc237413644f3e0dc491452a617c058a53",
@@ -37,7 +37,7 @@
       },
       "applicabilityExpressionResult": {},
       "submittabilityExpressionResult": {
-        "value": {"expression":{"expressionString":"label:Verified=MAX"},"status":"FAIL","errorMessage":{"value":null},"passingAtoms":[],"failingAtoms":["label:Verified=MAX"]}
+        "value": {"expression":{"expressionString":"label:Verified=MAX"},"status":"PASS","errorMessage":{"value":null},"passingAtoms":["label:Verified=MAX"],"failingAtoms":[]}
       },
       "overrideExpressionResult": {},
       "patchSetCommitId": "beb76bdc237413644f3e0dc491452a617c058a53",
