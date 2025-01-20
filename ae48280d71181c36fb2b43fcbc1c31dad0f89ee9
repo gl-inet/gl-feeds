@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": true,
+      "key": {
+        "uuid": "97dd6945_7d9005bf",
+        "filename": "ovpn-dco/patches/101-modify_kworker_for_multi_core.patch",
+        "patchSetId": 1
+      },
+      "lineNbr": 118,
+      "author": {
+        "id": 1000010
+      },
+      "writtenOn": "2025-01-20T03:14:29Z",
+      "side": 1,
+      "message": "这个个数，做成可配置的是不是好些。\n根据 CPU 性能，配置适当的值。",
+      "revId": "ae48280d71181c36fb2b43fcbc1c31dad0f89ee9",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
