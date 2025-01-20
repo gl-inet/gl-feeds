@@ -1,9 +1,9 @@
 /*
- * 	gl_fan {
- *		compatible = "gl-fan";
- *		interrupt-parent = <&pio>;
- *		interrupts = <29 IRQ_TYPE_EDGE_RISING>;
- *	};
+ *  gl_fan {
+ *      compatible = "gl-fan";
+ *      interrupt-parent = <&pio>;
+ *      interrupts = <29 IRQ_TYPE_EDGE_RISING>;
+ *  };
  */
 
 #include <linux/kernel.h>
@@ -45,10 +45,10 @@ static irqreturn_t handle_gpio_irq(int irq, void *data)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 static ssize_t fan_speed_show(struct class *class, struct class_attribute *attr,
-			char *buf)
+                              char *buf)
 #else
 static ssize_t fan_speed_show(const struct class *class, const struct class_attribute *attr,
-			  char *buf)
+                              char *buf)
 #endif
 {
     if (gl_fan.refresh) {
@@ -64,10 +64,10 @@ static ssize_t fan_speed_show(const struct class *class, const struct class_attr
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
 static ssize_t fan_speed_store(struct class *class, struct class_attribute *attr,
-			const char *buf, size_t count)
+                               const char *buf, size_t count)
 #else
 static ssize_t fan_speed_store(const struct class *class, const struct class_attribute *attr,
-			   const char *buf, size_t count)
+                               const char *buf, size_t count)
 #endif
 {
     if (!strstr(buf, "refresh")) {
@@ -152,10 +152,10 @@ static const struct of_device_id gl_fan_match[] = {
 };
 
 static struct platform_driver gl_fan_driver = {
-    .probe		= gl_fan_probe,
-    .remove		= gl_fan_remove,
+    .probe      = gl_fan_probe,
+    .remove     = gl_fan_remove,
     .driver = {
-        .name	= GL_FAN_DRV_NAME,
+        .name   = GL_FAN_DRV_NAME,
         .of_match_table = gl_fan_match,
     }
 };

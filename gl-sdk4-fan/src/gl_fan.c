@@ -209,13 +209,13 @@ int main(int argc, char **argv)
 
         prev_error = last_error;
         last_error = current_error;
-/*
-        gl_log_debug("set_pwm:%f proportion:%f integration:%f differential:%f\n",
-                     set_pwm, prop * current_error, integ * total_error, diffr * (current_error - 2 * last_error + prev_error));
+        /*
+                gl_log_debug("set_pwm:%f proportion:%f integration:%f differential:%f\n",
+                             set_pwm, prop * current_error, integ * total_error, diffr * (current_error - 2 * last_error + prev_error));
 
-        gl_log_debug("current_temp:%d current_error:%d total_error:%d last_error:%d prev_error:%d\n",
-                     current_temp, current_error, total_error, last_error, prev_error);
-*/
+                gl_log_debug("current_temp:%d current_error:%d total_error:%d last_error:%d prev_error:%d\n",
+                             current_temp, current_error, total_error, last_error, prev_error);
+        */
 
         if (set_pwm > fan_pwm_max) {
             set_pwm = fan_pwm_max;
