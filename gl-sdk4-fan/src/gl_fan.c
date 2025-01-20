@@ -11,11 +11,13 @@
 static const char *CPU_TEMP_FILE = "/sys/devices/virtual/thermal/thermal_zone0/temp";
 #define FAN_PWM_FILE "/sys/class/thermal/cooling_device0/cur_state"
 #define FAN_SPEED_FILE "/sys/class/fan/fan_speed"
+#define FAN_PWM_MAX_FILE "/proc/gl-hw-info/fan_pwm_max"
 #define TEMPERATURE 75
 #define PROPORTION 10
 #define INTEFRATION 2
 #define DIIFFERENTIAL 10
 static int temp_div = 1;
+#define FAN_PWM_MAX_DEFAULT 120
 
 static void usage(const char *prog)
 {
@@ -138,8 +140,14 @@ int main(int argc, char **argv)
     float prop = PROPORTION, integ = INTEFRATION, diffr = DIIFFERENTIAL;
     int goal_temp = TEMPERATURE;
     int opt;
+    int fan_pwm_max = FAN_PWM_MAX_DEFAULT;
+    char tmp[64] = {0};
 
     //gl_log_level(LOG_ERR);
+    if (check_file_is_exist(FAN_PWM_MAX_FILE)) {
+        read_file_oneline(FAN_PWM_MAX_FILE, tmp, 0);
+        fan_pwm_max = atoi(tmp);
+    }
 
     while ((opt = getopt(argc, argv, "T:D:t:p:i:d:vs")) != -1) {
         switch (opt) {
@@ -209,8 +217,8 @@ int main(int argc, char **argv)
                      current_temp, current_error, total_error, last_error, prev_error);
 */
 
-        if (set_pwm > 120) {
-            set_pwm = 120;
+        if (set_pwm > fan_pwm_max) {
+            set_pwm = fan_pwm_max;
         } else if (set_pwm < 0) {
             set_pwm = 0;
         }
