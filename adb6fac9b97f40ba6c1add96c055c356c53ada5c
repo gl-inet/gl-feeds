@@ -33,6 +33,24 @@
       "message": "此文件不需要可执行权限。",
       "revId": "adb6fac9b97f40ba6c1add96c055c356c53ada5c",
       "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    },
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "ff8bb36f_57ce310b",
+        "filename": "dnscrypt-proxy2/files/dnscrypt-proxy.toml",
+        "patchSetId": 2
+      },
+      "lineNbr": 1,
+      "author": {
+        "id": 1000027
+      },
+      "writtenOn": "2025-01-21T08:54:46Z",
+      "side": 1,
+      "message": "Done",
+      "parentUuid": "8863e75b_b83d1f56",
+      "revId": "adb6fac9b97f40ba6c1add96c055c356c53ada5c",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
     }
   ]
 }
