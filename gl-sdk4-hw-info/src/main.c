@@ -149,7 +149,7 @@ out:
 static int __init gl_hw_info_init(void)
 {
     int ret;
-    struct device_node *data_np = of_find_node_by_name(NULL, "gl-hw");
+    struct device_node *data_np = of_find_compatible_node(NULL, NULL, "gl-hw-info");
 
     ret = proc_init_gl_hw_info();
     if (ret)
@@ -172,7 +172,7 @@ err_out:
 
 static void __exit gl_hw_info_exit(void)
 {
-    struct device_node *data_np = of_find_node_by_name(NULL, "gl-hw");
+    struct device_node *data_np = of_find_compatible_node(NULL, NULL, "gl-hw-info");
 
     if (data_np)
         platform_driver_unregister(&gl_hw_info_driver);
