@@ -1,0 +1,186 @@
+--- a/lua-nginx/src/ngx_http_lua_headers_in.c
++++ b/lua-nginx/src/ngx_http_lua_headers_in.c
+@@ -158,9 +158,15 @@ static ngx_http_lua_set_header_t  ngx_ht
+                  ngx_http_set_builtin_header },
+ #endif
+ 
++#if defined(nginx_version) && nginx_version >= 1023000
++    { ngx_string("Cookie"),
++                 offsetof(ngx_http_headers_in_t, cookie),
++                 ngx_http_set_builtin_multi_header },
++#else
+     { ngx_string("Cookie"),
+                  offsetof(ngx_http_headers_in_t, cookies),
+                  ngx_http_set_builtin_multi_header },
++#endif
+ 
+     { ngx_null_string, 0, ngx_http_set_header }
+ };
+@@ -280,6 +286,9 @@ new_header:
+ 
+     h->key = hv->key;
+     h->value = *value;
++#if defined(nginx_version) && nginx_version >= 1023000
++    h->next = NULL;
++#endif
+ 
+     h->lowcase_key = ngx_pnalloc(r->pool, h->key.len);
+     if (h->lowcase_key == NULL) {
+@@ -585,6 +594,47 @@ static ngx_int_t
+ ngx_http_set_builtin_multi_header(ngx_http_request_t *r,
+     ngx_http_lua_header_val_t *hv, ngx_str_t *value)
+ {
++#if defined(nginx_version) && nginx_version >= 1023000
++    ngx_table_elt_t  **headers, **ph, *h;
++
++    headers = (ngx_table_elt_t **) ((char *) &r->headers_in + hv->offset);
++
++    if (!hv->no_override && *headers != NULL) {
++#if defined(DDEBUG) && (DDEBUG)
++        int  nelts = 0;
++
++        for (h = *headers; h; h = h->next) {
++            nelts++;
++        }
++
++        dd("clear multi-value headers: %d", nelts);
++#endif
++
++        *headers = NULL;
++    }
++
++    if (ngx_http_set_header_helper(r, hv, value, &h) == NGX_ERROR) {
++        return NGX_ERROR;
++    }
++
++    if (value->len == 0) {
++        return NGX_OK;
++    }
++
++    dd("new multi-value header: %p", h);
++
++    if (*headers) {
++        for (ph = headers; *ph; ph = &(*ph)->next) { /* void */ }
++        *ph = h;
++
++    } else {
++        *headers = h;
++    }
++
++    h->next = NULL;
++
++    return NGX_OK;
++#else
+     ngx_array_t       *headers;
+     ngx_table_elt_t  **v, *h;
+ 
+@@ -631,6 +681,7 @@ ngx_http_set_builtin_multi_header(ngx_ht
+ 
+     *v = h;
+     return NGX_OK;
++#endif
+ }
+ 
+ 
+--- a/lua-nginx/src/ngx_http_lua_control.c
++++ b/lua-nginx/src/ngx_http_lua_control.c
+@@ -271,6 +271,9 @@ ngx_http_lua_ngx_redirect(lua_State *L)
+ 
+     h->value.len = len;
+     h->value.data = uri;
++#if defined(nginx_version) && nginx_version >= 1023000
++    h->next = NULL;
++#endif
+     ngx_str_set(&h->key, "Location");
+ 
+     r->headers_out.status = rc;
+--- a/lua-nginx/src/ngx_http_lua_headers_out.c
++++ b/lua-nginx/src/ngx_http_lua_headers_out.c
+@@ -223,6 +223,9 @@ new_header:
+ 
+     h->key = hv->key;
+     h->value = *value;
++#if defined(nginx_version) && nginx_version >= 1023000
++    h->next = NULL;
++#endif
+ 
+     h->lowcase_key = ngx_pnalloc(r->pool, h->key.len);
+     if (h->lowcase_key == NULL) {
+@@ -305,6 +308,69 @@ static ngx_int_t
+ ngx_http_set_builtin_multi_header(ngx_http_request_t *r,
+     ngx_http_lua_header_val_t *hv, ngx_str_t *value)
+ {
++#if defined(nginx_version) && nginx_version >= 1023000
++    ngx_table_elt_t  **headers, *h, *ho, **ph;
++
++    headers = (ngx_table_elt_t **) ((char *) &r->headers_out + hv->offset);
++
++    if (hv->no_override) {
++        for (h = *headers; h; h = h->next) {
++            if (!h->hash) {
++                h->value = *value;
++                h->hash = hv->hash;
++                return NGX_OK;
++            }
++        }
++
++        goto create;
++    }
++
++    /* override old values (if any) */
++
++    if (*headers) {
++        for (h = (*headers)->next; h; h = h->next) {
++            h->hash = 0;
++            h->value.len = 0;
++        }
++
++        h = *headers;
++
++        h->value = *value;
++
++        if (value->len == 0) {
++            h->hash = 0;
++
++        } else {
++            h->hash = hv->hash;
++        }
++
++        return NGX_OK;
++    }
++
++create:
++
++    for (ph = headers; *ph; ph = &(*ph)->next) { /* void */ }
++
++    ho = ngx_list_push(&r->headers_out.headers);
++    if (ho == NULL) {
++        return NGX_ERROR;
++    }
++
++    ho->value = *value;
++
++    if (value->len == 0) {
++        ho->hash = 0;
++
++    } else {
++        ho->hash = hv->hash;
++    }
++
++    ho->key = hv->key;
++    ho->next = NULL;
++    *ph = ho;
++
++    return NGX_OK;
++#else
+     ngx_array_t      *pa;
+     ngx_table_elt_t  *ho, **ph;
+     ngx_uint_t        i;
+@@ -378,6 +444,7 @@ create:
+     *ph = ho;
+ 
+     return NGX_OK;
++#endif
+ }
+ 
+ 

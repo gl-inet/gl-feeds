@@ -17,9 +17,9 @@ start_service() {
 }
 
 boot() {
-    [ -f /lib/functions/gl_util.sh ] && {
-           . /lib/functions/gl_util.sh
-           wait_for_wifi_ready
-    }
-    /etc/init.d/nginx start
+	[ -f /lib/functions/gl_util.sh ] && {
+		. /lib/functions/gl_util.sh
+		wait_for_wifi_ready
+	}
+	/etc/init.d/nginx start
 }
