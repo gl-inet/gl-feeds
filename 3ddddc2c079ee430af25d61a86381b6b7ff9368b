@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "831812ab_8a6e924e",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000027
+      },
+      "writtenOn": "2025-02-11T03:12:13Z",
+      "side": 1,
+      "message": "这条提交只上传源码",
+      "revId": "3ddddc2c079ee430af25d61a86381b6b7ff9368b",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
