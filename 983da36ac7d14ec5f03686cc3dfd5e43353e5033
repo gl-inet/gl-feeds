@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "033220d9_6883de79",
+        "filename": "stubby/patches/001-stubby-reduce-log.patch",
+        "patchSetId": 3
+      },
+      "lineNbr": 24,
+      "author": {
+        "id": 1000027
+      },
+      "writtenOn": "2025-02-11T03:09:03Z",
+      "side": 0,
+      "message": "日志刷屏问题在新版本已经解决，此patch已不需要。",
+      "range": {
+        "startLine": 18,
+        "startChar": 0,
+        "endLine": 24,
+        "endChar": 10
+      },
+      "revId": "983da36ac7d14ec5f03686cc3dfd5e43353e5033",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
