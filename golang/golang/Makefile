@@ -7,8 +7,8 @@
 
 include $(TOPDIR)/rules.mk
 
-GO_VERSION_MAJOR_MINOR:=1.22
-GO_VERSION_PATCH:=3
+GO_VERSION_MAJOR_MINOR:=1.23
+GO_VERSION_PATCH:=6
 
 PKG_NAME:=golang
 PKG_VERSION:=$(GO_VERSION_MAJOR_MINOR)$(if $(GO_VERSION_PATCH),.$(GO_VERSION_PATCH))
@@ -20,7 +20,7 @@ GO_SOURCE_URLS:=https://dl.google.com/go/ \
 
 PKG_SOURCE:=go$(PKG_VERSION).src.tar.gz
 PKG_SOURCE_URL:=$(GO_SOURCE_URLS)
-PKG_HASH:=80648ef34f903193d72a59c0dff019f5f98ae0c9aa13ade0b0ecbff991a76f68
+PKG_HASH:=039c5b04e65279daceee8a6f71e70bd05cf5b801782b6f77c6e19e2ed0511222
 
 PKG_MAINTAINER:=Jeffery To <jeffery.to@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
@@ -34,7 +34,6 @@ PKG_BUILD_FLAGS:=no-mips16
 
 PKG_GO_PREFIX:=/usr
 PKG_GO_VERSION_ID:=$(GO_VERSION_MAJOR_MINOR)
-PKG_GO_ROOT:=$(PKG_GO_PREFIX)/lib/go-$(PKG_GO_VERSION_ID)
 
 HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/go-$(PKG_VERSION)
 HOST_BUILD_PARALLEL:=1
@@ -65,6 +64,7 @@ HOST_GO_VALID_OS_ARCH:= \
   wasip1_wasm \
   \
   freebsd_riscv64 \
+  openbsd_riscv64 \
   \
   linux_ppc64 linux_ppc64le \
   linux_mips linux_mipsle linux_mips64 linux_mips64le \
@@ -394,7 +394,6 @@ define Build/Compile
 		cd "$(PKG_BUILD_DIR)/bin" ; \
 		export $(GO_PKG_TARGET_VARS) ; \
 		$(CP) go go-host ; \
-		GOROOT_FINAL="$(PKG_GO_ROOT)" \
 		GO_GCC_HELPER_CC="$(TARGET_CC)" \
 		GO_GCC_HELPER_CXX="$(TARGET_CXX)" \
 		$(PKG_GO_VARS) \
