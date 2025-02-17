@@ -356,6 +356,8 @@ ifeq ($(CONFIG_NGINX_LUA),y)
 					LUA_LIB=$(STAGING_DIR)/usr/lib
 endif
 
+CONFIGURE_VARS += CONFIG_BIG_ENDIAN=$(CONFIG_BIG_ENDIAN)
+
 CONFIGURE_ARGS += \
 			--crossbuild=Linux::$(ARCH) \
 			--prefix=/usr \
