@@ -1,0 +1,556 @@
+From b4f4d17337d98028406c8e5fa43c762a75405de0 Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Tue, 18 Feb 2025 16:30:58 +0800
+Subject: [PATCH] upstream dns query mark sync with downstream connection mark
+
+Signed-off-by: Dongming Han <handongming@gl-inet.com>
+---
+ internal/bootstrap/bootstrap.go |  37 ++++++++++-
+ proxy/config.go                 |   8 +++
+ proxy/conntrack.go              | 114 ++++++++++++++++++++++++++++++++
+ proxy/dnscontext.go             |   3 +
+ proxy/mark_provider.go          |  52 +++++++++++++++
+ proxy/proxy.go                  |   7 ++
+ proxy/server_tcp.go             |  11 +++
+ proxy/server_udp.go             |  11 +++
+ upstream/doq.go                 |  99 +++++++++++++++++++++------
+ 9 files changed, 322 insertions(+), 20 deletions(-)
+ create mode 100644 proxy/conntrack.go
+ create mode 100644 proxy/mark_provider.go
+
+diff --git a/internal/bootstrap/bootstrap.go b/internal/bootstrap/bootstrap.go
+index c9fb04f..32acb89 100644
+--- a/internal/bootstrap/bootstrap.go
++++ b/internal/bootstrap/bootstrap.go
+@@ -10,6 +10,7 @@ import (
+ 	"net/netip"
+ 	"net/url"
+ 	"slices"
++	"syscall"
+ 	"time"
+ 
+ 	"github.com/AdguardTeam/golibs/errors"
+@@ -17,6 +18,24 @@ import (
+ 	"github.com/AdguardTeam/golibs/netutil"
+ )
+ 
++// MarkProvider provides connection marks for sockets.
++type MarkProvider interface {
++	// GetMark returns the mark to be set on the socket.
++	GetMark() uint32
++}
++
++var markProvider MarkProvider
++
++// SetMarkProvider sets the global mark provider.
++func SetMarkProvider(p MarkProvider) {
++	markProvider = p
++}
++
++// GetMarkProvider returns the global mark provider.
++func GetMarkProvider() MarkProvider {
++	return markProvider
++}
++
+ // Network is a network type for use in [Resolver]'s methods.
+ type Network = string
+ 
+@@ -107,6 +126,18 @@ func NewDialContext(timeout time.Duration, l *slog.Logger, addrs ...string) (h D
+ 
+ 	dialer := &net.Dialer{
+ 		Timeout: timeout,
++		Control: func(network string, address string, c syscall.RawConn) error {
++			var operr error
++			if err := c.Control(func(fd uintptr) {
++				if markProvider != nil {
++					mark := markProvider.GetMark()
++					operr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, int(mark))
++				}
++			}); err != nil {
++				return err
++			}
++			return operr
++		},
+ 	}
+ 
+ 	return func(ctx context.Context, network Network, _ string) (conn net.Conn, err error) {
+@@ -128,7 +159,11 @@ func NewDialContext(timeout time.Duration, l *slog.Logger, addrs ...string) (h D
+ 				continue
+ 			}
+ 
+-			a.DebugContext(ctx, "connection succeeded", "elapsed", elapsed)
++			if markProvider != nil {
++				a.DebugContext(ctx, "connection succeeded", "mark", markProvider.GetMark(), "elapsed", elapsed)
++			} else {
++				a.DebugContext(ctx, "connection succeeded", "elapsed", elapsed)
++			}
+ 
+ 			return conn, nil
+ 		}
+diff --git a/proxy/config.go b/proxy/config.go
+index cd61a91..c542676 100644
+--- a/proxy/config.go
++++ b/proxy/config.go
+@@ -242,6 +242,14 @@ type Config struct {
+ 	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
+ 	// upstreams that use hostnames.
+ 	PreferIPv6 bool
++
++	// EnableConntrack enables synchronization of connection marks between downstream DNS
++	// queries and their corresponding upstream queries. When enabled, the proxy will:
++	// 1. Query the conntrack subsystem to get the mark of the incoming DNS query connection
++	// 2. Set this mark on the socket used for the upstream DNS query
++	// This allows for policy-based routing of DNS queries based on their source.
++	// When disabled, no connection marks will be queried or set.
++	EnableConntrack bool
+ }
+ 
+ // validateConfig verifies that the supplied configuration is valid and returns
+diff --git a/proxy/conntrack.go b/proxy/conntrack.go
+new file mode 100644
+index 0000000..6643f2b
+--- /dev/null
++++ b/proxy/conntrack.go
+@@ -0,0 +1,114 @@
++package proxy
++
++import (
++	"fmt"
++	"log"
++	"net"
++	"sync"
++	"syscall"
++
++	ct "github.com/florianl/go-conntrack"
++)
++
++var (
++	nfct       *ct.Nfct
++	nfctOnce   sync.Once
++	nfctError  error
++	nfctMutex  sync.Mutex // protects access to nfct
++)
++
++// initConntrack initializes the conntrack connection
++func initConntrack() error {
++	nfctOnce.Do(func() {
++		// create a logger for debugging
++		logger := log.New(log.Writer(), "conntrack: ", log.LstdFlags)
++		var err error
++		nfct, err = ct.Open(&ct.Config{
++			Logger: logger,
++		})
++		if err != nil {
++			nfctError = fmt.Errorf("failed to open conntrack: %v", err)
++		}
++	})
++	return nfctError
++}
++
++// getIPv4 returns the IPv4 address if the IP is IPv4 or IPv4-mapped IPv6
++func getIPv4(ip net.IP) net.IP {
++	if v4 := ip.To4(); v4 != nil {
++		return v4
++	}
++	return nil
++}
++
++// getConnMark is a helper function that returns the mark of a connection.
++func (p *Proxy) getConnMark(src, dst net.IP, srcPort, dstPort uint16, proto uint8) uint32 {
++	if !p.EnableConntrack {
++		return 0
++	}
++
++	if err := initConntrack(); err != nil {
++		log.Printf("Failed to init conntrack: %v", err)
++		return 0
++	}
++
++	nfctMutex.Lock()
++	defer nfctMutex.Unlock()
++
++	// if it's an IPv6 any address (::), try to use the peer's address family
++	if src.Equal(net.IPv6unspecified) && getIPv4(dst) != nil {
++		src = net.IPv4zero // use 0.0.0.0
++	}
++
++	// determine address family
++	family := ct.IPv6
++	if getIPv4(dst) != nil {
++		family = ct.IPv4
++	}
++
++	// create query conditions
++	match := ct.Con{
++		Origin: &ct.IPTuple{
++			Src: &src,
++			Dst: &dst,
++			Proto: &ct.ProtoTuple{
++				Number:  uint8ptr(proto),
++				SrcPort: uint16ptr(srcPort),
++				DstPort: uint16ptr(dstPort),
++			},
++		},
++	}
++
++	// query connection
++	conns, err := nfct.Get(ct.Conntrack, family, match)
++	if err != nil {
++		log.Printf("Failed to get connection: %v", err)
++		return 0
++	}
++
++	// if connection is found, return its mark
++	if len(conns) > 0 && conns[0].Mark != nil {
++		return *conns[0].Mark
++	}
++
++	return 0
++}
++
++// getConnectionMark returns the mark of a TCP connection.
++func (p *Proxy) getConnectionMark(localAddr, remoteAddr *net.TCPAddr) uint32 {
++	return p.getConnMark(localAddr.IP, remoteAddr.IP, uint16(localAddr.Port), uint16(remoteAddr.Port), syscall.IPPROTO_TCP)
++}
++
++// getUDPConnectionMark returns the mark of a UDP connection.
++func (p *Proxy) getUDPConnectionMark(localAddr, remoteAddr *net.UDPAddr) uint32 {
++	return p.getConnMark(localAddr.IP, remoteAddr.IP, uint16(localAddr.Port), uint16(remoteAddr.Port), syscall.IPPROTO_UDP)
++}
++
++// Helper functions to create pointers to primitive types
++func uint8ptr(v uint8) *uint8 {
++	return &v
++}
++
++func uint16ptr(v uint16) *uint16 {
++	return &v
++}
+diff --git a/proxy/dnscontext.go b/proxy/dnscontext.go
+index d88e804..706f744 100644
+--- a/proxy/dnscontext.go
++++ b/proxy/dnscontext.go
+@@ -99,6 +99,9 @@ type DNSContext struct {
+ 
+ 	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
+ 	doBit bool
++
++	// ConnectionMark is the mark to be set on the socket when connecting to upstream
++	ConnectionMark uint32
+ }
+ 
+ // newDNSContext returns a new properly initialized *DNSContext.
+diff --git a/proxy/mark_provider.go b/proxy/mark_provider.go
+new file mode 100644
+index 0000000..ea33bce
+--- /dev/null
++++ b/proxy/mark_provider.go
+@@ -0,0 +1,52 @@
++package proxy
++
++import (
++	"sync"
++
++	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
++)
++
++// dnsContextMarkProvider provides connection marks from DNSContext.
++type dnsContextMarkProvider struct {
++	sync.RWMutex
++	dctx *DNSContext
++}
++
++// newDNSContextMarkProvider creates a new dnsContextMarkProvider.
++func newDNSContextMarkProvider() *dnsContextMarkProvider {
++	return &dnsContextMarkProvider{}
++}
++
++// GetMark implements the bootstrap.MarkProvider interface for dnsContextMarkProvider.
++func (p *dnsContextMarkProvider) GetMark() uint32 {
++	p.RLock()
++	defer p.RUnlock()
++
++	if p.dctx == nil {
++		return 0
++	}
++
++	return p.dctx.ConnectionMark
++}
++
++// SetDNSContext sets the DNSContext for the provider.
++func (p *dnsContextMarkProvider) SetDNSContext(dctx *DNSContext) {
++	p.Lock()
++	defer p.Unlock()
++
++	p.dctx = dctx
++}
++
++// ClearDNSContext clears the DNSContext from the provider.
++func (p *dnsContextMarkProvider) ClearDNSContext() {
++	p.Lock()
++	defer p.Unlock()
++
++	p.dctx = nil
++}
++
++// initMarkProvider initializes the mark provider for a proxy instance.
++func (p *Proxy) initMarkProvider() {
++	p.markProvider = newDNSContextMarkProvider()
++	bootstrap.SetMarkProvider(p.markProvider)
++}
+diff --git a/proxy/proxy.go b/proxy/proxy.go
+index 2573ef9..be0ad7d 100644
+--- a/proxy/proxy.go
++++ b/proxy/proxy.go
+@@ -5,6 +5,7 @@ package proxy
+ import (
+ 	"cmp"
+ 	"context"
++	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+ 	"fmt"
+ 	"io"
+ 	"log/slog"
+@@ -61,6 +62,8 @@ const (
+ //
+ // TODO(a.garipov): Consider extracting conf blocks for better fieldalignment.
+ type Proxy struct {
++	// markProvider provides connection marks from DNSContext for upstream queries.
++	markProvider *dnsContextMarkProvider
+ 	// requestsSema limits the number of simultaneous requests.
+ 	//
+ 	// TODO(a.garipov): Currently we have to pass this exact semaphore to the
+@@ -204,6 +207,7 @@ type Proxy struct {
+ // TODO(e.burkov):  Cover with tests.
+ func New(c *Config) (p *Proxy, err error) {
+ 	p = &Proxy{
++		markProvider: newDNSContextMarkProvider(),
+ 		Config: *c,
+ 		privateNets: cmp.Or[netutil.SubnetSet](
+ 			c.PrivateSubnets,
+@@ -280,6 +284,9 @@ func New(c *Config) (p *Proxy, err error) {
+ 	p.RatelimitWhitelist = slices.Clone(p.RatelimitWhitelist)
+ 	slices.SortFunc(p.RatelimitWhitelist, netip.Addr.Compare)
+ 
++	// Set the mark provider for bootstrap
++	bootstrap.SetMarkProvider(p.markProvider)
++
+ 	return p, nil
+ }
+ 
+diff --git a/proxy/server_tcp.go b/proxy/server_tcp.go
+index bccb392..60bace6 100644
+--- a/proxy/server_tcp.go
++++ b/proxy/server_tcp.go
+@@ -123,6 +123,17 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto, reqSema syncutil
+ 		d := p.newDNSContext(proto, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
+ 		d.Conn = conn
+ 
++		// Get connection mark
++		if tcpConn, ok := conn.(*net.TCPConn); ok {
++			localAddr, _ := tcpConn.LocalAddr().(*net.TCPAddr)
++			remoteAddr, _ := tcpConn.RemoteAddr().(*net.TCPAddr)
++			d.ConnectionMark = p.getConnectionMark(localAddr, remoteAddr)
++		}
++
++		// Set the DNSContext in the mark provider
++		p.markProvider.SetDNSContext(d)
++		defer p.markProvider.ClearDNSContext()
++
+ 		err = p.handleDNSRequest(d)
+ 		if err != nil {
+ 			logWithNonCrit(err, "handling request", ProtoTCP, p.logger)
+diff --git a/proxy/server_udp.go b/proxy/server_udp.go
+index 4198999..f68002b 100644
+--- a/proxy/server_udp.go
++++ b/proxy/server_udp.go
+@@ -134,6 +134,17 @@ func (p *Proxy) udpHandlePacket(
+ 	d.Conn = conn
+ 	d.localIP = localIP
+ 
++	// Get connection mark
++	localUDPAddr := &net.UDPAddr{
++		IP:   localIP.AsSlice(),
++		Port: conn.LocalAddr().(*net.UDPAddr).Port,
++	}
++	d.ConnectionMark = p.getUDPConnectionMark(localUDPAddr, remoteAddr)
++
++	// Set the DNSContext in the mark provider
++	p.markProvider.SetDNSContext(d)
++	defer p.markProvider.ClearDNSContext()
++
+ 	err = p.handleDNSRequest(d)
+ 	if err != nil {
+ 		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
+diff --git a/upstream/doq.go b/upstream/doq.go
+index 82e5499..3415c67 100644
+--- a/upstream/doq.go
++++ b/upstream/doq.go
+@@ -3,6 +3,7 @@ package upstream
+ import (
+ 	"context"
+ 	"crypto/tls"
++	"github.com/AdguardTeam/dnsproxy/internal/bootstrap"
+ 	"fmt"
+ 	"log/slog"
+ 	"net"
+@@ -10,6 +11,7 @@ import (
+ 	"os"
+ 	"runtime"
+ 	"sync"
++	"syscall"
+ 	"time"
+ 
+ 	"github.com/AdguardTeam/dnsproxy/proxyutil"
+@@ -71,9 +73,9 @@ type dnsOverQUIC struct {
+ 	// re-create the connection.
+ 	quicConfig *quic.Config
+ 
+-	// conn is the current active QUIC connection.  It can be closed and
+-	// re-opened when needed.
+-	conn quic.Connection
++	// conns stores QUIC connections for different mark values.
++	// The map key is the SO_MARK value.
++	conns map[uint32]quic.Connection
+ 
+ 	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
+ 	// buffers are used to read responses from the upstream.
+@@ -204,9 +206,13 @@ func (p *dnsOverQUIC) Close() (err error) {
+ 
+ 	runtime.SetFinalizer(p, nil)
+ 
+-	if p.conn != nil {
+-		err = p.conn.CloseWithError(QUICCodeNoError, "")
++	// Close all cached connections
++	for _, conn := range p.conns {
++		if e := conn.CloseWithError(QUICCodeNoError, ""); e != nil && err == nil {
++			err = e
++		}
+ 	}
++	p.conns = nil
+ 
+ 	return err
+ }
+@@ -277,17 +283,30 @@ func (p *dnsOverQUIC) getConnection() (conn quic.Connection, cached bool, err er
+ 	p.connMu.Lock()
+ 	defer p.connMu.Unlock()
+ 
+-	conn = p.conn
+-	if conn != nil {
++	// Get current mark value
++	var mark uint32
++	if mp := bootstrap.GetMarkProvider(); mp != nil {
++		mark = mp.GetMark()
++	}
++
++	// Initialize connection map
++	if p.conns == nil {
++		p.conns = make(map[uint32]quic.Connection)
++	}
++
++	// Try to get cached connection for current mark
++	if conn = p.conns[mark]; conn != nil {
+ 		return conn, true, nil
+ 	}
+ 
++	// Create new connection
+ 	conn, err = p.openConnection()
+ 	if err != nil {
+ 		return nil, false, err
+ 	}
+ 
+-	p.conn = conn
++	// Cache the new connection
++	p.conns[mark] = conn
+ 
+ 	return conn, false, nil
+ }
+@@ -339,23 +358,62 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
+ 		return nil, fmt.Errorf("dialing raw connection to %s: %w", p.addr, err)
+ 	}
+ 
+-	// It's never actually used.
+-	err = rawConn.Close()
++	// Get the resolved address
++	addr := rawConn.RemoteAddr().String()
++	rawConn.Close()
++
++	// Create a marked UDP connection
++	udpConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
+ 	if err != nil {
+-		p.logger.Debug("closing raw connection", "addr", p.addr, slogutil.KeyError, err)
++		return nil, fmt.Errorf("creating udp socket: %w", err)
+ 	}
+ 
+-	udpConn, ok := rawConn.(*net.UDPConn)
+-	if !ok {
+-		return nil, fmt.Errorf("unexpected type %T of connection; should be %T", rawConn, udpConn)
++	// Set SO_MARK
++	sysconn, err := udpConn.SyscallConn()
++	if err != nil {
++		udpConn.Close()
++		return nil, fmt.Errorf("getting syscall conn: %w", err)
+ 	}
+ 
+-	addr := udpConn.RemoteAddr().String()
++	var ctrlErr error
++	err = sysconn.Control(func(fd uintptr) {
++		var mark uint32
++		if mp := bootstrap.GetMarkProvider(); mp != nil {
++			mark = mp.GetMark()
++		}
++		p.logger.Debug("setting SO_MARK on QUIC socket", "mark", mark, "addr", p.addr)
++		ctrlErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_MARK, int(mark))
++	})
++	if err != nil {
++		udpConn.Close()
++		return nil, fmt.Errorf("socket control: %w", err)
++	}
++	if ctrlErr != nil {
++		udpConn.Close()
++		return nil, fmt.Errorf("setting SO_MARK: %w", ctrlErr)
++	}
++
++	// Create transport with marked connection
++	transport := &quic.Transport{
++		Conn: udpConn,
++	}
++	defer func() {
++		if err != nil {
++			transport.Close()
++		}
++	}()
+ 
+ 	ctx, cancel := p.withDeadline(context.Background())
+ 	defer cancel()
+ 
+-	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
++	// Parse the address
++	udpAddr, err := net.ResolveUDPAddr("udp", addr)
++	if err != nil {
++		return nil, fmt.Errorf("resolving address %s: %w", addr, err)
++	}
++
++	// Use transport to dial
++	conn, err = transport.DialEarly(ctx, udpAddr, p.tlsConf.Clone(), p.getQUICConfig())
+ 	if err != nil {
+ 		return nil, fmt.Errorf("dialing quic connection to %s: %w", p.addr, err)
+ 	}
+@@ -385,9 +443,12 @@ func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
+ 		p.logger.Error("failed to close the conn", slogutil.KeyError, err)
+ 	}
+ 
+-	// If the connection that's being closed is cached, reset the cache.
+-	if p.conn == conn {
+-		p.conn = nil
++	// Remove this connection from cache
++	for mark, c := range p.conns {
++		if c == conn {
++			delete(p.conns, mark)
++			break
++		}
+ 	}
+ }
+ 
+-- 
+2.25.1
+
