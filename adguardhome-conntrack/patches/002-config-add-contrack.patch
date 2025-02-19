@@ -1,0 +1,35 @@
+diff --git a/internal/dnsforward/config.go b/internal/dnsforward/config.go
+index e91657ed..a44447a9 100644
+--- a/internal/dnsforward/config.go
++++ b/internal/dnsforward/config.go
+@@ -171,6 +171,10 @@ type Config struct {
+ 	// BootstrapPreferIPv6, if true, instructs the bootstrapper to prefer IPv6
+ 	// addresses to IPv4 ones for DoH, DoQ, and DoT.
+ 	BootstrapPreferIPv6 bool `yaml:"bootstrap_prefer_ipv6"`
++
++	// EnableConntrack enables the conntrack functionality for connection mark tracking.
++	// If disabled, connection marks will not be queried or set.
++	EnableConntrack bool `yaml:"enable_conntrack"`
+ }
+ 
+ // EDNSClientSubnet is the settings list for EDNS Client Subnet.
+@@ -341,6 +345,7 @@ func (s *Server) newProxyConfig() (conf *proxy.Config, err error) {
+ 		UsePrivateRDNS:            srvConf.UsePrivateRDNS,
+ 		PrivateSubnets:            s.privateNets,
+ 		MessageConstructor:        s,
++		EnableConntrack:           srvConf.EnableConntrack,
+ 	}
+ 
+ 	if srvConf.EDNSClientSubnet.UseCustom {
+diff --git a/internal/home/config.go b/internal/home/config.go
+index 315a3345..10dc4bea 100644
+--- a/internal/home/config.go
++++ b/internal/home/config.go
+@@ -375,6 +375,7 @@ var config = &configuration{
+ 			// https://github.com/AdguardTeam/AdGuardHome/issues/2015#issuecomment-674041912
+ 			// was later increased to 300 due to https://github.com/AdguardTeam/AdGuardHome/issues/2257
+ 			MaxGoroutines: 300,
++			EnableConntrack: true,
+ 		},
+ 		UpstreamTimeout:  timeutil.Duration(dnsforward.DefaultTimeout),
+ 		UsePrivateRDNS:   true,
