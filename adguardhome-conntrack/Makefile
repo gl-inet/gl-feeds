@@ -18,13 +18,18 @@ DNSPROXY_SOURCE:=dnsproxy-$(DNSPROXY_VERSION).tar.gz
 DNSPROXY_URL:=https://codeload.github.com/AdguardTeam/dnsproxy/tar.gz/v$(DNSPROXY_VERSION)?
 DNSPROXY_HASH:=fc5a7335048cc488906c540ad6562b4662aba8e3edcad77ebd1075ee3ed3792e
 
+FRONTEND_FILE:=AdGuardHome_frontend-$(PKG_VERSION).tar.gz
+FRONTEND_ORIG:=AdGuardHome_frontend.tar.gz
+FRONTEND_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)
+FRONTEND_HASH:=f7d6308d17ed7ac97b62e4cb5bec79a647695ade94b91a8803a6dc0fdbac407f
+
 PKG_BUILD_DIR:=$(BUILD_DIR)/AdGuardHome-$(PKG_VERSION)
 
 PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE.txt
 PKG_MAINTAINER:=Dobroslaw Kijowski <dobo90@gmail.com>
 
-PKG_BUILD_DEPENDS:=golang/host node/host node-yarn/host
+PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
 
@@ -61,8 +66,19 @@ define Download/dnsproxy
 endef
 $(eval $(call Download,dnsproxy))
 
+define Download/frontend
+	FILE:=$(FRONTEND_ORIG)
+	URL:=$(FRONTEND_URL)
+	HASH:=$(FRONTEND_HASH)
+endef
+$(eval $(call Download,frontend))
+
 define Build/Prepare
 	$(call Build/Prepare/Default)
+	if [ ! -f $(DL_DIR)/$(FRONTEND_FILE) ] && [ -f $(DL_DIR)/$(FRONTEND_ORIG) ]; then \
+		cp $(DL_DIR)/$(FRONTEND_ORIG) $(DL_DIR)/$(FRONTEND_FILE); \
+	fi
+	tar -xzf $(DL_DIR)/$(FRONTEND_FILE) -C $(PKG_BUILD_DIR)
 	rm -rf $(PKG_BUILD_DIR)/../dnsproxy
 	mkdir -p $(PKG_BUILD_DIR)/../dnsproxy
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
@@ -73,12 +89,7 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	( \
-		pushd $(PKG_BUILD_DIR) ; \
-		NODE_OPTIONS=--openssl-legacy-provider make js-deps js-build ; \
-		popd ; \
-		$(call GoPackage/Build/Compile) ; \
-	)
+	$(call GoPackage/Build/Compile)
 endef
 
 define Package/$(PKG_NAME)/install
