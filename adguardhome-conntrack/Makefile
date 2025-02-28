@@ -85,7 +85,7 @@ define Build/Prepare
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
 	cd $(PKG_BUILD_DIR) && \
 		go mod edit -replace=github.com/AdguardTeam/dnsproxy=../dnsproxy && \
-		go get github.com/florianl/go-conntrack@v0.4.0
+		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0
 endef
 
 define Build/Compile
