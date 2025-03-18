@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "e31b0d7b_a3a96b5f",
+        "filename": "tailscale/patches/003-memory-leak.patch",
+        "patchSetId": 3
+      },
+      "lineNbr": 33,
+      "author": {
+        "id": 1000027
+      },
+      "writtenOn": "2025-03-18T08:30:39Z",
+      "side": 0,
+      "message": "这个是解决内存泄露修改的，最新版本已无这个问题，所以删除该patch。",
+      "range": {
+        "startLine": 1,
+        "startChar": 0,
+        "endLine": 33,
+        "endChar": 0
+      },
+      "revId": "9f7576b409f8c0070dc5c0efdd55a0dc77ba5f78",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
