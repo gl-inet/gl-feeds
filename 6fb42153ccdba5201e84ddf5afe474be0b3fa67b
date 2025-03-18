@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "648918a3_f4b370f1",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 3
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000027
+      },
+      "writtenOn": "2025-03-18T08:29:55Z",
+      "side": 1,
+      "message": "已自测试，验证功能正常。",
+      "revId": "6fb42153ccdba5201e84ddf5afe474be0b3fa67b",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
