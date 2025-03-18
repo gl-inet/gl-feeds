@@ -1,21 +1,6 @@
-From cccbaf87458d66acddbe76d6054966e3ab0cfa3e Mon Sep 17 00:00:00 2001
-From: Dongming Han <handongming@gl-inet.com>
-Date: Mon, 3 Jun 2024 17:22:51 +0800
-Subject: [PATCH] no log
-
-original patch:
-https://github.com/gl-inet/gl-feeds/commit/a914a3f1ea14262ab0052e153f2dd28723689424
-
-Signed-off-by: Dongming Han <handongming@gl-inet.com>
----
- logtail/logtail.go | 28 +---------------------------
- 1 file changed, 1 insertion(+), 27 deletions(-)
-
-diff --git a/logtail/logtail.go b/logtail/logtail.go
-index 14cded5..5ca1a20 100644
 --- a/logtail/logtail.go
 +++ b/logtail/logtail.go
-@@ -828,33 +828,7 @@ func (l *Logger) Logf(format string, args ...any) {
+@@ -837,33 +837,7 @@ var obscureIPs = envknob.RegisterBool("T
  //
  // This is intended as an interface for the stdlib "log" package.
  func (l *Logger) Write(buf []byte) (int, error) {
@@ -50,6 +35,3 @@ index 14cded5..5ca1a20 100644
  }
  
  var (
--- 
-2.34.1
-

@@ -1,0 +1,10 @@
+--- a/client/tailscale/localclient.go
++++ b/client/tailscale/localclient.go
+@@ -138,6 +138,7 @@ func (lc *LocalClient) DoLocalRequest(re
+ 			Transport: cmp.Or(lc.Transport, http.RoundTripper(
+ 				&http.Transport{DialContext: lc.dialer()}),
+ 			),
++			Timeout: time.Second * 5,
+ 		}
+ 	})
+ 	if !lc.OmitAuth {
