@@ -26,6 +26,7 @@ define KernelPackage/ovpn-dco-v2
   SUBMENU:=Network Support
   TITLE:=OpenVPN data channel offload
   DEPENDS:=+kmod-crypto-aead +kmod-udptunnel4 +IPV6:kmod-udptunnel6 +kmod-crypto-gcm +kmod-crypto-chacha20poly1305
+  KCONFIG:=CONFIG_CRYPTO_SHA2_ARM64_CE=y CONFIG_CRYPTO_GHASH_ARM64_CE=y CONFIG_CRYPTO_AES_ARM64_CE_CCM=y CONFIG_CRYPTO_AES_ARM64_CE_BLK=y CONFIG_CRYPTO_DEV_SAFEXCEL=n
   FILES:=$(PKG_BUILD_DIR)/drivers/net/ovpn-dco/ovpn-dco-v2.ko
   AUTOLOAD:=$(call AutoLoad,30,ovpn-dco-v2)
 endef
