@@ -45,10 +45,20 @@ define Package/lua-cjson-lua5.3
   VARIANT:=lua-53
 endef
 
+define Package/lua-cjson-lua5.4
+  $(Package/lua-cjson/default)
+  DEPENDS+=+liblua5.4
+  VARIANT:=lua-54
+endef
+
 TARGET_CFLAGS += $(FPIC) -std=gnu99
 
 ifeq ($(BUILD_VARIANT),lua-53)
   TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/lua5.3
+endif
+
+ifeq ($(BUILD_VARIANT),lua-54)
+  TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/lua5.4
 endif
 
 TARGET_LDFLAGS += -lm
@@ -75,5 +85,12 @@ define Package/lua-cjson-lua5.3/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/lua/cjson/util.lua $(1)/usr/local/lib/lua/5.3/cjson
 endef
 
+define Package/lua-cjson-lua5.4/install
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.4/cjson
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/cjson.so $(1)/usr/local/lib/lua/5.4
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/lua/cjson/util.lua $(1)/usr/local/lib/lua/5.4/cjson
+endef
+
 $(eval $(call BuildPackage,lua-cjson))
 $(eval $(call BuildPackage,lua-cjson-lua5.3))
+$(eval $(call BuildPackage,lua-cjson-lua5.4))
