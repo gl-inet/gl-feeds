@@ -1,0 +1,114 @@
+--- a/src/ldump.c
++++ b/src/ldump.c
+@@ -7,6 +7,8 @@
+ #define ldump_c
+ #define LUA_CORE
+ 
++#include <endian.h>
++
+ #include "lprefix.h"
+ 
+ 
+@@ -206,8 +208,11 @@ static void dumpHeader (DumpState *D) {
+   dumpByte(D, sizeof(Instruction));
+   dumpByte(D, sizeof(lua_Integer));
+   dumpByte(D, sizeof(lua_Number));
+-  dumpInteger(D, LUAC_INT);
+-  dumpNumber(D, LUAC_NUM);
++#if __BYTE_ORDER == __LITTLE_ENDIAN
++  dumpByte(D, 0);
++#else
++  dumpByte(D, 1);
++#endif
+ }
+ 
+ 
+--- a/src/lundump.c
++++ b/src/lundump.c
+@@ -7,6 +7,8 @@
+ #define lundump_c
+ #define LUA_CORE
+ 
++#include <endian.h>
++
+ #include "lprefix.h"
+ 
+ 
+@@ -34,6 +36,7 @@ typedef struct {
+   lua_State *L;
+   ZIO *Z;
+   const char *name;
++  int swap;
+ } LoadState;
+ 
+ 
+@@ -47,13 +50,52 @@ static l_noret error (LoadState *S, cons
+ ** All high-level loads go through loadVector; you can change it to
+ ** adapt to the endianness of the input
+ */
+-#define loadVector(S,b,n)	loadBlock(S,b,(n)*sizeof((b)[0]))
++#define loadVector(S,b,n)	loadVectorEndianness(S,b,n,sizeof((b)[0]))
+ 
+ static void loadBlock (LoadState *S, void *b, size_t size) {
+   if (luaZ_read(S->Z, b, size) != 0)
+     error(S, "truncated chunk");
+ }
+ 
++static void loadVectorEndianness(LoadState *S, void *b, size_t n, size_t size)
++{
++  loadBlock(S, b, n * size);
++
++  if (S->swap) {
++      char *p = (char *)b;
++      char c;
++
++      switch (size) {
++      case 1:
++         break;
++      case 2:
++         while (n--) {
++            c = p[0]; p[0] = p[1]; p[1] = c;
++            p += 2;
++         }
++         break;
++      case 4:
++         while (n--) {
++            c = p[0]; p[0] = p[3]; p[3] = c;
++            c = p[1]; p[1] = p[2]; p[2] = c;
++            p += 4;
++         }
++         break;
++      case 8:
++         while (n--) {
++            c = p[0]; p[0] = p[7]; p[7] = c;
++            c = p[1]; p[1] = p[6]; p[6] = c;
++            c = p[2]; p[2] = p[5]; p[5] = c;
++            c = p[3]; p[3] = p[4]; p[4] = c;
++            p += 8;
++         }
++         break;
++      default:
++         error(S,"bad size");
++         break;
++      }
++   }
++}
+ 
+ #define loadVar(S,x)		loadVector(S,&x,1)
+ 
+@@ -300,10 +342,11 @@ static void checkHeader (LoadState *S) {
+   checksize(S, Instruction);
+   checksize(S, lua_Integer);
+   checksize(S, lua_Number);
+-  if (loadInteger(S) != LUAC_INT)
+-    error(S, "integer format mismatch");
+-  if (loadNumber(S) != LUAC_NUM)
+-    error(S, "float format mismatch");
++#if __BYTE_ORDER == __LITTLE_ENDIAN
++  S->swap = loadByte(S) == 1;
++#else
++  S->swap = loadByte(S) == 0;
++#endif
+ }
+ 
+ 
