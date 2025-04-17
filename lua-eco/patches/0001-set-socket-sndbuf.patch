@@ -1,0 +1,13 @@
+Index: b/socket.lua
+===================================================================
+--- a/socket.lua	2025-04-17 11:36:55.000000000 +0800
++++ b/socket.lua	2025-04-17 11:52:17.434562175 +0800
+@@ -203,6 +203,8 @@ function M.socket(family, domain, protoc
+         sock:setoption('bindtodevice', options.device)
+     end
+ 
++    sock:setoption('sndbuf', 1400)
++
+     return setmetatable(o, metatable)
+ end
+ 
