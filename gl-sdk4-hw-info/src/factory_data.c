@@ -5,6 +5,7 @@
 #include <linux/of_platform.h>
 #include <linux/etherdevice.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mtd/ubi.h>
 #include <linux/blkdev.h>
 #include <linux/version.h>
 #include <linux/pagemap.h>
@@ -12,7 +13,7 @@
 #include "gl-hw-info.h"
 
 static int block_part_read(const char *part, unsigned int from,
-                  void *val, size_t bytes)
+                           void *val, size_t bytes)
 {
     pgoff_t index = from >> PAGE_SHIFT;
     int offset = from & (PAGE_SIZE - 1);
@@ -80,8 +81,31 @@ static int parse_mtd_value(const char *part, u32 offset, void *dest, int len)
 #endif
 }
 
+static int parse_ubi_value(const char *part, u32 offset, void *dest, int len)
+{
+#ifdef CONFIG_MTD_UBI
+    struct ubi_volume_desc *desc;
+    size_t retlen;
+    int rc = 0;
+
+    desc = ubi_open_volume_path(part, UBI_READONLY);
+    if (IS_ERR(desc)) {
+        return -1;
+    }
+    retlen = ubi_read(desc, 0, dest, offset, len);
+    if (retlen) {
+        rc = -EIO;
+    }
+
+    ubi_close_volume(desc);
+    return rc;
+#else
+    return -ENODEV;
+#endif
+}
+
 static int parse_value(struct device_node *np, const char *prop,
-                           void *dest, int len)
+                       void *dest, int len)
 {
     const char *part, *offset_str;
     u32 offset = 0;
@@ -92,7 +116,10 @@ static int parse_value(struct device_node *np, const char *prop,
     if (!of_property_read_string_index(np, prop, 1, &offset_str))
         offset = simple_strtoul(offset_str, NULL, 0);
 
-    if(!strncmp(part,"/dev/mmc", 8))
+    if (!strncmp(part, "/dev/ubi", 8))
+        return parse_ubi_value(part, offset, dest, len);
+
+    if (!strncmp(part, "/dev/mmc", 8))
         return block_part_read(part, offset, dest, len);
 
     return parse_mtd_value(part, offset, dest, len);
@@ -193,13 +220,13 @@ static void make_device_submodel(struct device_node *np)
     // 检查字符串中是否全都是0xff或0x00字节
     for (i = 0; i < SUBMODEL_LEN; i++) {
         if (p[i] != 0xffffffff || p[i] != 0x00) {
-          all_ff = false;
-          break;
+            all_ff = false;
+            break;
         }
     }
 
     if (!all_ff) {
-    // 如果不全都是0xff字节，确定第一个0xff或0x00字节的位置
+        // 如果不全都是0xff字节，确定第一个0xff或0x00字节的位置
         for (i = 0; i < SUBMODEL_LEN; i++) {
             if (p[i] == 0xffffffff || p[i] == 0x00) {
                 submodel_len = i ;
