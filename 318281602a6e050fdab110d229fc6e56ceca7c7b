@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "53bf870a_95cead7e",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000044
+      },
+      "writtenOn": "2025-05-13T04:16:56Z",
+      "side": 1,
+      "message": "组件升级在4.8先测试一下",
+      "revId": "318281602a6e050fdab110d229fc6e56ceca7c7b",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
