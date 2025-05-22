@@ -8,12 +8,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=rtty
-PKG_VERSION:=8.1.4
+PKG_VERSION:=8.1.5
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL=https://github.com/zhaojh329/rtty/releases/download/v$(PKG_VERSION)
-PKG_HASH:=20f1b015c63c0939c54c6e38c6c9086855833456506cbd929e3055fe76e27fe4
+PKG_HASH:=b10555e441741dad4baaa7366dfaeef81ea73dfd89fd7c478ecae1ceab74b56a
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
