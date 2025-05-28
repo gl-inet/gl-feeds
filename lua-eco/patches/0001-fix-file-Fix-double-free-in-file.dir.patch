@@ -1,0 +1,33 @@
+From 7a644bcf1de3d8573a9da98716b7c089c3e42f7b Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Wed, 28 May 2025 17:14:26 +0800
+Subject: [PATCH] fix(file): Fix double free in `file.dir`
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ file.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/file.c b/file.c
+index 26f5871..02a4bb9 100644
+--- a/file.c
++++ b/file.c
+@@ -311,10 +311,12 @@ static int eco_file_dir_iter(lua_State *L)
+ 
+ static int eco_file_dir_gc(lua_State *L)
+ {
+-    DIR *d = *(DIR **)luaL_checkudata(L, 1, ECO_FILE_DIR_MT);
++    DIR **d = (DIR **)luaL_checkudata(L, 1, ECO_FILE_DIR_MT);
+ 
+-    if (d)
+-        closedir(d);
++    if (*d) {
++        closedir(*d);
++        *d = NULL;
++    }
+ 
+     return 0;
+ }
+-- 
+2.34.1
+
