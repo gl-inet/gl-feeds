@@ -219,10 +219,19 @@
  ngx_resolver_t *
  ngx_resolver_create(ngx_conf_t *cf, ngx_str_t *names, ngx_uint_t n)
  {
-@@ -210,100 +409,9 @@ ngx_resolver_create(ngx_conf_t *cf, ngx_
-         }
-     }
+@@ -201,109 +400,11 @@ ngx_resolver_create(ngx_conf_t *cf, ngx_
+     r->log = &cf->cycle->new_log;
+     r->log_level = NGX_LOG_ERR;
  
+-    if (n) {
+-        if (ngx_array_init(&r->connections, cf->pool, n,
+-                           sizeof(ngx_resolver_connection_t))
+-            != NGX_OK)
+-        {
+-            return NULL;
+-        }
+-    }
+-
 -    for (i = 0; i < n; i++) {
 -        if (ngx_strncmp(names[i].data, "valid=", 6) == 0) {
 -            s.len = names[i].len - 6;
@@ -261,7 +270,10 @@
 -
 -            if (ngx_strcmp(&names[i].data[5], "on") == 0) {
 -                r->ipv6 = 1;
--
++    ngx_array_init(&r->connections, cf->pool, 1,
++                           sizeof(ngx_resolver_connection_t));
++    r->ipv6 = 0;
+ 
 -            } else if (ngx_strcmp(&names[i].data[5], "off") == 0) {
 -                r->ipv6 = 0;
 -
@@ -312,8 +324,7 @@
 -        return NULL;
 -    }
 -#endif
-+    r->ipv6 = 0;
- 
+-
 -    if (n && r->connections.nelts == 0) {
 -        ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "no name servers defined");
 -        return NULL;
@@ -322,7 +333,7 @@
  
      return r;
  }
-@@ -4551,8 +4659,14 @@ ngx_tcp_connect(ngx_resolver_connection_
+@@ -4551,8 +4652,14 @@ ngx_tcp_connect(ngx_resolver_connection_
      ngx_event_t       *rev, *wev;
      ngx_connection_t  *c;
  
@@ -337,7 +348,7 @@
      ngx_log_debug1(NGX_LOG_DEBUG_EVENT, &rec->log, 0, "TCP socket %d", s);
  
      if (s == (ngx_socket_t) -1) {
-@@ -4579,6 +4693,15 @@ ngx_tcp_connect(ngx_resolver_connection_
+@@ -4579,6 +4686,15 @@ ngx_tcp_connect(ngx_resolver_connection_
          goto failed;
      }
  
