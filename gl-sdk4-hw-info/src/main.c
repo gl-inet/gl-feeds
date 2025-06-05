@@ -76,10 +76,10 @@ static const struct of_device_id gl_hw_info_match[] = {
 };
 
 static struct platform_driver gl_hw_info_driver = {
-    .probe		= gl_hw_info_probe,
-    .remove		= gl_hw_info_remove,
+    .probe      = gl_hw_info_probe,
+    .remove     = gl_hw_info_remove,
     .driver = {
-        .name	= GL_HW_INFO_DRV_NAME,
+        .name   = GL_HW_INFO_DRV_NAME,
         .of_match_table = gl_hw_info_match,
     }
 };
@@ -185,4 +185,6 @@ module_exit(gl_hw_info_exit);
 
 MODULE_AUTHOR("Chongjun Luo <luochongjun@gl-inet.com>");
 MODULE_LICENSE("GPL");
-
+#ifdef CONFIG_TARGET_sdx75
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#endif

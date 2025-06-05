@@ -37,6 +37,10 @@ MAKE_OPTS:= \
 	$(KERNEL_MAKE_FLAGS) \
 	M="$(PKG_BUILD_DIR)"
 
+ifeq ($(CONFIG_TARGET_sdx75),y)
+MAKE_OPTS := $(filter-out -fno-caller-saves,$(MAKE_OPTS))
+endif
+
 define Build/Compile
 	$(MAKE) -C "$(LINUX_DIR)" \
 		$(MAKE_OPTS) \
@@ -46,6 +50,11 @@ endef
 define KernelPackage/gl-sdk4-hw-info/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_DATA) ./files/gl-hw-env.default $(1)/etc/uci-defaults/00-gl-hw-env
+ifeq ($(CONFIG_TARGET_sdx75),y)
+	$(INSTALL_DIR) $(1)/lib/modules/$(UNAME_VERSION)
+	$(SIGN_KEY) $(PKG_BUILD_DIR)/gl-sdk4-hw-info.ko
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/gl-sdk4-hw-info.ko $(1)/lib/modules/$(UNAME_VERSION)
+endif
 endef
 
 $(eval $(call KernelPackage,gl-sdk4-hw-info))
