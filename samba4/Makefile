@@ -42,9 +42,9 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/version.mk
-include ../../lang/python/python3-host.mk
-include ../../lang/python/python3-package.mk
-include ../../lang/perl/perlver.mk
+include ../../../feeds/packages/lang/python/python3-host.mk
+include ../../../feeds/packages/lang/python/python3-package.mk
+include ../../../feeds/packages/lang/perl/perlver.mk
 
 define Package/samba4/Default
   SECTION:=net
