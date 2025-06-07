@@ -127,8 +127,8 @@ define Package/lua-eco-md5/install
 endef
 
 define Package/lua-eco-sha256/install
-	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.4/eco/hash
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sha256.so $(1)/usr/local/lib/lua/5.4/eco/hash
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.3/eco/hash
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/sha256.so $(1)/usr/local/lib/lua/5.3/eco/hash
 endef
 
 define Package/lua-eco-socket/install
