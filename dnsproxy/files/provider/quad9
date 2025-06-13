@@ -1,0 +1,30 @@
+{
+    "provider": "quad9",
+    "sup_proto": ["dot","doh"],
+    "server_list":[
+        {
+            "name": "Recommended",
+            "description": "Malware Blocking, DNSSEC Validation (this is the most typical configuration)",
+            "url_doh": "https://dns.quad9.net/dns-query",
+            "url_dot": "tls://dns.quad9.net",
+            "address": ["9.9.9.9","149.112.112.112"],
+            "address6":["2620:fe::fe","2620:fe::9"]
+        },
+        {
+            "name": "Secured w/ECS",
+            "description": "Malware blocking, DNSSEC Validation, ECS enabled",
+            "url_doh": "https://dns11.quad9.net/dns-query",
+            "url_dot": "tls://dns11.quad9.net",
+            "address": ["9.9.9.111","149.112.112.11"],
+            "address6":["2620:fe::11","2620:fe::fe:11"]
+        },
+        {
+            "name": "Unsecured",
+            "description": "No Malware blocking, no DNSSEC validation (for experts only!)",
+            "url_doh": "https://dns10.quad9.net/dns-query",
+            "url_dot": "tls://dns10.quad9.net",
+            "address": ["9.9.9.10","149.112.112.10"],
+            "address6":["2620:fe::10","2620:fe::fe:10"]
+        }
+    ]
+}

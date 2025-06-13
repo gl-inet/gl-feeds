@@ -1,0 +1,30 @@
+{
+    "provider": "cleanbrowsing",
+    "sup_proto": ["dot","doh"],
+    "server_list":[
+        {
+            "name": "Family Filter",
+            "description": "Blocks access to all adult, pornographic and explicit sites. It also blocks proxy and VPN domains that are used to bypass the filters. Mixed content sites (like Reddit) are also blocked. Google, Bing and Youtube are set to the Safe Mode. Malicious and Phishing domains are blocked.",
+            "url_doh": "https://doh.cleanbrowsing.org/doh/family-filter/",
+            "url_dot": "tls://family-filter-dns.cleanbrowsing.org",
+            "address": ["185.228.168.168","185.228.169.168"],
+            "address6":["2a0d:2a00:1::","2a0d:2a00:2::"]
+        },
+        {
+            "name": "Adult Filter",
+            "description": "Blocks access to all adult, pornographic and explicit sites. It does not block proxy or VPNs, nor mixed-content sites. Sites like Reddit are allowed. Google and Bing are set to the Safe Mode. Malicious and Phishing domains are blocked.",
+            "url_doh": "https://doh.cleanbrowsing.org/doh/adult-filter/",
+            "url_dot": "tls://adult-filter-dns.cleanbrowsing.org",
+            "address": ["185.228.168.10","185.228.169.11"],
+            "address6":["2a0d:2a00:1::1","2a0d:2a00:2::1"]
+        },
+        {
+            "name": "Security Filter",
+            "description": "Blocks access to phishing, spam, malware and malicious domains. Our database of malicious domains is updated hourly and considered to be one of the best in the industry. Note that it does not block adult content.",
+            "url_doh": "https://doh.cleanbrowsing.org/doh/security-filter/",
+            "url_dot": "tls://security-filter-dns.cleanbrowsing.org",
+            "address": ["185.228.168.9","185.228.169.9"],
+            "address6":["2a0d:2a00:1::2","2a0d:2a00:2::2"]
+        }
+    ]
+}

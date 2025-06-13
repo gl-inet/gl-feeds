@@ -1,0 +1,33 @@
+{
+    "provider": "adguard_dns",
+    "sup_proto": ["dot","doh","doq"],
+    "server_list":[
+        {
+            "name": "Default",
+            "description": "AdGuard DNS will block ads and trackers.",
+            "url_doh": "https://dns.adguard-dns.com/dns-query",
+            "url_dot": "tls://dns.adguard-dns.com",
+            "url_doq": "quic://dns.adguard-dns.com",
+            "address": ["94.140.14.14","94.140.15.15"],
+            "address6":["2a10:50c0::ad1:ff","2a10:50c0::ad2:ff"]
+        },
+        {
+            "name": "Unfiltered",
+            "description": "AdGuard DNS will not block ads, trackers, or any other DNS requests.",
+            "url_doh": "https://unfiltered.adguard-dns.com/dns-query",
+            "url_dot": "tls://unfiltered.adguard-dns.com",
+            "url_doq": "quic://unfiltered.adguard-dns.com",
+            "address": ["94.140.14.140","94.140.14.141"],
+            "address6":["2a10:50c0::1:ff","2a10:50c0::2:ff"]
+        },
+        {
+            "name": "Family",
+            "description": "AdGuard DNS will block ads, trackers, adult content, and enable Safe Search and Safe Mode, where possible.",
+            "url_doh": "https://family.adguard-dns.com/dns-query",
+            "url_dot": "tls://family.adguard-dns.com",
+            "url_doq": "quic://family.adguard-dns.com",
+            "address": ["94.140.14.15","94.140.15.16"],
+            "address6":["2a10:50c0::bad1:ff","2a10:50c0::bad2:ff"]
+        }
+    ]
+}

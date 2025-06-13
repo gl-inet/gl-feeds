@@ -1,0 +1,195 @@
+{
+    "provider": "controld",
+    "sup_proto": ["dot","doh","doq"],
+    "server_list":[
+        {
+            "name": "p0",
+            "description": "Unfiltered",
+            "url_doh": "https://freedns.controld.com/p0",
+            "url_dot": "tls://p0.freedns.controld.com",
+            "url_doq": "quic://p0.freedns.controld.com",
+            "address": ["76.76.2.0","76.76.10.0"],
+            "address6":["2606:1a40::","2606:1a40:1::"]
+        },
+        {
+            "name": "p1",
+            "description": "Malware",
+            "url_doh": "https://freedns.controld.com/p1",
+            "url_dot": "tls://p1.freedns.controld.com",
+            "url_doq": "quic://p1.freedns.controld.com",
+            "address": ["76.76.2.1","76.76.10.1"],
+            "address6":["2606:1a40::1","2606:1a40:1::1"]
+        },
+        {
+            "name": "p2",
+            "description": "Malware + Ads & Tracking",
+            "url_doh": "https://freedns.controld.com/p2",
+            "url_dot": "tls://p2.freedns.controld.com",
+            "url_doq": "quic://p2.freedns.controld.com",
+            "address": ["76.76.2.2","76.76.10.2"],
+            "address6":["22606:1a40::2","2606:1a40:1::2"]
+        },
+        {
+            "name": "p3",
+            "description": "Malware + Ads & Tracking + Social Networks",
+            "url_doh": "https://freedns.controld.com/p3",
+            "url_dot": "tls://p3.freedns.controld.com",
+            "url_doq": "quic://p3.freedns.controld.com",
+            "address": ["76.76.2.3","76.76.10.3"],
+            "address6":["2606:1a40::3","2606:1a40:1::3"]
+        },
+        {
+            "name": "family",
+            "description": "Malware + Ads & Tracking + Adult Content",
+            "url_doh": "https://freedns.controld.com/family",
+            "url_dot": "tls://family.freedns.controld.com",
+            "url_doq": "quic://family.freedns.controld.com",
+            "address": ["76.76.2.4","76.76.10.4"],
+            "address6":["2606:1a40::4","2606:1a40:1::4"]
+        },
+        {
+            "name": "uncensored",
+            "description": "Uncensored",
+            "url_doh": "https://freedns.controld.com/uncensored",
+            "url_dot": "tls://uncensored.freedns.controld.com",
+            "url_doq": "quic://uncensored.freedns.controld.com",
+            "address": ["76.76.2.5","76.76.10.5"],
+            "address6":["2606:1a40::5","2606:1a40:1::5"]
+        },
+        {
+            "name": "x-oisd",
+            "description": "OISD Full",
+            "url_doh": "https://freedns.controld.com/x-oisd",
+            "url_dot": "tls://x-oisd.freedns.controld.com",
+            "url_doq": "quic://x-oisd.freedns.controld.com",
+            "address": ["76.76.2.32","76.76.10.32"],
+            "address6":["2606:1a40::32","2606:1a40:1::32"]
+        },
+        {
+            "name": "x-oisd-basic",
+            "description": "OISD Basic",
+            "url_doh": "https://freedns.controld.com/x-oisd-basic",
+            "url_dot": "tls://x-oisd-basic.freedns.controld.com",
+            "url_doq": "quic://x-oisd-basic.freedns.controld.com",
+            "address": ["76.76.2.33","76.76.10.33"],
+            "address6":["2606:1a40::33","2606:1a40:1::33"]
+        },
+        {
+            "name": "x-stevenblack",
+            "description": "StevenBlack Unified",
+            "url_doh": "https://freedns.controld.com/x-stevenblack",
+            "url_dot": "tls://x-stevenblack.freedns.controld.com",
+            "url_doq": "quic://x-stevenblack.freedns.controld.com",
+            "address": ["76.76.2.35","76.76.10.35"],
+            "address6":["2606:1a40::35","2606:1a40:1::35"]
+        },
+        {
+            "name": "x-devdan",
+            "description": "Dev Dan's Hosts",
+            "url_doh": "https://freedns.controld.com/x-devdan",
+            "url_dot": "tls://x-devdan.freedns.controld.com",
+            "url_doq": "quic://x-devdan.freedns.controld.com",
+            "address": ["76.76.2.36","76.76.10.36"],
+            "address6":["2606:1a40::36","2606:1a40:1::36"]
+        },
+        {
+            "name": "x-1hosts-mini",
+            "description": "1Hosts Mini",
+            "url_doh": "https://freedns.controld.com/x-1hosts-mini",
+            "url_dot": "tls://x-1hosts-mini.freedns.controld.com",
+            "url_doq": "quic://x-1hosts-mini.freedns.controld.com",
+            "address": ["76.76.2.34","76.76.10.34"],
+            "address6":["2606:1a40::34","2606:1a40:1::34"]
+        },
+        {
+            "name": "x-1hosts-lite",
+            "description": "1Hosts Lite",
+            "url_doh": "https://freedns.controld.com/x-1hosts-lite",
+            "url_dot": "tls://x-1hosts-lite.freedns.controld.com",
+            "url_doq": "quic://x-1hosts-lite.freedns.controld.com",
+            "address": ["76.76.2.38","76.76.10.38"],
+            "address6":["2606:1a40::38","2606:1a40:1::38"]
+        },
+        {
+            "name": "x-1hosts-pro",
+            "description": "1Hosts Pro",
+            "url_doh": "https://freedns.controld.com/x-1hosts-pro",
+            "url_dot": "tls://x-1hosts-pro.freedns.controld.com",
+            "url_doq": "quic://x-1hosts-pro.freedns.controld.com",
+            "address": ["76.76.2.39","76.76.10.39"],
+            "address6":["2606:1a40::39","2606:1a40:1::39"]
+        },
+        {
+            "name": "x-hagezi-light",
+            "description": "Hagezi's DNS Light",
+            "url_doh": "https://freedns.controld.com/x-hagezi-light",
+            "url_dot": "tls://x-hagezi-light.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-light.freedns.controld.com",
+            "address": ["76.76.2.37","76.76.10.37"],
+            "address6":["2606:1a40::37","2606:1a40:1::37"]
+        },
+        {
+            "name": "x-hagezi-normal",
+            "description": "Hagezi's DNS Normal",
+            "url_doh": "https://freedns.controld.com/x-hagezi-normal",
+            "url_dot": "tls://x-hagezi-normal.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-normal.freedns.controld.com",
+            "address": ["76.76.2.40","76.76.10.40"],
+            "address6":["2606:1a40::40","2606:1a40:1::40"]
+        },
+        {
+            "name": "x-hagezi-pro",
+            "description": "Hagezi's DNS Pro",
+            "url_doh": "https://freedns.controld.com/x-hagezi-pro",
+            "url_dot": "tls://x-hagezi-pro.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-pro.freedns.controld.com",
+            "address": ["76.76.2.41","76.76.10.41"],
+            "address6":["2606:1a40::41","2606:1a40:1::41"]
+        },
+        {
+            "name": "x-hagezi-proplus",
+            "description": "Hagezi's DNS Pro Plus",
+            "url_doh": "https://freedns.controld.com/x-hagezi-proplus",
+            "url_dot": "tls://x-hagezi-proplus.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-proplus.freedns.controld.com",
+            "address": ["76.76.2.42","76.76.10.42"],
+            "address6":["2606:1a40::42","2606:1a40:1::42"]
+        },
+        {
+            "name": "x-hagezi-ultimate",
+            "description": "Hagezi's DNS Ultimate",
+            "url_doh": "https://freedns.controld.com/x-hagezi-ultimate",
+            "url_dot": "tls://x-hagezi-ultimate.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-ultimate.freedns.controld.com",
+            "address": ["76.76.2.45","76.76.10.45"],
+            "address6":["2606:1a40::45","2606:1a40:1::45"]
+        },
+        {
+            "name": "x-hagezi-tif",
+            "description": "Hagezi's DNS TIF",
+            "url_doh": "https://freedns.controld.com/x-hagezi-tif",
+            "url_dot": "tls://x-hagezi-tif.freedns.controld.com",
+            "url_doq": "quic://x-hagezi-tif.freedns.controld.com",
+            "address": ["76.76.2.46","76.76.10.46"],
+            "address6":["2606:1a40::46","2606:1a40:1::46"]
+        },
+        {
+            "name": "x-goodbyeads",
+            "description": "GoodbyeAds",
+            "url_doh": "https://freedns.controld.com/x-goodbyeads",
+            "url_dot": "tls://x-goodbyeads.freedns.controld.com",
+            "url_doq": "quic://x-goodbyeads.freedns.controld.com",
+            "address": ["76.76.2.43","76.76.10.43"],
+            "address6":["2606:1a40::43","2606:1a40:1::43"]
+        },
+        {
+            "name": "x-adguard",
+            "description": "AdGuard Filter",
+            "url_doh": "https://freedns.controld.com/x-adguard",
+            "url_dot": "tls://x-adguard.freedns.controld.com",
+            "url_doq": "quic://x-adguard.freedns.controld.com",
+            "address": ["76.76.2.44","76.76.10.44"],
+            "address6":["2606:1a40::44","2606:1a40:1::44"]
+        }
+    ]
+}

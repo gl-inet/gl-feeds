@@ -1,0 +1,30 @@
+{
+    "provider": "opendns",
+    "sup_proto": ["dot","doh"],
+    "server_list":[
+        {
+            "name": "Standard",
+            "description": "Nothing is filtered, which is suitable for users who need complete access to the Internet.",
+            "url_doh": "https://dns.opendns.com/dns-query",
+            "url_dot": "tls://",
+            "address": ["208.67.222.222","208.67.220.220"],
+            "address6":["2620:119:35::35","2620:119:53::53"]
+        },
+        {
+            "name": "FamilyShield",
+            "description": "By default, the filtering of adult content, proxy servers and phishing websites is enabled, which can be used without an account and is suitable for home users.",
+            "url_doh": "https://familyshield.opendns.com/dns-query",
+            "url_dot": "tls://",
+            "address": ["208.67.222.123","208.67.220.123"],
+            "address6":["2620:119:35::123","2620:119:53::123"]
+        },
+        {
+            "name": "Sandbox",
+            "description": "",
+            "url_doh": "https://sandbox.opendns.com/dns-query",
+            "url_dot": "tls://",
+            "address": ["208.67.222.2","208.67.220.2"],
+            "address6":["2620:0:ccc::2","2620:0:ccd::2"]
+        }
+    ]
+}
