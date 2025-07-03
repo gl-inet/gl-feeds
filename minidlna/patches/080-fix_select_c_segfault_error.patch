@@ -1,0 +1,17 @@
+Index: minidlna-1.3.3/select.c
+===================================================================
+--- minidlna-1.3.3.orig/select.c
++++ minidlna-1.3.3/select.c
+@@ -129,6 +129,12 @@ select_del(struct event *ev, int flags)
+ 	if (max_fd == ev->fd)
+ 		max_fd = -1;
+ 
++    if (!events) {
++        DPRINTF(E_WARN, L_GENERAL, "events is NULL\n");
++        ev->index = -1;
++        return -1;
++    }
++
+ 	if (ev->index < --nevents) {
+ 		struct event *ev0;
+ 
