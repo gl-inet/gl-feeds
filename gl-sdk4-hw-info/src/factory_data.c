@@ -207,7 +207,7 @@ static void make_device_cert(struct device_node *np)
 
 static void make_device_submodel(struct device_node *np)
 {
-    size_t submodel_len;
+    size_t submodel_len = 0;
     size_t i;
     bool all_ff = true;
     char *p;
