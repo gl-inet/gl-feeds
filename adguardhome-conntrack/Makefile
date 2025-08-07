@@ -18,6 +18,11 @@ DNSPROXY_SOURCE:=dnsproxy-$(DNSPROXY_VERSION).tar.gz
 DNSPROXY_URL:=https://codeload.github.com/AdguardTeam/dnsproxy/tar.gz/v$(DNSPROXY_VERSION)?
 DNSPROXY_HASH:=fc5a7335048cc488906c540ad6562b4662aba8e3edcad77ebd1075ee3ed3792e
 
+DNSCRYPT_VERSION:=2.3.0
+DNSCRYPT_SOURCE:=dnscrypt-$(DNSCRYPT_VERSION).tar.gz
+DNSCRYPT_URL:=https://codeload.github.com/ameshkov/dnscrypt/tar.gz/v$(DNSCRYPT_VERSION)?
+DNSCRYPT_HASH:=67b8ffb44f2a6065f7714b347f58a966fa3aa02d187afb6c853a50eaf882f5c2
+
 FRONTEND_FILE:=AdGuardHome_frontend-$(PKG_VERSION).tar.gz
 FRONTEND_ORIG:=AdGuardHome_frontend.tar.gz
 FRONTEND_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)
@@ -66,6 +71,13 @@ define Download/dnsproxy
 endef
 $(eval $(call Download,dnsproxy))
 
+define Download/dnscrypt
+	FILE:=$(DNSCRYPT_SOURCE)
+	URL:=$(DNSCRYPT_URL)
+	HASH:=$(DNSCRYPT_HASH)
+endef
+$(eval $(call Download,dnscrypt))
+
 define Download/frontend
 	FILE:=$(FRONTEND_ORIG)
 	URL:=$(FRONTEND_URL)
@@ -83,8 +95,13 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/../dnsproxy
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
+	rm -rf $(PKG_BUILD_DIR)/../dnscrypt
+	mkdir -p $(PKG_BUILD_DIR)/../dnscrypt
+	$(TAR) -xzf $(DL_DIR)/$(DNSCRYPT_SOURCE) -C $(PKG_BUILD_DIR)/../dnscrypt --strip-components=1
+	cd $(PKG_BUILD_DIR)/../dnscrypt && patch -p1 < $(CURDIR)/patches-dnscrypt/0001-support-setting-upstream-query-mark-for-vpn-policy.patch
 	cd $(PKG_BUILD_DIR) && \
 		go mod edit -replace=github.com/AdguardTeam/dnsproxy=../dnsproxy && \
+		go mod edit -replace=github.com/ameshkov/dnscrypt/v2=../dnscrypt && \
 		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0
 endef
 

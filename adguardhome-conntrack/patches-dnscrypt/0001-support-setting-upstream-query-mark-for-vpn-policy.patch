@@ -1,0 +1,113 @@
+From 43cdb037f9fca5ff8af19b6ca24d05e9837192ea Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Thu, 7 Aug 2025 09:32:46 +0800
+Subject: [PATCH] support setting upstream query mark for vpn policy
+
+Signed-off-by: Dongming Han <handongming@gl-inet.com>
+---
+ client.go | 75 +++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 73 insertions(+), 2 deletions(-)
+
+diff --git a/client.go b/client.go
+index 5ad7572..483e1b3 100644
+--- a/client.go
++++ b/client.go
+@@ -22,6 +22,11 @@ type Client struct {
+ 	// UDPSize is the maximum size of a DNS response (or query) this client can
+ 	// sent or receive. If not set, we use dns.MinMsgSize by default.
+ 	UDPSize int
++
++	// Dialer is a custom dialer function for creating network connections.
++	// If not set, net.Dial will be used by default.
++	// This allows setting connection marks and other socket options.
++	Dialer func(network, address string) (net.Conn, error)
+ }
+ 
+ // ResolverInfo contains DNSCrypt resolver information necessary for decryption/encryption
+@@ -94,7 +99,12 @@ func (c *Client) Exchange(m *dns.Msg, resolverInfo *ResolverInfo) (resp *dns.Msg
+ 		network = "tcp"
+ 	}
+ 
+-	conn, err := net.Dial(network, resolverInfo.ServerAddress)
++	var conn net.Conn
++	if c.Dialer != nil {
++		conn, err = c.Dialer(network, resolverInfo.ServerAddress)
++	} else {
++		conn, err = net.Dial(network, resolverInfo.ServerAddress)
++	}
+ 	if err != nil {
+ 		return nil, fmt.Errorf("dialing: %w", err)
+ 	}
+@@ -233,7 +243,68 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
+ 	query.SetQuestion(providerName, dns.TypeTXT)
+ 	// use 1252 as a UDPSize for this client to make sure the buffer is not too small
+ 	client := dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
+-	r, _, err := client.Exchange(query, stamp.ServerAddrStr)
++	
++	// Use custom dialer if available
++	var r *dns.Msg
++	if c.Dialer != nil {
++		// For fetchCert, we'll create a connection manually
++		// This is simpler than trying to override dns.Client's dialer
++		conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
++		if dialErr != nil {
++			return nil, dialErr
++		}
++		defer conn.Close()
++		
++		// Manually send the query using the custom connection
++		queryBytes, packErr := query.Pack()
++		if packErr != nil {
++			return nil, packErr
++		}
++		
++		// Write query
++		if c.Net == "tcp" {
++			// TCP requires length prefix
++			lengthBytes := make([]byte, 2)
++			binary.BigEndian.PutUint16(lengthBytes, uint16(len(queryBytes)))
++			if _, writeErr := conn.Write(lengthBytes); writeErr != nil {
++				return nil, writeErr
++			}
++		}
++		if _, writeErr := conn.Write(queryBytes); writeErr != nil {
++			return nil, writeErr
++		}
++		
++		// Read response
++		var responseBytes []byte
++		if c.Net == "tcp" {
++			// TCP: read length prefix first
++			lengthBytes := make([]byte, 2)
++			if _, readErr := conn.Read(lengthBytes); readErr != nil {
++				return nil, readErr
++			}
++			length := binary.BigEndian.Uint16(lengthBytes)
++			responseBytes = make([]byte, length)
++			if _, readErr := conn.Read(responseBytes); readErr != nil {
++				return nil, readErr
++			}
++		} else {
++			// UDP: read directly
++			responseBytes = make([]byte, 1252)
++			n, readErr := conn.Read(responseBytes)
++			if readErr != nil {
++				return nil, readErr
++			}
++			responseBytes = responseBytes[:n]
++		}
++		
++		// Unpack response
++		r = new(dns.Msg)
++		if unpackErr := r.Unpack(responseBytes); unpackErr != nil {
++			return nil, unpackErr
++		}
++	} else {
++		r, _, err = client.Exchange(query, stamp.ServerAddrStr)
++	}
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-- 
+2.25.1
+
