@@ -1,15 +1,15 @@
-From 43cdb037f9fca5ff8af19b6ca24d05e9837192ea Mon Sep 17 00:00:00 2001
+From 53330f35a582c4a917c39a92a6949e8f1201d05f Mon Sep 17 00:00:00 2001
 From: Dongming Han <handongming@gl-inet.com>
 Date: Thu, 7 Aug 2025 09:32:46 +0800
 Subject: [PATCH] support setting upstream query mark for vpn policy
 
 Signed-off-by: Dongming Han <handongming@gl-inet.com>
 ---
- client.go | 75 +++++++++++++++++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 73 insertions(+), 2 deletions(-)
+ client.go | 40 ++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 38 insertions(+), 2 deletions(-)
 
 diff --git a/client.go b/client.go
-index 5ad7572..483e1b3 100644
+index 5ad7572..8fbe0a8 100644
 --- a/client.go
 +++ b/client.go
 @@ -22,6 +22,11 @@ type Client struct {
@@ -38,73 +38,38 @@ index 5ad7572..483e1b3 100644
  	if err != nil {
  		return nil, fmt.Errorf("dialing: %w", err)
  	}
-@@ -233,7 +243,68 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
+@@ -233,7 +243,33 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
  	query.SetQuestion(providerName, dns.TypeTXT)
  	// use 1252 as a UDPSize for this client to make sure the buffer is not too small
  	client := dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
 -	r, _, err := client.Exchange(query, stamp.ServerAddrStr)
-+	
-+	// Use custom dialer if available
-+	var r *dns.Msg
-+	if c.Dialer != nil {
-+		// For fetchCert, we'll create a connection manually
-+		// This is simpler than trying to override dns.Client's dialer
-+		conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
-+		if dialErr != nil {
-+			return nil, dialErr
-+		}
-+		defer conn.Close()
-+		
-+		// Manually send the query using the custom connection
-+		queryBytes, packErr := query.Pack()
-+		if packErr != nil {
-+			return nil, packErr
-+		}
-+		
-+		// Write query
-+		if c.Net == "tcp" {
-+			// TCP requires length prefix
-+			lengthBytes := make([]byte, 2)
-+			binary.BigEndian.PutUint16(lengthBytes, uint16(len(queryBytes)))
-+			if _, writeErr := conn.Write(lengthBytes); writeErr != nil {
-+				return nil, writeErr
-+			}
-+		}
-+		if _, writeErr := conn.Write(queryBytes); writeErr != nil {
-+			return nil, writeErr
-+		}
-+		
-+		// Read response
-+		var responseBytes []byte
-+		if c.Net == "tcp" {
-+			// TCP: read length prefix first
-+			lengthBytes := make([]byte, 2)
-+			if _, readErr := conn.Read(lengthBytes); readErr != nil {
-+				return nil, readErr
-+			}
-+			length := binary.BigEndian.Uint16(lengthBytes)
-+			responseBytes = make([]byte, length)
-+			if _, readErr := conn.Read(responseBytes); readErr != nil {
-+				return nil, readErr
-+			}
-+		} else {
-+			// UDP: read directly
-+			responseBytes = make([]byte, 1252)
-+			n, readErr := conn.Read(responseBytes)
-+			if readErr != nil {
-+				return nil, readErr
-+			}
-+			responseBytes = responseBytes[:n]
-+		}
-+		
-+		// Unpack response
-+		r = new(dns.Msg)
-+		if unpackErr := r.Unpack(responseBytes); unpackErr != nil {
-+			return nil, unpackErr
-+		}
-+	} else {
-+		r, _, err = client.Exchange(query, stamp.ServerAddrStr)
-+	}
++    
++    // Use custom dialer if available
++    var r *dns.Msg
++    if c.Dialer != nil {
++        // Use custom dialer to obtain a connection with proper socket options (e.g., SO_MARK)
++        conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
++        if dialErr != nil {
++            return nil, dialErr
++        }
++        defer func() { err = errors.WithDeferred(err, conn.Close()) }()
++
++        // Apply deadline to avoid indefinite blocking
++        if c.Timeout > 0 {
++            _ = conn.SetDeadline(time.Now().Add(c.Timeout))
++        }
++
++        // Wrap the connection and leverage dns.Client to handle framing/timeouts
++        dc := &dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
++        dconn := &dns.Conn{Conn: conn}
++        if c.Net == "udp" {
++            dconn.UDPSize = uint16(1252)
++        }
++
++        r, _, err = dc.ExchangeWithConn(query, dconn)
++    } else {
++        r, _, err = client.Exchange(query, stamp.ServerAddrStr)
++    }
  	if err != nil {
  		return nil, err
  	}
