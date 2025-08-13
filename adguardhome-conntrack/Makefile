@@ -57,9 +57,7 @@ define Package/$(PKG_NAME)
 	CATEGORY:=Network
 	TITLE:=Network-wide ads and trackers blocking DNS server
 	URL:=https://github.com/AdguardTeam/AdGuardHome
-ifeq ($(CONFIG_TARGET_ath79_nand_DEVICE_glinet_gl-e750),)
 	DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
-endef
 endef
 
 define Package/$(PKG_NAME)/description
