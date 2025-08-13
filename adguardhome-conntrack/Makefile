@@ -59,7 +59,7 @@ define Package/$(PKG_NAME)
 	URL:=https://github.com/AdguardTeam/AdGuardHome
 ifeq ($(CONFIG_TARGET_ath79_nand_DEVICE_glinet_gl-e750),)
 	DEPENDS:=$(GO_ARCH_DEPENDS) +ca-bundle
-endef
+endif
 endef
 
 define Package/$(PKG_NAME)/description
