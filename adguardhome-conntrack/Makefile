@@ -34,6 +34,7 @@ PKG_LICENSE:=GPL-3.0-only
 PKG_LICENSE_FILES:=LICENSE.txt
 PKG_MAINTAINER:=Dobroslaw Kijowski <dobo90@gmail.com>
 
+ifeq ($(CONFIG_TARGET_ath79_nand_DEVICE_glinet_gl-e750),)
 PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
@@ -48,6 +49,7 @@ GO_PKG_LDFLAGS_X:=$(AGH_VERSION_PKG).channel=release \
 	$(AGH_VERSION_PKG).buildtime=$(AGH_BUILD_TIME) \
 	$(AGH_VERSION_PKG).goarm=$(GO_ARM) \
 	$(AGH_VERSION_PKG).gomips=$(GO_MIPS)
+endif
 
 include $(INCLUDE_DIR)/package.mk
 include ../golang/golang-package.mk
