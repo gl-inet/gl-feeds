@@ -1,0 +1,13 @@
+Index: minidlna-1.3.3/options.h
+===================================================================
+--- minidlna-1.3.3.orig/options.h
++++ minidlna-1.3.3/options.h
+@@ -74,7 +74,7 @@ readoptionsfile(const char * fname);
+ void
+ freeoptions(void);
+ 
+-#define MAX_OPTION_VALUE_LEN (200)
++#define MAX_OPTION_VALUE_LEN (1024)
+ struct option
+ {
+ 	enum upnpconfigoptions id;
