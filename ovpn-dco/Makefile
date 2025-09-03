@@ -25,7 +25,7 @@ include $(INCLUDE_DIR)/package.mk
 define KernelPackage/ovpn-dco-v2
   SUBMENU:=Network Support
   TITLE:=OpenVPN data channel offload
-  DEPENDS:=+kmod-crypto-aead +kmod-udptunnel4 +IPV6:kmod-udptunnel6 +kmod-crypto-gcm
+  DEPENDS:=+kmod-crypto-aead +kmod-udptunnel4 +IPV6:kmod-udptunnel6 +kmod-crypto-gcm +kmod-crypto-chacha20poly1305
   KCONFIG:=$(if $(CONFIG_CRYPTO_DEV_SAFEXCEL),,CONFIG_CRYPTO_DEV_SAFEXCEL=n) \
 	$(if $(filter arm64,$(LINUX_KARCH)),CONFIG_ARM64_CRYPTO=y CONFIG_CRYPTO_SHA2_ARM64_CE=y CONFIG_CRYPTO_GHASH_ARM64_CE=y CONFIG_CRYPTO_AES_ARM64_CE_CCM=y CONFIG_CRYPTO_AES_ARM64_CE_BLK=y CONFIG_CRYPTO_SHA1_ARM64_CE=y CONFIG_CRYPTO_SHA512_ARM64=y CONFIG_CRYPTO_SHA512_ARM64_CE=y CONFIG_CRYPTO_CHACHA20_NEON=m CONFIG_CRYPTO_POLY1305_NEON=m \
 	$(if $(CONFIG_CRYPTO_SHA3_ARM64),,CONFIG_CRYPTO_SHA3_ARM64=n) \
