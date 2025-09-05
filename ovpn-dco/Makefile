@@ -22,26 +22,31 @@ PKG_LICENSE:=GPL-2.0-only
 
 include $(INCLUDE_DIR)/package.mk
 
-define KernelPackage/dco_arm64_crypto
-  SUBMENU:=Network Support
-  TITLE:=Ovpn dco arm64 crypto
-  DEPENDS:=+kmod-crypto-aead +kmod-crypto-gcm +kmod-crypto-chacha20poly1305
-  KCONFIG:=$(if $(CONFIG_CRYPTO_DEV_SAFEXCEL),,CONFIG_CRYPTO_DEV_SAFEXCEL=n) \
-	$(if $(filter arm64,$(LINUX_KARCH)),CONFIG_ARM64_CRYPTO=y CONFIG_CRYPTO_SHA2_ARM64_CE=y CONFIG_CRYPTO_GHASH_ARM64_CE=y CONFIG_CRYPTO_AES_ARM64_CE_CCM=y CONFIG_CRYPTO_AES_ARM64_CE_BLK=y CONFIG_CRYPTO_SHA1_ARM64_CE=y CONFIG_CRYPTO_SHA512_ARM64=y CONFIG_CRYPTO_SHA512_ARM64_CE=y CONFIG_CRYPTO_CHACHA20_NEON=y CONFIG_CRYPTO_POLY1305_NEON=y \
+define KernelPackage/ovpn-dco-v2/aarch64
+  DEPENDS+=+kmod-crypto-aead +kmod-crypto-gcm +kmod-crypto-chacha20poly1305
+  KCONFIG+=CONFIG_ARM64_CRYPTO=y CONFIG_CRYPTO_SHA2_ARM64_CE=y CONFIG_CRYPTO_GHASH_ARM64_CE=y CONFIG_CRYPTO_AES_ARM64_CE_CCM=y CONFIG_CRYPTO_AES_ARM64_CE_BLK=y CONFIG_CRYPTO_SHA1_ARM64_CE=y CONFIG_CRYPTO_SHA512_ARM64=y CONFIG_CRYPTO_SHA512_ARM64_CE=y CONFIG_CRYPTO_CHACHA20_NEON=y CONFIG_CRYPTO_POLY1305_NEON=y \
 	$(if $(CONFIG_CRYPTO_SHA3_ARM64),,CONFIG_CRYPTO_SHA3_ARM64=n) \
 	$(if $(CONFIG_CRYPTO_SM3_ARM64_CE),,CONFIG_CRYPTO_SM3_ARM64_CE=n) \
 	$(if $(CONFIG_CRYPTO_SM4_ARM64_CE),,CONFIG_CRYPTO_SM4_ARM64_CE=n) \
 	$(if $(CONFIG_CRYPTO_AES_ARM64_NEON_BLK),,CONFIG_CRYPTO_AES_ARM64_NEON_BLK=n) \
 	$(if $(CONFIG_CRYPTO_NHPOLY1305_NEON),,CONFIG_CRYPTO_NHPOLY1305_NEON=n) \
-	$(if $(CONFIG_CRYPTO_AES_ARM64_BS),,CONFIG_CRYPTO_AES_ARM64_BS=n), \
-	CONFIG_CRYPTO_CHACHA20=y) \
-	CONFIG_CRYPTO_POLY1305=y
+	$(if $(CONFIG_CRYPTO_AES_ARM64_BS),,CONFIG_CRYPTO_AES_ARM64_BS=n)
 endef
 
 define KernelPackage/ovpn-dco-v2
+  $(info ARCH=$(ARCH))
+  $(info BOARD=$(BOARD))
+  $(info SUBTARGET=$(SUBTARGET))
+  $(info CPU_TYPE=$(CPU_TYPE))
+  $(info CPU_SUBTYPE=$(CPU_SUBTYPE))
+  $(info TARGETID=$(TARGETID))
+  $(info TARGETID_FULL=$(TARGETID_FULL))
+  $(info profile = $(CONFIG_TARGET_PROFILE))
   SUBMENU:=Network Support
   TITLE:=OpenVPN data channel offload
-  DEPENDS:=+kmod-udptunnel4 +IPV6:kmod-udptunnel6 +kmod-dco_arm64_crypto
+  DEPENDS:=+kmod-udptunnel4 +IPV6:kmod-udptunnel6 +kmod-crypto-aead +kmod-crypto-gcm +kmod-crypto-chacha20poly1305
+  KCONFIG:=CONFIG_CRYPTO_CHACHA20=y \
+	CONFIG_CRYPTO_POLY1305=y
   FILES:=$(PKG_BUILD_DIR)/drivers/net/ovpn-dco/ovpn-dco-v2.ko
   AUTOLOAD:=$(call AutoLoad,30,ovpn-dco-v2)
 endef
@@ -74,5 +79,4 @@ define Build/Compile
 		modules
 endef
 
-$(eval $(call KernelPackage,dco_arm64_crypto))
 $(eval $(call KernelPackage,ovpn-dco-v2))
