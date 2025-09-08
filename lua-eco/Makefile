@@ -6,7 +6,7 @@ PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco/releases/download/v$(PKG_VERSION)
-PKG_HASH:=81d260935fa391fb52b9659e21aaada52482a1894782d9781911ff0fe8e3ab33
+PKG_HASH:=c2d05740069ad9e78c1cbc9eeb2e71fb2da0aeb35b77863d20b3d8c50b5ff42e
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
