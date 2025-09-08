@@ -1,0 +1,21 @@
+{
+  "comments": [
+    {
+      "unresolved": false,
+      "key": {
+        "uuid": "01867c1e_465cd6db",
+        "filename": "/PATCHSET_LEVEL",
+        "patchSetId": 1
+      },
+      "lineNbr": 0,
+      "author": {
+        "id": 1000055
+      },
+      "writtenOn": "2025-09-08T08:56:49Z",
+      "side": 1,
+      "message": "1.将zoneinfo包放到gl_feeds_common中，方便后续的版本更新\n2.在原生zoneinfo包的基础上增加脚本，用于生成时区数据列表以满足时区同步功能，避免安装原生zoneinfo包，占用较大空间\n3.在profile中配置即可",
+      "revId": "f68fa610ebc839826c1a606eebc2d26d89db82e0",
+      "serverId": "7320e0fd-11da-4e58-8eac-38444088062c"
+    }
+  ]
+}
