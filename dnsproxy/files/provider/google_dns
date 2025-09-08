@@ -6,7 +6,7 @@
             "name": "Default",
             "description": "Without any content filtering, it is suitable for users who need complete access to the Internet.",
             "url_doh": "https://dns.google/dns-query",
-            "url_dot": "tls://",
+            "url_dot": "tls://dns.google",
             "address": ["8.8.8.8","8.8.4.4"],
             "address6":["2001:4860:4860::8888","2001:4860:4860::8844"]
         }
