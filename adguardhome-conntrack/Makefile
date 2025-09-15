@@ -115,5 +115,9 @@ define Package/$(PKG_NAME)/install
 	$(call GoPackage/Package/Install/Bin,$(1))
 endef
 
+define Package/$(PKG_NAME)/conffiles
+	/etc/AdGuardHome/config.yaml
+endef
+
 $(eval $(call GoBinPackage,$(PKG_NAME)))
 $(eval $(call BuildPackage,$(PKG_NAME)))
