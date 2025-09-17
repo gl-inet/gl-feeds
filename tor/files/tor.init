@@ -10,6 +10,13 @@ start_service() {
 	local enable=$(uci get tor.global.enable)
 	[ $enable != "1" ] && exit 0
 
+	[ ! -f "/etc/tor/torrc" ] || [ ! -s "/etc/tor/torrc" ] && {
+		cp /rom/etc/tor/torrc /etc/tor/torrc
+		/usr/bin/tor.sh replace_ip 2>/dev/null&
+		/usr/bin/tor.sh configure_tor_countries 2>/dev/null&
+	}
+
+
 	rm -rf /var/lib/tor/*
 
 	[ -f /var/run/tor.pid ] || {
