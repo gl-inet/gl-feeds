@@ -1,4 +1,4 @@
-From dcbdb7abe98b0303e349ef12bf654e623bc75e19 Mon Sep 17 00:00:00 2001
+From b145f14788fcc3b8b3ea7b7614655758b31e01c3 Mon Sep 17 00:00:00 2001
 From: Dongming Han <handongming@gl-inet.com>
 Date: Mon, 11 Aug 2025 00:03:43 +0800
 Subject: [PATCH] upstream dns query mark sync with downstream connection mark
@@ -578,7 +578,7 @@ index 04ccb7e..d0bbdd9 100644
  	// Don't use [time.Since] because it uses [time.Now].
  	dur = c.Now().Sub(startTime)
 diff --git a/proxy/proxy.go b/proxy/proxy.go
-index 2573ef9..0092eb4 100644
+index 2573ef9..2240ff6 100644
 --- a/proxy/proxy.go
 +++ b/proxy/proxy.go
 @@ -17,6 +17,7 @@ import (
@@ -595,7 +595,7 @@ index 2573ef9..0092eb4 100644
  
 +	// Strict conntrack check: if conntrack is enabled, we must have successfully
 +	// retrieved the connection mark. This prevents policy bypass attacks.
-+	if p.EnableConntrack && d.ConnectionMark == 0 {
++	if p.EnableConntrack && (d.Proto == ProtoTCP || d.Proto == ProtoUDP) && d.ConnectionMark == 0 {
 +		// Check if we actually failed to get the mark vs. the mark being legitimately 0
 +		// We need to re-attempt getting the mark to distinguish between these cases
 +		if tcpConn, ok := d.Conn.(*net.TCPConn); ok {
@@ -634,13 +634,13 @@ index 2573ef9..0092eb4 100644
 +	}
 +
 +	// Build a context carrying the per-request connection mark, removing the
-+    // need for any global MarkProvider.
-+    // Only propagate when conntrack is enabled; even if the mark is 0, include
-+    // it to ensure SO_MARK is explicitly set/cleared by dialers on Linux.
-+    ctx := context.Background()
-+    if p.EnableConntrack {
-+        ctx = bootstrap.WithMark(ctx, d.ConnectionMark)
-+    }
++	// need for any global MarkProvider.
++	// Only propagate when conntrack is enabled; even if the mark is 0, include
++	// it to ensure SO_MARK is explicitly set/cleared by dialers on Linux.
++	ctx := context.Background()
++	if p.EnableConntrack && (d.Proto == ProtoTCP || d.Proto == ProtoUDP) {
++		ctx = bootstrap.WithMark(ctx, d.ConnectionMark)
++	}
 +
  	// Perform the DNS request.
 -	resp, u, err := p.exchangeUpstreams(req, upstreams)
@@ -2239,5 +2239,5 @@ index 2c50510..86337d9 100644
  // specific for a given role and connection ID.
  type QUICTraceFunc func(
 -- 
-2.25.1
+2.34.1
 
