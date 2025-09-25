@@ -1,0 +1,25 @@
+From 05327c7256fd8e5a3c5febec66a04bbae294a61c Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Thu, 25 Sep 2025 15:09:34 +0800
+Subject: [PATCH] fix: make ffi.string support uint8_t array
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ ffi.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/ffi.c b/ffi.c
+index f93bb06..7c68328 100644
+--- a/ffi.c
++++ b/ffi.c
+@@ -2366,6 +2366,7 @@ static int lua_ffi_string(lua_State *L)
+     case CTYPE_VOID:
+     case CTYPE_CHAR:
+     case CTYPE_UCHAR:
++    case CTYPE_UINT8_T:
+         break;
+     default:
+         goto converr;
+-- 
+2.34.1
+
