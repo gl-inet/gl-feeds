@@ -214,3 +214,17 @@ killclients()
 		kill -KILL ${pid}
 	done
 }
+
+restart()
+{
+	enable=$(uci -q get dropbear.@dropbear[0].enable)
+	[ $enable = 1 ] && start || {
+		while true; do
+			ubus call service delete '{ "name": "dropbear" }'
+			if [[ $? != 0 ]]; then
+				break
+			fi
+			sleep 1
+		done
+        }
+}
