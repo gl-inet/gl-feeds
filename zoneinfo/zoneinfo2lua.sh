@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # IANA时区数据库目录
 ZONEINFO_DIR="./zoneinfo"
