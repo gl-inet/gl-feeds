@@ -1,0 +1,356 @@
+From ac96ed51c93aaf30885cb179470075b65404c28a Mon Sep 17 00:00:00 2001
+From: gl-tianwei <tianwei.ma@gl-inet.com>
+Date: Wed, 22 Oct 2025 10:53:47 +0800
+Subject: [PATCH] smstools3: Adapts to SMS and card slot binding
+
+---
+ src/modeminit.c | 18 +++++++++-
+ src/smsd.c      | 93 +++++++++++++++++++++++++++++++++++++++++--------
+ src/smsd_cfg.c  |  7 ++++
+ src/smsd_cfg.h  |  3 ++
+ 4 files changed, 106 insertions(+), 15 deletions(-)
+
+diff --git a/src/modeminit.c b/src/modeminit.c
+index ea382db..f7ee28e 100755
+--- a/src/modeminit.c
++++ b/src/modeminit.c
+@@ -480,8 +480,14 @@ int write_to_modem(char *command, int timeout, int log_command, int print_error)
+     if (log_command)
+       writelogfile(LOG_DEBUG, 0, "-> %s",command);
+ 
++#define DEFAULT_SLOT "1"
++
+     char send_buf[1024 + 1] = {0};
+-    snprintf(send_buf, sizeof(send_buf), "bus#%s|command#%s",DEVICE.bus, command);
++    if (strlen(DEVICE.slot) > 0)
++      snprintf(send_buf, sizeof(send_buf), "bus#%s|slot#%s|command#%s",DEVICE.bus,DEVICE.slot,command);
++    else
++      snprintf(send_buf, sizeof(send_buf), "bus#%s|slot#%s|command#%s",DEVICE.bus,DEFAULT_SLOT,command);
++
+     if (log_command) 
+       writelogfile(LOG_DEBUG, 0, "send_buf:[%s]\n",send_buf);
+ 
+@@ -1559,6 +1565,16 @@ int initmodem(char *new_smsc, int receiving)
+ 
+   // -----------------------------------------------------------------------------------------------
+   writelogfile(LOG_INFO, 0, "Checking if modem is ready");
++    //add by gl
++  snprintf(command, sizeof(command), "AT+CPIN?\r\n");
++  for (int i = 0; i < 3;i++) {
++    put_command(command, answer, sizeof(answer), "default", "READY");
++    if (NULL == strstr(answer,"READY") &&  i == 2) {
++      writelogfile(LOG_DEBUG, 0, "Curr bus %s sim card not present, exiting SMS reception check\n",DEVICE.bus);
++      return 8;
++    }
++    t_sleep(1);
++  }
+ 
+   // 3.1.16beta: If wakeup_init is defined, send it to the modem:
+   if (DEVICE.wakeup_init[0])
+diff --git a/src/smsd.c b/src/smsd.c
+index 3af75c2..7b5f79b 100755
+--- a/src/smsd.c
++++ b/src/smsd.c
+@@ -221,6 +221,8 @@ char HDR_Queue2[SIZE_HEADER] = {};
+ const char *HDR_Bus = "Bus:";// Msg file input.
+ char HDR_Bus2[SIZE_HEADER]={};
+ 
++const char *HDR_Slot = "Slot:";// Msg file input.
++char HDR_Slot2[SIZE_HEADER]={};
+ 
+ // Headers without translation:
+ const char *HDR_SmsdDebug =		"Smsd_debug:";	// For debugging purposes
+@@ -1115,7 +1117,8 @@ void readSMSheader(char* filename, /* Filename */
+                    int *ping,
+                    int *language,
+                    int *language_ext,
+-                   char *bus)
++                   char *bus,
++                   char *slot)
+ {
+   FILE* File;
+   char line[SIZE_UDH_DATA +256];
+@@ -1152,6 +1155,7 @@ void readSMSheader(char* filename, /* Filename */
+     *language = -2;
+     *language_ext = -2;
+     bus[0] = 0;
++    slot[0] = 0;
+ 
+     // This is global:
+     smsd_debug[0] = 0;
+@@ -1383,7 +1387,7 @@ void readSMSheader(char* filename, /* Filename */
+         if (recursion_level < 1)
+           readSMSheader(line, recursion_level +1, to, from, alphabet, with_udh, udh_data, queue, flash,
+   	              smsc, report, split, validity, voicecall, hex, replace_msg, macros, system_msg, to_type, retries,
+-                      message_reference, reject_duplicates, reply_path, text_is_pdu, sms_class, tp_dcs, ping, language, language_ext,bus);
++                      message_reference, reject_duplicates, reply_path, text_is_pdu, sms_class, tp_dcs, ping, language, language_ext,bus,slot);
+       }
+       else
+       if (test_header(&hlen, line, HDR_Macro, HDR_Macro2))
+@@ -1480,6 +1484,12 @@ void readSMSheader(char* filename, /* Filename */
+             strncpy(bus, line,SIZE_BUS - 1);
+       }
+       else
++      if (test_header(&hlen, line, HDR_Slot, HDR_Slot2))
++      {
++          if (strlen(cutspaces(strcpyo(line, line +hlen))) < SIZE_SLOT)
++            strncpy(slot, line,SIZE_SLOT - 1);
++      }
++      else
+       {
+         // if the header is unknown, then simply ignore
+         ;;
+@@ -1909,6 +1919,7 @@ int spool1sms()
+       system_msg, to_type, retries, message_reference, reject_duplicates, reply_path, text_is_pdu,
+       sms_class, tp_dcs, ping, language, language_ext;
+   char bus[SIZE_BUS] = {0};
++  char slot[SIZE_SLOT] = {0};
+   char *fail_text = 0;
+   int success = 0;
+   char cmdline[PATH_MAX+PATH_MAX+32];
+@@ -1942,7 +1953,7 @@ int spool1sms()
+ 
+       readSMSheader(filename, 0, to,from,&alphabet,&with_udh,udh_data,queuename,&flash,smsc,&report,&split,
+                     &validity, &voicecall, &hex, &replace_msg, NULL, &system_msg, &to_type, &retries,
+-                    &message_reference, &reject_duplicates, &reply_path, &text_is_pdu, &sms_class, &tp_dcs, &ping, &language, &language_ext,bus);
++                    &message_reference, &reject_duplicates, &reply_path, &text_is_pdu, &sms_class, &tp_dcs, &ping, &language, &language_ext,bus,slot);
+ 
+       readSMStext(filename, 0, 0, text, &textlen, NULL, NULL);
+ 
+@@ -3557,6 +3568,11 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+         if (*HDR_Bus2 != '-')
+           fprintf(fd, "%s %s\n", get_header_incoming(HDR_Bus, HDR_Bus2), DEVICE.bus);
+ 
++          
++        //gl Adaptable to multi-module
++        if (*HDR_Slot2 != '-' && DEVICE.slot[0])
++          fprintf(fd, "%s %s\n", get_header_incoming(HDR_Slot, HDR_Slot2), DEVICE.slot);
++
+         if (DEVICE.number[0])
+           if (*HDR_Number2 != '-')
+             fprintf(fd, "%s %s\n", get_header_incoming(HDR_Number, HDR_Number2), DEVICE.number);
+@@ -3798,14 +3814,20 @@ int receivesms(int* quick, int only1st)
+ 
+   if (*quick==0 && DEVICE.modem_disabled == 0)
+   {
+-    if (initialize_modem_receiving())
++    int ret = initialize_modem_receiving();
++    if (ret == 8) {
++      writelogfile(LOG_DEBUG, 0, "SIM card not ready\n");
++      return 0;
++    }
++
++    if (ret)
+     {
+       STATISTICS->usage_r+=time(0)-start_time;
+ 
+       flush_smart_logging();
+ 
+       return -1;
+-    }
++    } 
+   }
+ 
+   // Dual-memory handler:
+@@ -4120,6 +4142,7 @@ int send_part(char* from, char* to, char* text, int textlen, int alphabet, int w
+       STATISTICS->usage_s+=time(0)-start_time;
+ 
+       flush_smart_logging();
++      if (i == 8) return 2;      
+ 
+       return (i == 7)? 3 : 1;
+     }
+@@ -4393,10 +4416,11 @@ int send_part(char* from, char* to, char* text, int textlen, int alphabet, int w
+         if (retry)
+         {
+           writelogfile(LOG_NOTICE, 1, "Waiting %i sec. before retrying", errorsleeptime);
++          int ret;
+ 
+           if (t_sleep(errorsleeptime))
+             result = 3; // Cancel if terminating
+-          else if (initialize_modem_sending("")) // Initialize modem after error
++          else if ((ret = initialize_modem_sending("")) && ret != 8) // Initialize modem after error
+           {
+             // 3.1.16beta: new message and alarm:
+             writelogfile0(LOG_ERR, 1, tb_sprintf("Sending canceled because modem initialization failed."));
+@@ -4423,6 +4447,26 @@ int send_part(char* from, char* to, char* text, int textlen, int alphabet, int w
+   }
+ }
+ 
++
++static void trim_str(char *str)
++{
++    if (!str) return;
++
++    char *start = str;
++    while (*start && isspace((unsigned char)*start))
++        start++;
++
++    char *end = start + strlen(start);
++    while (end > start && isspace((unsigned char)*(end - 1)))
++        end--;
++
++    *end = '\0';
++
++    if (start != str)
++        memmove(str, start, end - start + 1);
++}
++
++
+ /* =======================================================================
+    Send a whole message, this can have many parts
+    ======================================================================= */
+@@ -4497,6 +4541,7 @@ int send1sms(int* quick, int* errorcounter)
+   int do_convert;
+   char *charconv_notice = 0;
+   char bus[SIZE_BUS] = {0};
++  char slot[SIZE_SLOT] = {0};
+ 
+   time_t start_time; // 3.1.20
+ 
+@@ -4504,13 +4549,14 @@ int send1sms(int* quick, int* errorcounter)
+   printf("!! send1sms(quick=%i, errorcounter=%i)\n", *quick, *errorcounter);
+ #endif
+ 
++  writelogfile(LOG_INFO, 0, "NUMBER_OF_MODEMS: %d\n",NUMBER_OF_MODEMS);
+   // Search for one single sms file
+   for (q = 0; q < NUMBER_OF_MODEMS; q++)
+   {
+     if (q == 1)
+       if (DEVICE.queues[q][0] == 0)
+         break;
+-
++    writelogfile(LOG_INFO, 0, "DEVICE.queues[%d] = %s, directory = %s\n", q, DEVICE.queues[q], directory);
+     if (((queue=getqueue(DEVICE.queues[q],directory))!=-1) &&
+        (getfile(DEVICE.trust_spool, directory, filename, 1)))
+     {
+@@ -4528,18 +4574,29 @@ int send1sms(int* quick, int* errorcounter)
+ #endif
+ 
+     flush_smart_logging();
+-
++    writelogfile(LOG_INFO, 0, "Not found sms file\n");
+     return 0;
+   }
+ 
++  writelogfile(LOG_INFO, 0, "found a sms file %s\n",filename);
++
+   readSMSheader(filename, 0, to,from,&alphabet,&with_udh,udh_data,provider,&flash,smsc,&report,&split,
+                 &validity, &voicecall, &hex, &replace_msg, macros, &system_msg, &to_type, &retries,
+                 &message_reference, &reject_duplicates, &reply_path, &text_is_pdu, &sms_class, &tp_dcs,
+-                &ping, &language, &language_ext,bus);
++                &ping, &language, &language_ext,bus,slot);
+ 
++  trim_str((char *)DEVICE.bus);
++  trim_str((char *)DEVICE.slot);
++  trim_str((char *)bus);
++  trim_str((char *)slot);
+   //gl If the current SMS file does not match the module, exit
+-  if (strcmp(DEVICE.bus, bus)) {
+-    writelogfile0(LOG_NOTICE, 0, tb_sprintf("The current SMS file and mod bus %s do not match, exit!",bus));
++  writelogfile0(LOG_NOTICE, 0, tb_sprintf("DEVICE.bus:%s bus %s DEVICE.slot:%s slot %s",DEVICE.bus,bus,DEVICE.slot,slot));
++  if (0 != strcmp(DEVICE.bus, bus)  || 0 != strcmp(DEVICE.slot, slot)) {
++    writelogfile0(LOG_NOTICE, 0, tb_sprintf("The current SMS file and mod bus %s slot %s do not match, exit!",bus,slot));
++    if (!unlockfile(filename)) {
++        writelogfile(LOG_ERR, 0,"Failed to unlock file %s (bus %s slot %s)", filename, bus, slot);
++    }
++
+     return 0;
+   }
+ 
+@@ -5091,8 +5148,9 @@ int send1sms(int* quick, int* errorcounter)
+       if (DEVICE.receive_before_send == 1 ||
+           (DEVICE.receive_before_send == -1 && receive_before_send == 1))
+       {
+-        receivesms(quick, 1);
+-
++        if (0 == receivesms(quick, 1))
++            return 0;
++  
+         // TODO: return value handling, if modem got broken...
+       }
+     }
+@@ -5117,6 +5175,7 @@ int send1sms(int* quick, int* errorcounter)
+ 
+       DEVICE.detect_message_routing = 0;
+       DEVICE.detect_unexpected_input = 0;
++      int ret;
+ 
+       if (DEVICE.modem_disabled == 1)
+       {
+@@ -6815,7 +6874,8 @@ int start_device()
+   // 3.1.1: If a modem is used for sending only, it's first initialized.
+   if (DEVICE.outgoing && !DEVICE.incoming)
+   {
+-    if (initialize_modem_sending(""))
++    int ret = initialize_modem_sending("");
++    if (ret && ret != 8)
+     {
+       writelogfile0(LOG_CRIT, 1, tb_sprintf("Failed to initialize modem %s. Stopping.", DEVICE.name));
+       alarm_handler0(LOG_CRIT, tb);
+@@ -7283,6 +7343,7 @@ void devicespooler()
+ 
+   flush_smart_logging();
+ 
++  writelogfile(LOG_INFO, 0, "terminate:%d start\n",terminate);
+   while (terminate == 0) /* endless loop */
+   {
+     workless = 1;
+@@ -7313,7 +7374,11 @@ void devicespooler()
+       if (continuous_sent == 0)
+         started_sending = time(0);
+ 
++      writelogfile(LOG_INFO, 0, "start send1sms quick:%d errorcounter:%d\n",quick,errorcounter);
+       i = send1sms(&quick, &errorcounter);
++      writelogfile(LOG_INFO, 0, "send1sms return:%i \n",i);
++      if (i == -3)
++         continue;
+ 
+       if (i > 0)
+       {
+diff --git a/src/smsd_cfg.c b/src/smsd_cfg.c
+index d1e98e3..22a5c38 100755
+--- a/src/smsd_cfg.c
++++ b/src/smsd_cfg.c
+@@ -636,6 +636,13 @@ int readcfg_device(int device, char *device_name)
+             continue;
+           }
+           
++          // .slot is set by the program
++          if (!strcasecmp(name, "slot"))
++          {
++            strcpy2(NEWDEVICE.slot, ask_value(NEWDEVICE.name, name, value));
++            printf("name:%s NEWDEVICE.slot:%s\n",name,NEWDEVICE.slot);
++            continue;
++          }
+           // .name is set by the program
+ 
+           if (!strcasecmp(name, "number"))
+diff --git a/src/smsd_cfg.h b/src/smsd_cfg.h
+index 8d05ff4..8772979 100755
+--- a/src/smsd_cfg.h
++++ b/src/smsd_cfg.h
+@@ -78,6 +78,7 @@ Either version 2 of the License, or (at your option) any later version.
+ #define SIZE_FILENAME_PREVIEW 256
+ #define SIZE_PB_ENTRY 101
+ #define SIZE_BUS 100
++#define SIZE_SLOT 100
+ 
+ #define SIZE_CHECK_MEMORY_BUFFER 512
+ // 3.1.12: Changed size from 16384 when CMGL* method is used:
+@@ -146,10 +147,12 @@ typedef struct
+   char directory[PATH_MAX];		// Queue directory
+ } _queue;
+ 
++
+ typedef struct
+ {
+   char name[32];		// Name of the modem
+   char bus[SIZE_BUS];     //In multi-module scenarios, specify the bus
++  char slot[SIZE_SLOT];  //In multi-module scenarios, specify the slot
+   char number[32];              // 3.1.4: SIM card's telephone number.
+   char device[PATH_MAX];	// Serial port name
+   int device_open_retries;      // 3.1.7: Defines count of retries when opening a device fails.
+-- 
+2.34.1
+
