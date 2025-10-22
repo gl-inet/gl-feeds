@@ -184,6 +184,6 @@ stop_service()
 	[ -f /tmp/ksmbd.lock ] && rm /tmp/ksmbd.lock
 }
 
-# reload_service() {
-	# restart "$@"
-# }
+reload_service() {
+	restart "$@"
+}
