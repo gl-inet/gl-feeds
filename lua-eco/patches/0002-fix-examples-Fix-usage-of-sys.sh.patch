@@ -1,0 +1,26 @@
+From 88e7efb7cfbbaa7566982abb4e744425c381e45d Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Sat, 11 Oct 2025 16:51:41 +0800
+Subject: [PATCH 2/7] fix(examples): Fix usage of `sys.sh`
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ examples/exec/shell.lua | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/examples/exec/shell.lua b/examples/exec/shell.lua
+index 650f2be..a3476b5 100755
+--- a/examples/exec/shell.lua
++++ b/examples/exec/shell.lua
+@@ -2,7 +2,7 @@
+ 
+ local sys = require 'eco.sys'
+ 
+-local stdout, stderr, err = sys.sh('date', '-u')
++local stdout, stderr, err = sys.sh({'date', '-u'})
+ print('stdout:', stdout)
+ print('stderr:', stderr)
+ 
+-- 
+2.34.1
+
