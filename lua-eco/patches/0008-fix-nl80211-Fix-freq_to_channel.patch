@@ -1,0 +1,44 @@
+From 83bf8a40ee7c9deb763ea231133a42e008011b89 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Sat, 25 Oct 2025 17:32:57 +0800
+Subject: [PATCH] fix(nl80211): Fix freq_to_channel
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ nl80211.lua | 19 +++++++++----------
+ 1 file changed, 9 insertions(+), 10 deletions(-)
+
+diff --git a/nl80211.lua b/nl80211.lua
+index ca1f523..6ca485d 100644
+--- a/nl80211.lua
++++ b/nl80211.lua
+@@ -189,17 +189,16 @@ function M.channel_type_name(typ)
+ end
+ 
+ function M.freq_to_channel(freq)
+-    -- see 802.11-2007 17.3.8.3.2 and Annex J
+-    if freq == 2484 then
+-        return 14
+-    elseif freq < 2484 then
+-        return (freq - 2407) // 5
+-    elseif freq >= 4910 and freq <= 4980 then
+-        return (freq - 4000) // 5
+-    elseif freq <= 45000 then -- DMG band lower limit
++    if freq >= 2412 and freq <= 2484 then
++        if freq == 2484 then
++            return 14
++        else
++            return (freq - 2407) // 5
++        end
++    elseif freq >= 5180 and freq <= 5925 then
+         return (freq - 5000) // 5
+-    elseif freq >= 58320 and freq <= 64800 then
+-        return (freq - 56160) // 2160
++    elseif freq >= 5955 and freq <= 7115 then
++        return (freq - 5950) // 5
+     else
+         return 0
+     end
+-- 
+2.34.1
+
