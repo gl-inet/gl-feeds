@@ -315,16 +315,16 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 			     np, "mtd-sn-number", 0, SN_SIZE, priv->sn)))
 		printk("get sn number through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_SN);
-	printk("sn is %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n",
-			priv->sn[0],priv->sn[1],priv->sn[2],priv->sn[3],priv->sn[4],priv->sn[5],
-			priv->sn[6],priv->sn[7],priv->sn[8],priv->sn[9],priv->sn[10],priv->sn[11],
-			priv->sn[12],priv->sn[13],priv->sn[14],priv->sn[15]);
+	//printk("sn is %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x %x\n",
+	//		priv->sn[0],priv->sn[1],priv->sn[2],priv->sn[3],priv->sn[4],priv->sn[5],
+	//		priv->sn[6],priv->sn[7],priv->sn[8],priv->sn[9],priv->sn[10],priv->sn[11],
+	//		priv->sn[12],priv->sn[13],priv->sn[14],priv->sn[15]);
 	// get sn flag
 	if ((ret = get_value_through_mtd(np, "mtd-sn-flag", 0, SN_FLAG_SIZE,
 			     &priv->sn_flag)))
 		printk("get sn flag through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_SN_FLAG);
-	printk("sn_flag is 0x%x\n", priv->sn_flag);
+	//printk("sn_flag is 0x%x\n", priv->sn_flag);
 
 	// get pcba boot mark
 	if ((ret = get_value_through_mtd(np, "mtd-pcba-boot", 0, PCBA_BOOT_SIZE,
@@ -338,14 +338,14 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get hardware version flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_HARDWARE_VER_FLAG);
-	printk("hardware version flag is %.2s\n", priv->hw_ver_flag);
+	//printk("hardware version flag is %.2s\n", priv->hw_ver_flag);
 	// get hardware version
 	if ((ret = get_value_through_mtd(np, "mtd-hardware-ver", 0,
 			     HARDWARE_VER_SIZE, priv->hw_ver)))
 		printk("get hardware version through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_HARDWARE_VER);
-	printk("hardware version is %.32s\n", priv->hw_ver);
+	//printk("hardware version is %.32s\n", priv->hw_ver);
 
 	// get model version flag
 	if ((ret = get_value_through_mtd(np, "mtd-model-ver-flag", 0,
@@ -353,13 +353,13 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get model version flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_MODEL_VER_FLAG);
-	printk("model version flag is %.2s\n", priv->model_ver_flag);
+	//printk("model version flag is %.2s\n", priv->model_ver_flag);
 	// get model version
 	if ((ret = get_value_through_mtd(np, "mtd-model-ver", 0, MODEL_VER_SIZE,
 			     priv->model_ver)))
 		printk("get model version through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_MODEL_VER);
-	printk("model version is %.32s\n", priv->model_ver);
+	//printk("model version is %.32s\n", priv->model_ver);
 
 	// get counrty id
 	if ((ret = get_value_through_mtd(np, "mtd-country-id", 0,
@@ -370,13 +370,11 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 			(priv->countryID[1] <= 'z')) {
 		priv->exist_flag |= (1 << READ_COUNTRY_ID);
 	} else {
-		printk("can not find an vaild country ID[%.2s], use default "
-		       "value[CN]\n",
-				priv->countryID);
+		//can not find an vaild country ID, use default value[CN]
 		priv->countryID[0] = 'C';
 		priv->countryID[1] = 'N';
 	}
-	printk("countryID is %.2s\n", priv->countryID);
+	//printk("countryID is %.2s\n", priv->countryID);
 
 	// get HW feature
 	buffer = kmalloc(sizeof(char) * HW_FEATURE_SIZE, GFP_KERNEL);
@@ -386,7 +384,7 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 	priv->hw_feature = (buffer[3] << 24) | (buffer[2] << 16) |
 			   (buffer[1] << 8) | buffer[0];
 	priv->exist_flag |= (1 << READ_HW_FEATURE);
-	printk("HW feature is %#x\n", priv->hw_feature);
+	//printk("HW feature is %#x\n", priv->hw_feature);
 	kfree(buffer);
 
 	// get vender flag
@@ -395,13 +393,13 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get vender flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_VENDER_FLAG);
-	printk("vender flag is %.2s\n", priv->vender_flag);
+	//printk("vender flag is %.2s\n", priv->vender_flag);
 	// get vender
 	if ((ret = get_value_through_mtd(np, "mtd-vender", 0, VENDER_SIZE,
 			     priv->vender)))
 		printk("get vender through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_VENDER);
-	printk("vender is %.16s\n", priv->vender);
+	//printk("vender is %.16s\n", priv->vender);
 
 	// get product key flag
 	if ((ret = get_value_through_mtd(np, "mtd-product-key-flag", 0,
@@ -409,13 +407,13 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get product key flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_PRODUCT_KEY_FLAG);
-	printk("product key flag is %.2s\n", priv->product_key_flag);
+	//printk("product key flag is %.2s\n", priv->product_key_flag);
 	// get product key
 	if ((ret = get_value_through_mtd(np, "mtd-product-key", 0, PRODUCT_KEY_SIZE,
 			     priv->product_key)))
 		printk("get product key through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_PRODUCT_KEY);
-	printk("product key is %.16s\n", priv->product_key);
+	//printk("product key is %.16s\n", priv->product_key);
 
 	// get login info flag
 	if ((ret = get_value_through_mtd(np, "mtd-login-info-flag", 0,
@@ -423,13 +421,13 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get login info flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_LOGIN_INFO_FLAG);
-	printk("login info flag is %.2s\n", priv->login_info_flag);
+	//printk("login info flag is %.2s\n", priv->login_info_flag);
 	// get login info
 	if ((ret = get_value_through_mtd(np, "mtd-login-info", 0, LOGIN_INFO_SIZE,
 			     (unsigned char *)&priv->login_info)))
 		printk("get login info through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_LOGIN_INFO);
-	printk("login info is %#x\n", priv->login_info);
+	//printk("login info is %#x\n", priv->login_info);
 
 	// get rom type flag
 	if ((ret = get_value_through_mtd(np, "mtd-rom-type-flag", 0,
@@ -437,13 +435,13 @@ static int save_value_from_factory_to_host(struct platform_device *pdev,
 		printk("get rom type flag through mtd failed! ret %d\n",
 				ret);
 	priv->exist_flag |= (1 << READ_ROM_TYPE_FLAG);
-	printk("rom type flag is %.2s\n", priv->rom_type_flag);
+	//printk("rom type flag is %.2s\n", priv->rom_type_flag);
 	// get rom type
 	if ((ret = get_value_through_mtd(np, "mtd-rom-type", 0, ROM_TYPE_SIZE,
 			     (unsigned char *)&priv->rom_type)))
 		printk("get rom type through mtd failed! ret %d\n", ret);
 	priv->exist_flag |= (1 << READ_ROM_TYPE);
-	printk("rom type is %#x\n", priv->rom_type);
+	//printk("rom type is %#x\n", priv->rom_type);
 
 	// get wifi version
 	if ((ret = get_value_through_mtd(np, "mtd-wifi-version", 0,
@@ -848,7 +846,7 @@ int sfax8_factory_read_probe(struct platform_device *pdev)
 #ifdef CONFIG_SF16A18_FACTORY_READ_SYSFS_DEBUG
 	/*Step3:create the dbg fs node*/
 	if((ret = sf_factory_read_sysfs_register(pdev, "sfax8_factory_read"))){
-		printk("save_value_from_factory_to_host failed, %d!\n", ret);
+		printk("sf_factory_read_sysfs_register failed, %d!\n", ret);
 		goto ERROR;
 	}
 #endif
