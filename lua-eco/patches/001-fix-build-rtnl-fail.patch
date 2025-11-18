@@ -1,0 +1,17 @@
+--- a/rtnl.c
++++ b/rtnl.c
+@@ -410,10 +410,10 @@ int luaopen_eco_rtnl(lua_State *L)
+     lua_add_constant(L, "RTA_PAD", RTA_PAD);
+     lua_add_constant(L, "RTA_UID", RTA_UID);
+     lua_add_constant(L, "RTA_TTL_PROPAGATE", RTA_TTL_PROPAGATE);
+-    lua_add_constant(L, "RTA_IP_PROTO", RTA_IP_PROTO);
+-    lua_add_constant(L, "RTA_SPORT", RTA_SPORT);
+-    lua_add_constant(L, "RTA_DPORT", RTA_DPORT);
+-    lua_add_constant(L, "RTA_NH_ID", RTA_NH_ID);
++    // lua_add_constant(L, "RTA_IP_PROTO", RTA_IP_PROTO);
++    // lua_add_constant(L, "RTA_SPORT", RTA_SPORT);
++    // lua_add_constant(L, "RTA_DPORT", RTA_DPORT);
++    // lua_add_constant(L, "RTA_NH_ID", RTA_NH_ID);
+ 
+     lua_add_constant(L, "RTNLGRP_LINK", RTNLGRP_LINK);
+     lua_add_constant(L, "RTNLGRP_NOTIFY", RTNLGRP_NOTIFY);
