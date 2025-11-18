@@ -1,0 +1,32 @@
+From 0f3fd8a4959fe05866947cecd089f21c03ae9c9f Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Tue, 18 Nov 2025 20:25:23 +0800
+Subject: [PATCH] fix(ssl): increase handshake timeout from 5s to 15s
+
+Some SSL services perform handshakes slowly under poor network
+conditions, causing the previous 5-second timeout to trigger
+premature handshake failures. This patch increases the handshake
+timeout to 15 seconds to improve compatibility with slower SSL
+endpoints and unstable network environments.
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ ssl.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/ssl.c b/ssl.c
+index a618fac..25c8298 100644
+--- a/ssl.c
++++ b/ssl.c
+@@ -146,7 +146,7 @@ static int lua_ssl_handshakek(lua_State *L, int status, lua_KContext ctx)
+ 
+         s->co = L;
+ 
+-        ev_timer_set(&s->tmr, 5.0, 0);
++        ev_timer_set(&s->tmr, 15.0, 0);
+         ev_timer_start(loop, &s->tmr);
+ 
+         ev_io_modify(&s->io, ret == SSL_WANT_READ ? EV_READ : EV_WRITE);
+-- 
+2.34.1
+
