@@ -1,0 +1,120 @@
+Index: ksmbd-3.3.7/server.c
+===================================================================
+--- ksmbd-3.3.7.orig/server.c
++++ ksmbd-3.3.7/server.c
+@@ -586,39 +586,52 @@ static int __init ksmbd_server_init(void
+ 
+ 	ret = server_conf_init();
+ 	if (ret)
+-		return ret;
++		goto err_unregister;
+ 
+ 	ret = ksmbd_init_buffer_pools();
+ 	if (ret)
+-		return ret;
++		goto err_unregister;
+ 
+ 	ret = ksmbd_init_session_table();
+ 	if (ret)
+-		goto error;
++		goto err_destroy_pools;
+ 
+ 	ret = ksmbd_ipc_init();
+ 	if (ret)
+-		goto error;
++		goto err_free_session_table;
+ 
+ 	ret = ksmbd_init_global_file_table();
+ 	if (ret)
+-		goto error;
++		goto err_ipc_release;
+ 
+ 	ret = ksmbd_inode_hash_init();
+ 	if (ret)
+-		goto error;
++		goto err_destroy_file_table;
+ 
+ 	ret = ksmbd_crypto_create();
+ 	if (ret)
+-		goto error;
++		goto err_release_inode_hash;
+ 
+ 	ret = ksmbd_workqueue_init();
+ 	if (ret)
+-		goto error;
++		goto err_crypto_destroy;
+ 	return 0;
+ 
+-error:
+-	ksmbd_server_shutdown();
++err_crypto_destroy:
++	ksmbd_crypto_destroy();
++err_release_inode_hash:
++	ksmbd_release_inode_hash();
++err_destroy_file_table:
++	ksmbd_free_global_file_table();
++err_ipc_release:
++	ksmbd_ipc_release();
++err_free_session_table:
++	ksmbd_free_session_table();
++err_destroy_pools:
++	ksmbd_destroy_buffer_pools();
++err_unregister:
++	class_unregister(&ksmbd_control_class);
++
+ 	return ret;
+ }
+ 
+Index: ksmbd-3.3.7/transport_ipc.c
+===================================================================
+--- ksmbd-3.3.7.orig/transport_ipc.c
++++ ksmbd-3.3.7/transport_ipc.c
+@@ -916,11 +916,19 @@ int ksmbd_ipc_init(void)
+ 	if (ret) {
+ 		ksmbd_err("Failed to register KSMBD netlink interface %d\n",
+ 				ret);
+-		return ret;
++		goto cancel_work;
+ 	}
+ 
+ 	ida = ksmbd_ida_alloc();
+-	if (!ida)
+-		return -ENOMEM;
++	if (!ida) {
++		ret = -ENOMEM;
++		goto unregister;
++	}
+ 	return 0;
++
++unregister:
++	genl_unregister_family(&ksmbd_genl_family);
++cancel_work:
++	cancel_delayed_work_sync(&ipc_timer_work);
++	return ret;
+ }
+Index: ksmbd-3.3.7/vfs_cache.c
+===================================================================
+--- ksmbd-3.3.7.orig/vfs_cache.c
++++ ksmbd-3.3.7/vfs_cache.c
+@@ -240,7 +240,7 @@ int __init ksmbd_inode_hash_init(void)
+ 	return 0;
+ }
+ 
+-void __exit ksmbd_release_inode_hash(void)
++void ksmbd_release_inode_hash(void)
+ {
+ 	vfree(inode_hashtable);
+ }
+Index: ksmbd-3.3.7/vfs_cache.h
+===================================================================
+--- ksmbd-3.3.7.orig/vfs_cache.h
++++ ksmbd-3.3.7/vfs_cache.h
+@@ -213,7 +213,7 @@ void ksmbd_set_fd_limit(unsigned long li
+  */
+ 
+ int __init ksmbd_inode_hash_init(void);
+-void __exit ksmbd_release_inode_hash(void);
++void ksmbd_release_inode_hash(void);
+ 
+ enum KSMBD_INODE_STATUS {
+ 	KSMBD_INODE_STATUS_OK,

@@ -1,0 +1,144 @@
+Index: ksmbd-3.3.7/buffer_pool.c
+===================================================================
+--- ksmbd-3.3.7.orig/buffer_pool.c
++++ ksmbd-3.3.7/buffer_pool.c
+@@ -115,11 +115,7 @@ static int register_wm_size_class(size_t
+ {
+ 	struct wm_list *l, *nl;
+ 
+-#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
+-	nl = __alloc(sizeof(struct wm_list), GFP_KERNEL);
+-#else
+-	nl = kvmalloc(sizeof(struct wm_list), GFP_KERNEL);
+-#endif
++	nl = kmalloc(sizeof(struct wm_list), GFP_KERNEL);
+ 	if (!nl)
+ 		return -ENOMEM;
+ 
+Index: ksmbd-3.3.7/mgmt/share_config.c
+===================================================================
+--- ksmbd-3.3.7.orig/mgmt/share_config.c
++++ ksmbd-3.3.7/mgmt/share_config.c
+@@ -93,7 +93,7 @@ static int parse_veto_list(struct ksmbd_
+ 	while (veto_list_sz > 0) {
+ 		struct ksmbd_veto_pattern *p;
+ 
+-		p = ksmbd_alloc(sizeof(struct ksmbd_veto_pattern));
++		p = kzalloc(sizeof(struct ksmbd_veto_pattern), GFP_KERNEL);
+ 		if (!p)
+ 			return -ENOMEM;
+ 
+@@ -130,7 +130,7 @@ static struct ksmbd_share_config *share_
+ 	if (resp->flags == KSMBD_SHARE_FLAG_INVALID)
+ 		goto out;
+ 
+-	share = ksmbd_alloc(sizeof(struct ksmbd_share_config));
++	share = kzalloc(sizeof(struct ksmbd_share_config), GFP_KERNEL);
+ 	if (!share)
+ 		goto out;
+ 
+Index: ksmbd-3.3.7/mgmt/user_config.c
+===================================================================
+--- ksmbd-3.3.7.orig/mgmt/user_config.c
++++ ksmbd-3.3.7/mgmt/user_config.c
+@@ -32,7 +32,7 @@ struct ksmbd_user *ksmbd_alloc_user(stru
+ {
+ 	struct ksmbd_user *user = NULL;
+ 
+-	user = ksmbd_alloc(sizeof(struct ksmbd_user));
++	user = kmalloc(sizeof(struct ksmbd_user), GFP_KERNEL);
+ 	if (!user)
+ 		return NULL;
+ 
+@@ -41,7 +41,7 @@ struct ksmbd_user *ksmbd_alloc_user(stru
+ 	user->gid = resp->gid;
+ 	user->uid = resp->uid;
+ 	user->passkey_sz = resp->hash_sz;
+-	user->passkey = ksmbd_alloc(resp->hash_sz);
++	user->passkey = kmalloc(resp->hash_sz, GFP_KERNEL);
+ 	if (user->passkey)
+ 		memcpy(user->passkey, resp->hash, resp->hash_sz);
+ 
+Index: ksmbd-3.3.7/mgmt/user_session.c
+===================================================================
+--- ksmbd-3.3.7.orig/mgmt/user_session.c
++++ ksmbd-3.3.7/mgmt/user_session.c
+@@ -102,7 +102,7 @@ int ksmbd_session_rpc_open(struct ksmbd_
+ 	if (!method)
+ 		return -EINVAL;
+ 
+-	entry = ksmbd_alloc(sizeof(struct ksmbd_session_rpc));
++	entry = kzalloc(sizeof(struct ksmbd_session_rpc), GFP_KERNEL);
+ 	if (!entry)
+ 		return -EINVAL;
+ 
+@@ -279,7 +279,7 @@ static struct ksmbd_session *__session_c
+ 	struct ksmbd_session *sess;
+ 	int ret;
+ 
+-	sess = ksmbd_alloc(sizeof(struct ksmbd_session));
++	sess = kzalloc(sizeof(struct ksmbd_session), GFP_KERNEL);
+ 	if (!sess)
+ 		return NULL;
+ 
+Index: ksmbd-3.3.7/oplock.c
+===================================================================
+--- ksmbd-3.3.7.orig/oplock.c
++++ ksmbd-3.3.7/oplock.c
+@@ -702,7 +702,7 @@ static int oplock_break_pending(struct o
+ 
+ static inline int allocate_oplock_break_buf(struct ksmbd_work *work)
+ {
+-	work->response_buf = ksmbd_alloc_response(MAX_CIFS_SMALL_BUFFER_SIZE);
++	work->response_buf = kzalloc(MAX_CIFS_SMALL_BUFFER_SIZE, GFP_KERNEL);
+ 	if (!work->response_buf)
+ 		return -ENOMEM;
+ 	work->response_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
+Index: ksmbd-3.3.7/smb2pdu.c
+===================================================================
+--- ksmbd-3.3.7.orig/smb2pdu.c
++++ ksmbd-3.3.7/smb2pdu.c
+@@ -1172,7 +1172,7 @@ static int alloc_preauth_hash(struct ksm
+ 	if (sess->Preauth_HashValue)
+ 		return 0;
+ 
+-	sess->Preauth_HashValue = ksmbd_alloc(PREAUTH_HASHVALUE_SIZE);
++	sess->Preauth_HashValue = kmalloc(PREAUTH_HASHVALUE_SIZE, GFP_KERNEL);
+ 	if (!sess->Preauth_HashValue)
+ 		return -ENOMEM;
+ 
+@@ -8482,7 +8482,7 @@ int smb3_encrypt_resp(struct ksmbd_work
+ 	if (ARRAY_SIZE(iov) < rq_nvec)
+ 		return -ENOMEM;
+ 
+-	tr_hdr = ksmbd_alloc_response(sizeof(struct smb2_transform_hdr));
++	tr_hdr = kzalloc(sizeof(struct smb2_transform_hdr), GFP_KERNEL);
+ 	if (!tr_hdr)
+ 		return rc;
+ 
+Index: ksmbd-3.3.7/transport_tcp.c
+===================================================================
+--- ksmbd-3.3.7.orig/transport_tcp.c
++++ ksmbd-3.3.7/transport_tcp.c
+@@ -635,7 +635,7 @@ static struct interface *alloc_iface(cha
+ 	if (!ifname)
+ 		return NULL;
+ 
+-	iface = ksmbd_alloc(sizeof(struct interface));
++	iface = kzalloc(sizeof(struct interface), GFP_KERNEL);
+ 	if (!iface) {
+ 		kfree(ifname);
+ 		return NULL;
+Index: ksmbd-3.3.7/vfs_cache.c
+===================================================================
+--- ksmbd-3.3.7.orig/vfs_cache.c
++++ ksmbd-3.3.7/vfs_cache.c
+@@ -834,7 +834,7 @@ int ksmbd_file_table_flush(struct ksmbd_
+ 
+ int ksmbd_init_file_table(struct ksmbd_file_table *ft)
+ {
+-	ft->idr = ksmbd_alloc(sizeof(struct idr));
++	ft->idr = kzalloc(sizeof(struct idr), GFP_KERNEL);
+ 	if (!ft->idr)
+ 		return -ENOMEM;
+ 

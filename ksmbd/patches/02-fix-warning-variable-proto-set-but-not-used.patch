@@ -1,0 +1,126 @@
+Index: ksmbd-3.3.7/misc.c
+===================================================================
+--- ksmbd-3.3.7.orig/misc.c
++++ ksmbd-3.3.7/misc.c
+@@ -90,7 +90,7 @@ int ksmbd_validate_filename(char *filena
+ 
+ 		filename++;
+ 		if (!is_char_allowed(c)) {
+-			ksmbd_err("File name validation failed: 0x%x\n", c);
++			ksmbd_debug(VFS, "File name validation failed: 0x%x\n", c);
+ 			return -ENOENT;
+ 		}
+ 	}
+Index: ksmbd-3.3.7/smb2pdu.c
+===================================================================
+--- ksmbd-3.3.7.orig/smb2pdu.c
++++ ksmbd-3.3.7/smb2pdu.c
+@@ -2471,8 +2471,6 @@ int smb2_open(struct ksmbd_work *work)
+ 	struct kstat stat;
+ 	struct create_context *context;
+ 	struct lease_ctx_info *lc = NULL;
+-	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
+-		*mxac_ccontext = NULL, *disk_id_ccontext = NULL, *posix_ccontext;
+ 	struct create_ea_buf_req *ea_buf = NULL;
+ 	struct oplock_info *opinfo;
+ 	__le32 *next_ptr = NULL;
+@@ -3215,6 +3213,8 @@ reconnected:
+ 
+ 	/* If lease is request send lease context response */
+ 	if (opinfo && opinfo->is_lease) {
++		struct create_context *lease_ccontext;
++
+ 		ksmbd_debug(SMB, "lease granted on(%s) lease state 0x%x\n",
+ 				name, opinfo->o_lease->state);
+ 		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
+@@ -3230,6 +3230,8 @@ reconnected:
+ 	}
+ 
+ 	if (d_info.type == DURABLE_REQ || d_info.type == DURABLE_REQ_V2) {
++		struct create_context *durable_ccontext;
++
+ 		durable_ccontext = (struct create_context *)(rsp->Buffer +
+ 				le32_to_cpu(rsp->CreateContextsLength));
+ 		contxt_cnt++;
+@@ -3257,6 +3259,8 @@ reconnected:
+ 	}
+ 
+ 	if (maximal_access_ctxt) {
++		struct create_context *mxac_ccontext;
++
+ 		if (maximal_access == 0)
+ 			ksmbd_vfs_query_maximal_access(path.dentry,
+ 						       &maximal_access);
+@@ -3276,6 +3280,8 @@ reconnected:
+ 	}
+ 
+ 	if (query_disk_id) {
++		struct create_context *disk_id_ccontext;
++
+ 		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
+ 				le32_to_cpu(rsp->CreateContextsLength));
+ 		contxt_cnt++;
+@@ -3292,6 +3298,8 @@ reconnected:
+ 	}
+ 
+ 	if (posix_ctxt) {
++		struct create_context *posix_ccontext;
++
+ 		posix_ccontext = (struct create_context *)(rsp->Buffer +
+ 				le32_to_cpu(rsp->CreateContextsLength));
+ 		contxt_cnt++;
+@@ -7965,6 +7973,9 @@ static void smb20_oplock_break_ack(struc
+ 	return;
+ 
+ err_out:
++	opinfo->op_state = OPLOCK_STATE_NONE;
++	wake_up_interruptible_all(&opinfo->oplock_q);
++
+ 	opinfo_put(opinfo);
+ 	ksmbd_fd_put(work, fp);
+ 	smb2_set_err_rsp(work);
+@@ -8110,6 +8121,11 @@ static void smb21_lease_break_ack(struct
+ 	return;
+ 
+ err_out:
++	opinfo->op_state = OPLOCK_STATE_NONE;
++	wake_up_interruptible_all(&opinfo->oplock_q);
++	atomic_dec(&opinfo->breaking_cnt);
++	wake_up_interruptible_all(&opinfo->oplock_brk);
++
+ 	opinfo_put(opinfo);
+ 	smb2_set_err_rsp(work);
+ }
+@@ -8151,9 +8167,8 @@ int smb2_oplock_break(struct ksmbd_work
+ int smb2_notify(struct ksmbd_work *work)
+ {
+ 	struct smb2_notify_req *req;
+-	struct smb2_notify_rsp *rsp, *rsp_org;
++	struct smb2_notify_rsp *rsp;
+ 
+-	rsp_org = RESPONSE_BUF(work);
+ 	WORK_BUFFERS(work, req, rsp);
+ 
+ 	if (work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
+Index: ksmbd-3.3.7/smb_common.c
+===================================================================
+--- ksmbd-3.3.7.orig/smb_common.c
++++ ksmbd-3.3.7/smb_common.c
+@@ -289,14 +289,16 @@ int ksmbd_negotiate_smb_dialect(void *bu
+ int ksmbd_init_smb_server(struct ksmbd_work *work)
+ {
+ 	struct ksmbd_conn *conn = work->conn;
++#ifdef CONFIG_SMB_INSECURE_SERVER
+ 	void *buf = REQUEST_BUF(work);
+ 	__le32 proto;
++#endif
+ 
+ 	if (conn->need_neg == false)
+ 		return 0;
+ 
+-	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+ #ifdef CONFIG_SMB_INSECURE_SERVER
++	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+ 	if (proto == SMB1_PROTO_NUMBER)
+ 		init_smb1_server(conn);
+ 	else
