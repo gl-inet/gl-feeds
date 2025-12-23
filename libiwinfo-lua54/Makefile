@@ -14,7 +14,7 @@ define Package/libiwinfo-lua54
 endef
 
 TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/lua5.4
-TARGET_LDFLAGS += -liwinfo -fPIC
+TARGET_LDFLAGS += -liwinfo -llua5.4 -fPIC
 
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) -shared \
