@@ -13,7 +13,7 @@ define Package/libuci-lua54
 endef
 
 TARGET_CFLAGS += $(FPIC) -I$(STAGING_DIR)/usr/include/lua5.4
-TARGET_LDFLAGS += -luci
+TARGET_LDFLAGS += -luci -llua5.4
 
 define Build/Compile
 	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) -shared \
