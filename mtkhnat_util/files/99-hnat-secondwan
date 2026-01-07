@@ -1,0 +1,19 @@
+#!/bin/sh
+
+[ ! -f "/etc/config/mtkhnat" ] && exit
+
+enable=`uci -q get mtkhnat.global.enable`
+actype=`uci -q get mtkhnat.global.actype`
+[ "$enable" != "1" ] && exit
+[ "$actype" != "1" ] && exit
+
+set_hnat_secondwan_if()
+{
+    if [ "$INTERFACE" = "secondwan" ];then
+        if [ "$ACTION" = "ifup" ]; then
+            echo "$DEVICE" > /sys/kernel/debug/hnat/hnat_secondwan_if
+        fi
+    fi
+}
+
+set_hnat_secondwan_if

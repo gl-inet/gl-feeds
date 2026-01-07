@@ -38,11 +38,13 @@ define Package/mtkhnat_util/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/iface
 
 	$(INSTALL_BIN) ./files/mtkhnat $(1)/sbin/
 	$(INSTALL_BIN) ./files/mtkhnat.config $(1)/etc/config/mtkhnat
 	$(INSTALL_BIN) ./files/mtkhnat.init $(1)/etc/init.d/mtkhnat
-	$(INSTALL_BIN) ./files/99-firewall $(1)/etc/uci-defaults	
+	$(INSTALL_BIN) ./files/99-firewall $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/99-hnat-secondwan $(1)/etc/hotplug.d/iface
 endef
 
 $(eval $(call BuildPackage,mtkhnat_util))

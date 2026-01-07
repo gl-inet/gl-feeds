@@ -59,6 +59,10 @@ module=mtk_ppe
 	else
 		echo 1 > /sys/kernel/debug/hnat/hook_toggle
 	fi
+	secondwan_name=$(uci -q get network.secondwan_dev.name)
+	if [ "$secondwan_name" != "" ];then
+		echo "$secondwan_name" > /sys/kernel/debug/hnat/hnat_secondwan_if
+	fi
 }
 
 #if hqos=0, disable qdma_sch & qdma_txq
