@@ -62,6 +62,11 @@ module=mtk_ppe
 	secondwan_name=$(uci -q get network.secondwan_dev.name)
 	if [ "$secondwan_name" != "" ];then
 		echo "$secondwan_name" > /sys/kernel/debug/hnat/hnat_secondwan_if
+	else
+		secondwan_device=$(uci -q get network.secondwan.device)
+		if [ "$secondwan_device" != "" ];then
+			echo "$secondwan_device" > /sys/kernel/debug/hnat/hnat_secondwan_if
+		fi
 	fi
 }
 
