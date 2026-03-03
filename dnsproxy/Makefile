@@ -5,7 +5,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=dnsproxy
-PKG_VERSION:=0.75.5
+PKG_VERSION:=0.79.0
 PKG_RELEASE:=1
 
 include $(INCLUDE_DIR)/package.mk
