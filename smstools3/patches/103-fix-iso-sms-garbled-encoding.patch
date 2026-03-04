@@ -1,0 +1,278 @@
+From 385b8d6d5fc5f393ecd9b4cc693093d95eab3ae7 Mon Sep 17 00:00:00 2001
+From: "tianwei.ma" <tianwei.ma@gl-inet.com>
+Date: Wed, 4 Mar 2026 10:45:35 +0800
+Subject: [PATCH] Fix iOS coding issues that cause SMS garbled characters
+
+---
+ src/charset.c | 51 ++++++++++++++++++++++++++---
+ src/pdu.c     |  2 +-
+ src/smsd.c    | 96 +++++++++++++++++++++++--------------------------------
+ 3 files changed, 87 insertions(+), 62 deletions(-)
+
+diff --git a/charset.c b/charset.c
+index faa3efc..c586ecd 100755
+--- a/src/charset.c
++++ b/src/charset.c
+@@ -367,6 +367,26 @@ int gsm2char(char ch, char *newch, int which_table)
+   int table_row = 0;
+   char *table;
+ 
++  // Incoming GSM 03.38 greek capitals (0x10..0x1A) must map to
++  // internal placeholders 0x81..0x8A. These placeholders are later
++  // converted to proper Unicode in UTF-8 conversion functions.
++  if (which_table == 1)
++  {
++    switch ((unsigned char)ch)
++    {
++      case 0x10: *newch = (char)0x81; return 1; // Delta
++      case 0x12: *newch = (char)0x82; return 1; // Phi
++      case 0x13: *newch = (char)0x83; return 1; // Gamma
++      case 0x14: *newch = (char)0x84; return 1; // Lambda
++      case 0x15: *newch = (char)0x85; return 1; // Omega
++      case 0x16: *newch = (char)0x86; return 1; // Pi
++      case 0x17: *newch = (char)0x87; return 1; // Psi
++      case 0x18: *newch = (char)0x88; return 1; // Sigma
++      case 0x19: *newch = (char)0x89; return 1; // Theta
++      case 0x1A: *newch = (char)0x8A; return 1; // Xi
++    }
++  }
++
+   if (which_table == 1)
+     table = charset;
+   else if (which_table == 2)
+@@ -754,12 +774,33 @@ int iso2utf8(
+ 	for (idx = 0; idx < userdatalength; idx++)
+ 	{
+ 		c = ascii[idx] & 0xFF;
+-		// Euro character is E282AC in UTF-8, 20AC in UCS-2, but A4 in ISO-8859-15:
+-		if (c == 0xA4)
+-			c = 0x20AC;
+ 
+-		ucs2[0] = (unsigned char)((c & 0xFF00) >> 8);
+-		ucs2[1] = (unsigned char)(c & 0xFF);
++    if (c >= 0x81 && c <= 0x8A)
++    {
++      ucs2[0] = 0x03;
++      switch (c)
++      {
++        case 0x81: ucs2[1] = 0x94; break;
++        case 0x82: ucs2[1] = 0xA6; break;
++        case 0x83: ucs2[1] = 0x93; break;
++        case 0x84: ucs2[1] = 0x9B; break;
++        case 0x85: ucs2[1] = 0xA9; break;
++        case 0x86: ucs2[1] = 0xA0; break;
++        case 0x87: ucs2[1] = 0xA8; break;
++        case 0x88: ucs2[1] = 0xA3; break;
++        case 0x89: ucs2[1] = 0x98; break;
++        case 0x8A: ucs2[1] = 0x9E; break;
++      }
++    }
++    else
++    {
++      // Euro character is E282AC in UTF-8, 20AC in UCS-2, but A4 in ISO-8859-15:
++      if (c == 0xA4)
++        c = 0x20AC;
++
++      ucs2[0] = (unsigned char)((c & 0xFF00) >> 8);
++      ucs2[1] = (unsigned char)(c & 0xFF);
++    }
+ 		len = ucs2_to_utf8_char(ucs2, tmp);
+ 
+ 		if (len == 0)
+diff --git a/src/pdu.c b/src/pdu.c
+index 5c6ee2f..d295052 100755
+--- a/src/pdu.c
++++ b/src/pdu.c
+@@ -551,7 +551,7 @@ int get_remove_concatenation(char *udh, int *message_id, int *parts, int *part)
+           return -1;
+         if ((i = octet2bin_check(udh +idx *2 +idx)) < 0)
+           return -1;
+-        *message_id = *message_id *0xFF +i;
++        *message_id = *message_id *0x100 +i;
+       }
+       if (++idx >= octets)
+         return -1;
+diff --git a/src/smsd.c b/src/smsd.c
+index 7b5f79b..52fb014 100755
+--- a/src/smsd.c
++++ b/src/smsd.c
+@@ -3100,7 +3100,8 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+   char Time[9]= {};
+   char warning_headers[SIZE_WARNING_HEADERS] = {};
+   //char status[40]={}; not used
+-  int alphabet = ALPHABET_ISO;
++  int alphabet = ALPHABET_UNKNOWN;
++  int need_utf8_write = 0;
+   int is_statusreport=0;
+   FILE* fd;
+   int do_decode_unicode_text = 0;
+@@ -3173,7 +3174,11 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+   else
+ #endif
+   if (alphabet == ALPHABET_GSM && DEVICE.cs_convert==1)
+-    userdatalength=gsm2iso(ascii,userdatalength,ascii,sizeof(ascii));
++  {
++    userdatalength = gsm2iso(ascii, userdatalength, ascii, sizeof(ascii));
++    need_utf8_write = 1;
++    alphabet = ALPHABET_UTF8;
++  }
+   else if (alphabet == ALPHABET_UCS2 && do_decode_unicode_text == 1)
+   {
+     if (with_udh)
+@@ -3205,16 +3210,10 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+       }
+     }
+ 
+-    if (!incoming_utf8)
+-    {
+-      userdatalength = decode_ucs2(ascii, userdatalength);
+-      alphabet = ALPHABET_ISO;
+-    }
+-    else
+-    {
+-      userdatalength = ucs2utf(ascii, userdatalength, sizeof(ascii));
+-      alphabet = ALPHABET_UTF8;
+-    }
++    // Always decode UCS2 directly to UTF-8 to avoid lossy ISO fallback.
++    userdatalength = ucs2utf(ascii, userdatalength, sizeof(ascii));
++    need_utf8_write = 0;
++    alphabet = ALPHABET_UTF8;
+   }
+ 
+ #ifdef DEBUGMSG
+@@ -3223,7 +3222,7 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+   printf("!! sendr=%s\n",sendr);
+   printf("!! date=%s\n",date);
+   printf("!! Time=%s\n",Time);
+-  if ((alphabet == ALPHABET_GSM && DEVICE.cs_convert==1)||(alphabet == ALPHABET_ISO)||(alphabet == ALPHABET_UNKNOWN))
++  if ((alphabet == ALPHABET_GSM && DEVICE.cs_convert==1) || need_utf8_write || (alphabet == ALPHABET_UNKNOWN))
+   printf("!! ascii=%s\n",ascii);
+   printf("!! smsc=%s\n",smsc);
+   printf("!! with_udh=%i\n",with_udh);
+@@ -3435,20 +3434,16 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+                 else
+ #endif
+                 if (alphabet == ALPHABET_GSM && DEVICE.cs_convert==1)
+-                  udlen=gsm2iso(ascii +userdatalength,udlen,ascii +userdatalength,sizeof(ascii) -userdatalength);
++                {
++                  udlen = gsm2iso(ascii +userdatalength, udlen, ascii +userdatalength, sizeof(ascii) -userdatalength);
++                  need_utf8_write = 1;
++                  alphabet = ALPHABET_UTF8;
++                }
+                 else if (alphabet == ALPHABET_UCS2 && do_decode_unicode_text == 1)
+                 {
+-                  // 3.1.16beta2: Decode unicode text directly to UTF-8 when incoming_utf8 is set.
+-                  if (!incoming_utf8)
+-                  {
+-                    udlen = decode_ucs2(ascii +userdatalength, udlen);
+-                    alphabet = ALPHABET_ISO;
+-                  }
+-                  else
+-                  {
+-                    udlen = ucs2utf(ascii +userdatalength, udlen, sizeof(ascii) -userdatalength);
+-                    alphabet = ALPHABET_UTF8;
+-                  }
++                  udlen = ucs2utf(ascii +userdatalength, udlen, sizeof(ascii) -userdatalength);
++                  need_utf8_write = 0;
++                  alphabet = ALPHABET_UTF8;
+                 }
+ 
+                 userdatalength += udlen;
+@@ -3599,26 +3594,13 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+           fprintf(fd, "%s %s\n", get_header_incoming(HDR_Incomplete, HDR_Incomplete2), yes_word);
+ 
+         p = "";
+-        if (alphabet == ALPHABET_GSM)
+-        {
+-          if (DEVICE.cs_convert)
+-            p = "ISO";
+-          else
+-            p = "GSM";
+-        }
+-        else if (alphabet == ALPHABET_ISO)
+-          p = "ISO";
+-        else if (alphabet == ALPHABET_BINARY)
++        if (alphabet == ALPHABET_BINARY)
+           p = "binary";
+         else if (alphabet == ALPHABET_UCS2)
+           p = "UCS2";
+-        else if (alphabet == ALPHABET_UTF8)
+-          p = "UTF-8";
+         else if (alphabet == ALPHABET_UNKNOWN)
+           p = "unknown";
+-
+-        // 3.1.5:
+-        if (incoming_utf8 == 1 && alphabet <= ALPHABET_ISO)
++        else
+           p = "UTF-8";
+ 
+         if (*HDR_Alphabet2 != '-')
+@@ -3636,12 +3618,12 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+         // 3.1beta7: This header is only necessary with binary messages. With other message types
+         // there is UDH-DATA header included if UDH is presented. "true" / "false" is now
+         // presented as "yes" / "no" which may be translated to some other language.
+-        if (alphabet == ALPHABET_ISO)
++        if (alphabet == ALPHABET_GSM || need_utf8_write)
+           fprintf(fd, "%s %s\n", HDR_UDH, (with_udh)? yes_word : no_word);
+ 
+         // 3.1beta7, 3.0.9: with value 2 unsupported pdu's were not stored.
+         if (store_received_pdu == 3 ||
+-           (store_received_pdu == 2 && (alphabet == ALPHABET_ISO || alphabet == ALPHABET_UCS2)) ||
++            (store_received_pdu == 2 && (alphabet == ALPHABET_GSM || need_utf8_write || alphabet == ALPHABET_UCS2)) ||
+            (store_received_pdu >= 1 && is_unsupported_pdu == 1))
+         {
+           if (incoming_pdu_store)
+@@ -3698,17 +3680,25 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+ 
+         fprintf(fd,"\n");
+ 
+-        // UTF-8 conversion if necessary:
+-        if (incoming_utf8 == 1 && alphabet <= ALPHABET_ISO)
++        // Convert textual incoming content to UTF-8 before writing:
++        if (alphabet == ALPHABET_GSM || need_utf8_write)
+         {
+           // 3.1beta7, 3.0.9: GSM alphabet is first converted to ISO
+-          if (alphabet == ALPHABET_GSM && DEVICE.cs_convert == 0)
++          if (alphabet == ALPHABET_GSM)
+           {
+             userdatalength = gsm2iso(ascii, userdatalength, ascii, sizeof(ascii));
+-            alphabet = ALPHABET_ISO; // filename_preview will need this information.
+           }
+ 
+-          iso2utf8_file(fd, ascii, userdatalength);
++          userdatalength = iso2utf8(ascii, userdatalength, sizeof(ascii));
++          if (userdatalength < 0)
++          {
++            writelogfile(LOG_ERR, 1, "Cannot convert received SMS text to UTF-8.");
++            userdatalength = 0;
++          }
++
++          fwrite(ascii, 1, userdatalength, fd);
++          alphabet = ALPHABET_UTF8;
++          need_utf8_write = 0;
+         }
+         else
+           fwrite(ascii,1,userdatalength,fd);
+@@ -3731,16 +3721,10 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+         {
+           char *text = NULL;
+ 
+-          if (alphabet <= ALPHABET_ISO)
+-          {
+-            if (alphabet == ALPHABET_GSM && DEVICE.cs_convert == 0)
+-            {
+-              userdatalength = gsm2iso(ascii, userdatalength, ascii, sizeof(ascii));
+-              alphabet = ALPHABET_ISO;
+-            }
+-
++          if (alphabet == ALPHABET_UTF8)
++            text = ascii;
++          else if (alphabet == ALPHABET_GSM || need_utf8_write)
+             text = ascii;
+-          }
+ 
+           apply_filename_preview(filename, text, alphabet);
+         }
+-- 
+2.34.1
+
