@@ -26,6 +26,7 @@
 #define DDNS_LEN 7
 #define COUNTRY_LEN 2
 #define FIRMWARE_LEN 2
+#define USB_POWER_ENABLE 1
 #define CERT_LEN 4096
 #define SUBMODEL_LEN 16
 
@@ -39,6 +40,7 @@ struct glinet_hw_info {
     u8 device_submodel[SUBMODEL_LEN + 1];
     u8 device_cert[CERT_LEN + 1];
     u8 *device_key;
+    u8 usb_power_mode;
 };
 
 extern struct glinet_hw_info gl_hw_info;

@@ -135,6 +135,15 @@ static void make_device_country_code(struct device_node *np)
     create_proc_node("country_code", lookup_country(be16_to_cpu(country_code)));
 }
 
+static void make_usb_enable_code(struct device_node *np)
+{
+
+    if (parse_value(np, "usb_power_mode", &gl_hw_info.usb_power_mode, USB_POWER_ENABLE))
+        return;
+
+    create_proc_node("usb_power_mode", &gl_hw_info.usb_power_mode);
+}
+
 static void make_device_sn_bak(struct device_node *np)
 {
     if (parse_value(np, "device_sn_bak", gl_hw_info.device_sn_bak, SN_LEN))
@@ -262,4 +271,5 @@ void make_factory_data(struct device_node *np)
     make_device_country_code(np);
     make_device_submodel(np);
     make_firmware_type_flag(np);
+    make_usb_enable_code(np);
 }
