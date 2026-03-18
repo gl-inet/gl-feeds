@@ -24,13 +24,13 @@ PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_PARALLEL:=1
 PKG_USE_MIPS16:=0
 
-GO_PKG:=github.com/DNSCrypt/dnscrypt-proxy
+GO_PKG:=github.com/dnscrypt/dnscrypt-proxy
+GO_PKG_BUILD_PKG:=github.com/dnscrypt/dnscrypt-proxy/dnscrypt-proxy
 
 include $(INCLUDE_DIR)/package.mk
-include ../../packages/lang/golang/golang-package.mk
+include ../golang/golang-package.mk
 
 GO_MOD_ARGS:=
-GO_PKG_BUILD_VARS+= GO111MODULE=off
 
 define Package/dnscrypt-proxy2
   SECTION:=net

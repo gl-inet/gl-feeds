@@ -1,0 +1,11 @@
+--- a/configure
++++ b/configure
+@@ -663,7 +663,7 @@ cat > conftest.$ac_ext <<EOF
+ #line 664 "configure"
+ #include "confdefs.h"
+ 
+-main(){return(0);}
++int main(void){return(0);}
+ EOF
+ if { (eval echo configure:669: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; }; then
+   ac_cv_prog_cc_works=yes
