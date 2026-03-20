@@ -31,6 +31,7 @@ PKG_BUILD_DEPENDS:=golang/host
 PKG_BUILD_DIR:=$(BUILD_DIR)/go-$(PKG_VERSION)
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
+PKG_USE_MIPS16:=0
 
 PKG_GO_PREFIX:=/usr
 PKG_GO_VERSION_ID:=$(GO_VERSION_MAJOR_MINOR)
@@ -450,7 +451,7 @@ endef
 # we need to call this in Package/$(1)/extra_provides
 # to pass CheckDependencies in include/package-ipkg.mk
 define Package/golang-src/extra_provides
-	echo 'libc.so.6'
+	printf '%s\n' 'libc.so.6' 'libstdc++.so.6' 'libtiff.so.6'
 endef
 
 
