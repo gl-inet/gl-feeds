@@ -104,6 +104,15 @@ start_service() {
 	procd_close_instance
 }
 
+stop_service() {
+    procd_kill "$PROG"
+
+    config_load minidlna
+    config_get db_dir config 'db_dir' '/var/run/minidlna'
+
+    [ -d "$db_dir" ] && find "$db_dir" -type f ! -name '*.pid' -exec rm -f {} +
+}
+
 service_triggers() {
 	procd_add_reload_trigger "minidlna"
 }
