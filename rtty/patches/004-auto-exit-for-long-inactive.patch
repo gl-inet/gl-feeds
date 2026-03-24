@@ -1,7 +1,5 @@
-Index: rtty-8.0.1/src/rtty.c
-===================================================================
---- rtty-8.0.1.orig/src/rtty.c
-+++ rtty-8.0.1/src/rtty.c
+--- a/src/rtty.c
++++ b/src/rtty.c
 @@ -444,6 +444,7 @@ static int parse_msg(struct rtty *rtty)
          case MSG_TYPE_WINSIZE:
          case MSG_TYPE_FILE:
@@ -18,7 +16,7 @@ Index: rtty-8.0.1/src/rtty.c
              http_request(rtty, msglen);
              break;
  
-@@ -654,6 +656,12 @@ static void rtty_timer_cb(struct ev_loop
+@@ -659,6 +661,12 @@ static void rtty_timer_cb(struct ev_loop
      struct rtty *rtty = container_of(w, struct rtty, tmr);
      ev_tstamp now = ev_now(loop);
  
@@ -31,7 +29,7 @@ Index: rtty-8.0.1/src/rtty.c
      if (rtty->sock < 0) {
          if (now - rtty->active < 5)
              return;
-@@ -718,6 +726,7 @@ int rtty_start(struct rtty *rtty)
+@@ -723,6 +731,7 @@ int rtty_start(struct rtty *rtty)
      INIT_LIST_HEAD(&rtty->http_conns);
  
      rtty->active = ev_now(rtty->loop);
@@ -39,10 +37,8 @@ Index: rtty-8.0.1/src/rtty.c
  
      return 0;
  }
-Index: rtty-8.0.1/src/rtty.h
-===================================================================
---- rtty-8.0.1.orig/src/rtty.h
-+++ rtty-8.0.1/src/rtty.h
+--- a/src/rtty.h
++++ b/src/rtty.h
 @@ -110,6 +110,7 @@ struct rtty {
      struct list_head http_conns;
      bool no_term;
