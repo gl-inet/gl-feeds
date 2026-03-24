@@ -1,7 +1,5 @@
-Index: rtty-8.0.1/src/main.c
-===================================================================
---- rtty-8.0.1.orig/src/main.c
-+++ rtty-8.0.1/src/main.c
+--- a/src/main.c
++++ b/src/main.c
 @@ -27,6 +27,7 @@
  #include <stdlib.h>
  #include <getopt.h>
@@ -111,10 +109,8 @@ Index: rtty-8.0.1/src/main.c
      if (rtty_start(&rtty) < 0)
          return -1;
  
-Index: rtty-8.0.1/src/rtty.c
-===================================================================
---- rtty-8.0.1.orig/src/rtty.c
-+++ rtty-8.0.1/src/rtty.c
+--- a/src/rtty.c
++++ b/src/rtty.c
 @@ -435,6 +435,10 @@ static int parse_msg(struct rtty *rtty)
              break;
  
@@ -137,10 +133,8 @@ Index: rtty-8.0.1/src/rtty.c
              http_request(rtty, msglen);
              break;
  
-Index: rtty-8.0.1/src/CMakeLists.txt
-===================================================================
---- rtty-8.0.1.orig/src/CMakeLists.txt
-+++ rtty-8.0.1/src/CMakeLists.txt
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
 @@ -14,7 +14,7 @@ add_executable(rtty ${SRCS})
  target_compile_definitions(rtty PRIVATE _GNU_SOURCE)
  target_compile_options(rtty PRIVATE -O -Wall -Werror --std=gnu99)
@@ -150,10 +144,8 @@ Index: rtty-8.0.1/src/CMakeLists.txt
  
  add_subdirectory(ssl)
  
-Index: rtty-8.0.1/src/rtty.h
-===================================================================
---- rtty-8.0.1.orig/src/rtty.h
-+++ rtty-8.0.1/src/rtty.h
+--- a/src/rtty.h
++++ b/src/rtty.h
 @@ -108,6 +108,8 @@ struct rtty {
      int ntty;   /* tty number */
      struct list_head ttys;
