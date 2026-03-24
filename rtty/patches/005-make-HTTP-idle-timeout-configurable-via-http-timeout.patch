@@ -1,0 +1,82 @@
+Index: rtty-8.1.5/src/http.c
+===================================================================
+--- rtty-8.1.5.orig/src/http.c
++++ rtty-8.1.5/src/http.c
+@@ -196,7 +196,7 @@ static void on_timer_cb(struct ev_loop *
+     struct http_connection *conn = container_of(w, struct http_connection, tmr);
+     ev_tstamp now = ev_now(loop);
+ 
+-    if (now - conn->active < 30)
++    if (now - conn->active < conn->rtty->http_timeout)
+         return;
+ 
+     http_conn_free(conn);
+Index: rtty-8.1.5/src/main.c
+===================================================================
+--- rtty-8.1.5.orig/src/main.c
++++ rtty-8.1.5/src/main.c
+@@ -33,13 +33,15 @@
+ #include "rtty.h"
+ 
+ enum {
+-    LONG_OPT_HELP = 1
++    LONG_OPT_HELP = 1,
++    LONG_OPT_HTTP_TIMEOUT
+ };
+ 
+ static struct rtty rtty = {
+     .host = "localhost",
+     .port = 5912,
+-    .sock = -1
++    .sock = -1,
++    .http_timeout = 30,
+ };
+ 
+ #ifdef SSL_SUPPORT
+@@ -71,6 +73,7 @@ static struct option long_options[] = {
+     {"port",        required_argument, NULL, 'p'},
+     {"description", required_argument, NULL, 'd'},
+     {"token",       required_argument, NULL, 't'},
++    {"http-timeout", required_argument, NULL, LONG_OPT_HTTP_TIMEOUT},
+ #ifdef SSL_SUPPORT
+     {"cacert",      required_argument, NULL, 'C'},
+     {"insecure",    no_argument, NULL, 'x'},
+@@ -92,6 +95,7 @@ static void usage(const char *prog)
+             "      -p, --port=number        Server port(Default is 5912)\n"
+             "      -d, --description=string Add a description to the device(Maximum 126 bytes)\n"
+             "      -a                       Auto reconnect to the server\n"
++            "      --http-timeout=number    Set HTTP idle timeout in seconds(Default is 30s)\n"
+ #ifdef SSL_SUPPORT
+             "      -s                       SSL on\n"
+             "      -C, --cacert             CA certificate to verify peer against\n"
+@@ -204,6 +208,18 @@ int main(int argc, char **argv)
+         case 'a':
+             rtty.reconnect = true;
+             break;
++        case LONG_OPT_HTTP_TIMEOUT:
++            rtty.http_timeout = atoi(optarg);
++            if (rtty.http_timeout < 5) {
++                rtty.http_timeout = 5;
++                log_warn("HTTP timeout too short, set to 5s\n");
++            }
++
++            if (rtty.http_timeout > 255) {
++                rtty.http_timeout = 255;
++                log_warn("HTTP timeout too long, set to 255s\n");
++            }
++            break;
+ #ifdef SSL_SUPPORT
+         case 's':
+             rtty.ssl_on = true;
+Index: rtty-8.1.5/src/rtty.h
+===================================================================
+--- rtty-8.1.5.orig/src/rtty.h
++++ rtty-8.1.5/src/rtty.h
+@@ -110,6 +110,7 @@ struct rtty {
+     struct list_head http_conns;
+     bool no_term;
+     bool no_http;
++    int http_timeout;
+     ev_tstamp user_active;
+ };
+ 
