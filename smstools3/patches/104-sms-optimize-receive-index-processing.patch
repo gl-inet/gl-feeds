@@ -1,0 +1,76 @@
+From af300a95883dda268dcafe6660d25dbef41f9eb5 Mon Sep 17 00:00:00 2001
+From: "tianwei.ma" <tianwei.ma@gl-inet.com>
+Date: Thu, 26 Mar 2026 09:20:57 +0800
+Subject: [PATCH] Optimized the reading index issue of receiving SMS
+
+---
+ src/smsd.c | 27 +++++++++++++++++++--------
+ 1 file changed, 19 insertions(+), 8 deletions(-)
+
+diff --git a/src/smsd.c b/src/smsd.c
+index 52fb014..9966b6a 100755
+--- a/src/smsd.c
++++ b/src/smsd.c
+@@ -3773,6 +3773,9 @@ int receivesms(int* quick, int only1st)
+   char filename[PATH_MAX];
+   int stored_concatenated;
+   int memories;
++  int scan_start;
++  int scan_end;
++  int sequential_scan;
+   char *p;
+   char *p2;
+   char memory_list[1024];
+@@ -3882,11 +3885,23 @@ int receivesms(int* quick, int only1st)
+     found=0;
+     if (used_memory>0)
+     {
++      sequential_scan = 0;
++
+       if (max_memory == 0 && memories == 1)
+         max_memory = DEVICE.secondary_memory_max;
+ 
+       if (!value_in(DEVICE.check_memory_method, 6, CM_CMGD, CM_CMGL, CM_CMGL_DEL_LAST, CM_CMGL_CHECK, CM_CMGL_DEL_LAST_CHECK, CM_CMGL_SIMCOM))
+-        sim = (DEVICE.read_memory_start == -1)? 1 : DEVICE.read_memory_start;
++      {
++        sequential_scan = 1;
++        scan_start = (DEVICE.read_memory_start == -1)? 0 : DEVICE.read_memory_start;
++        scan_end = scan_start + max_memory -1;
++
++        // Auto mode: scan one extra slot to cover both 0-based and 1-based slot numbering.
++        if (DEVICE.read_memory_start == -1)
++          scan_end++;
++
++        sim = scan_start;
++      }
+ 
+       for (;;)
+       {
+@@ -3908,9 +3923,7 @@ int receivesms(int* quick, int only1st)
+         }
+         else
+         {
+-          int i = (DEVICE.read_memory_start == -1)? 1 : DEVICE.read_memory_start;
+-
+-          if (sim > i + max_memory - 1)
++          if (sim > scan_end)
+             break;
+         }
+ 
+@@ -3964,11 +3977,9 @@ int receivesms(int* quick, int only1st)
+         }
+ 
+         // 3.1.20: If reading from last slot causes error, try if starting from 0 next time helps.
+-        if (found == -3 && DEVICE.read_memory_start != 0)
++        if (found == -3 && sequential_scan && DEVICE.read_memory_start != 0)
+         {
+-          int i = (DEVICE.read_memory_start == -1 )? 1 : DEVICE.read_memory_start;
+-
+-          if (sim == i + max_memory - 1)
++          if (sim == scan_end)
+           {
+             writelogfile(LOG_ERR, 1, "Got an error when trying to read the last memory slot %i.", sim);
+             writelogfile(LOG_ERR, 1, "Assuming next time that the numbering of slots starts from 0.");
+-- 
+2.34.1
+
