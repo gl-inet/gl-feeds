@@ -9,7 +9,6 @@
 #include <linux/blkdev.h>
 #include <linux/version.h>
 #include <linux/pagemap.h>
-#include <linux/fs.h>
 
 #include "gl-hw-info.h"
 
@@ -27,8 +26,8 @@ static int block_part_read(const char *part, unsigned int from,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
     bdev = blkdev_get_by_path(part, mode, NULL);
 #else
-    bdev = bdev_file_open_by_path(part, mode);
-#endif 
+    bdev = blkdev_get_by_path(part, mode, NULL, NULL);
+#endif
     if (IS_ERR(bdev))
         return -1;
 
@@ -39,12 +38,7 @@ static int block_part_read(const char *part, unsigned int from,
             cpylen = bytes;
         bytes = bytes - cpylen;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
-	page = read_mapping_page(bdev->bd_mapping->host->i_mapping, index, NULL);
-#else
-     /* In kernel 6.6+, bd_inode has been removed, changed to obtain via bd_mapping->host */
-	page = read_mapping_page(bdev->bd_mapping->host->i_mapping, index, NULL);
-#endif	
+        page = read_mapping_page(bdev->bd_inode->i_mapping, index, NULL);
         if (IS_ERR(page))
             return PTR_ERR(page);
 
@@ -59,7 +53,7 @@ static int block_part_read(const char *part, unsigned int from,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
     blkdev_put(bdev, mode);
 #else
-    bdev_put(bdev,mode);
+    blkdev_put(bdev, NULL);
 #endif
 
     return 0;
