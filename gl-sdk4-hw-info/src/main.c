@@ -14,6 +14,8 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/platform_device.h>
+#include <linux/version.h>
 #include <linux/etherdevice.h>
 #include <linux/mtd/mtd.h>
 #include "gl-hw-info.h"
@@ -64,11 +66,18 @@ static int gl_hw_info_probe(struct platform_device *pdev)
     return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+static void gl_hw_info_remove(struct platform_device *pdev)
+{
+    printk("remove gl_hw_info\n");
+}
+#else
 static int gl_hw_info_remove(struct platform_device *pdev)
 {
     printk("remove gl_hw_info\n");
     return 0;
 }
+#endif
 
 static const struct of_device_id gl_hw_info_match[] = {
     { .compatible = "gl-hw-info" },

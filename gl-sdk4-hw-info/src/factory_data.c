@@ -7,6 +7,7 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/ubi.h>
 #include <linux/blkdev.h>
+#include <linux/fs.h>
 #include <linux/version.h>
 #include <linux/pagemap.h>
 
@@ -17,19 +18,46 @@ static int block_part_read(const char *part, unsigned int from,
 {
     pgoff_t index = from >> PAGE_SHIFT;
     int offset = from & (PAGE_SIZE - 1);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+    struct file *bdev_file;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    struct bdev_handle *bdev_handle;
+    struct block_device *bdev;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
+    const blk_mode_t mode = BLK_OPEN_READ;
+    struct block_device *bdev;
+#else
     const fmode_t mode = FMODE_READ;
     struct block_device *bdev;
+#endif
+    struct address_space *mapping;
     struct page *page;
     char *buf = val;
     int cpylen;
+    int ret = 0;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
-    bdev = blkdev_get_by_path(part, mode, NULL);
-#else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+    bdev_file = bdev_file_open_by_path(part, BLK_OPEN_READ, NULL, NULL);
+    if (IS_ERR(bdev_file))
+        return PTR_ERR(bdev_file);
+    mapping = bdev_file->f_mapping;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    bdev_handle = bdev_open_by_path(part, BLK_OPEN_READ, NULL, NULL);
+    if (IS_ERR(bdev_handle))
+        return PTR_ERR(bdev_handle);
+    bdev = bdev_handle->bdev;
+    mapping = bdev->bd_inode->i_mapping;
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
     bdev = blkdev_get_by_path(part, mode, NULL, NULL);
-#endif
     if (IS_ERR(bdev))
-        return -1;
+        return PTR_ERR(bdev);
+    mapping = bdev->bd_inode->i_mapping;
+#else
+    bdev = blkdev_get_by_path(part, mode, NULL);
+    if (IS_ERR(bdev))
+        return PTR_ERR(bdev);
+    mapping = bdev->bd_inode->i_mapping;
+#endif
 
     while (bytes) {
         if ((offset + bytes) > PAGE_SIZE)
@@ -38,9 +66,11 @@ static int block_part_read(const char *part, unsigned int from,
             cpylen = bytes;
         bytes = bytes - cpylen;
 
-        page = read_mapping_page(bdev->bd_inode->i_mapping, index, NULL);
-        if (IS_ERR(page))
-            return PTR_ERR(page);
+        page = read_mapping_page(mapping, index, NULL);
+        if (IS_ERR(page)) {
+            ret = PTR_ERR(page);
+            goto out;
+        }
 
         memcpy(buf, page_address(page) + offset, cpylen);
         put_page(page);
@@ -50,13 +80,18 @@ static int block_part_read(const char *part, unsigned int from,
         index++;
     }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 5, 0)
-    blkdev_put(bdev, mode);
-#else
+out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+    fput(bdev_file);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    bdev_release(bdev_handle);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 5, 0)
     blkdev_put(bdev, NULL);
+#else
+    blkdev_put(bdev, mode);
 #endif
 
-    return 0;
+    return ret;
 }
 
 static int parse_mtd_value(const char *part, u32 offset, void *dest, int len)
@@ -216,7 +251,7 @@ static void make_device_cert(struct device_node *np)
 
 static void make_device_submodel(struct device_node *np)
 {
-    size_t submodel_len = 0;
+    size_t submodel_len = SUBMODEL_LEN;
     size_t i;
     bool all_ff = true;
     char *p;
@@ -228,7 +263,7 @@ static void make_device_submodel(struct device_node *np)
 
     // 检查字符串中是否全都是0xff或0x00字节
     for (i = 0; i < SUBMODEL_LEN; i++) {
-        if (p[i] != 0xffffffff || p[i] != 0x00) {
+        if ((unsigned char)p[i] != 0xff && p[i] != 0x00) {
             all_ff = false;
             break;
         }
@@ -237,14 +272,14 @@ static void make_device_submodel(struct device_node *np)
     if (!all_ff) {
         // 如果不全都是0xff字节，确定第一个0xff或0x00字节的位置
         for (i = 0; i < SUBMODEL_LEN; i++) {
-            if (p[i] == 0xffffffff || p[i] == 0x00) {
+            if ((unsigned char)p[i] == 0xff || p[i] == 0x00) {
                 submodel_len = i ;
                 break;
             }
         }
-        // 截取子设备型号字符串（字符串长度为submodel_len，从第一个字符开始截取）
-        strncpy(gl_hw_info.device_submodel, p, submodel_len);
         gl_hw_info.device_submodel[submodel_len] = '\0'; // 添加结束符'\0'
+    } else {
+        gl_hw_info.device_submodel[0] = '\0';
     }
 
     create_proc_node("device_submodel", gl_hw_info.device_submodel);
