@@ -1,37 +1,37 @@
-From b145f14788fcc3b8b3ea7b7614655758b31e01c3 Mon Sep 17 00:00:00 2001
+From aeef673a7f6cfcf5ab0483ba8e05c49659a260bc Mon Sep 17 00:00:00 2001
 From: Dongming Han <handongming@gl-inet.com>
-Date: Mon, 11 Aug 2025 00:03:43 +0800
-Subject: [PATCH] upstream dns query mark sync with downstream connection mark
- fix leak
+Date: Mon, 23 Mar 2026 02:01:10 +0800
+Subject: [PATCH] dnsproxy: propagate downstream conntrack mark to upstream
+ DNS queries (SO_MARK) with per-mark QUIC/TLS session isolation
 
-Signed-off-by: Dongming Han <handongming@gl-inet.com>
 ---
- fastip/fastest.go                          | 100 ++++--
+ fastip/fastest.go                          |  77 ++--
  internal/bootstrap/bootstrap.go            |  83 ++++-
- internal/bootstrap/bootstrap_mark_linux.go |  19 ++
- internal/bootstrap/bootstrap_mark_stub.go  |  14 +
- proxy/config.go                            |   8 +
- proxy/conntrack.go                         | 121 +++++++
+ internal/bootstrap/bootstrap_mark_linux.go |  19 +
+ internal/bootstrap/bootstrap_mark_stub.go  |  13 +
+ proxy/config.go                            |   4 +
+ proxy/conntrack_linux.go                   | 123 ++++++
+ proxy/conntrack_stub.go                    |  17 +
  proxy/dns64.go                             |   4 +-
  proxy/dnscontext.go                        |   3 +
  proxy/exchange.go                          |  13 +-
- proxy/proxy.go                             |  56 ++-
- proxy/server_tcp.go                        |  10 +
- proxy/server_udp.go                        |  10 +
- upstream/dnscrypt.go                       | 179 +++++++---
- upstream/doh.go                            | 380 +++++++++++++--------
- upstream/doq.go                            | 109 ++++--
- upstream/dot.go                            |  76 +++--
- upstream/parallel.go                       | 114 +++++++
+ proxy/proxy.go                             |  60 ++-
+ proxy/stats.go                             |  15 +
+ upstream/dnscrypt.go                       | 179 ++++++---
+ upstream/doh.go                            | 410 ++++++++++++++-------
+ upstream/doq.go                            | 256 ++++++++++---
+ upstream/dot.go                            |  76 +++-
+ upstream/parallel.go                       | 107 ++++++
  upstream/plain.go                          |  19 +-
- upstream/upstream.go                       |  17 +
- 19 files changed, 1039 insertions(+), 296 deletions(-)
+ upstream/upstream.go                       |  16 +
+ 19 files changed, 1199 insertions(+), 300 deletions(-)
  create mode 100644 internal/bootstrap/bootstrap_mark_linux.go
  create mode 100644 internal/bootstrap/bootstrap_mark_stub.go
- create mode 100644 proxy/conntrack.go
+ create mode 100644 proxy/conntrack_linux.go
+ create mode 100644 proxy/conntrack_stub.go
 
 diff --git a/fastip/fastest.go b/fastip/fastest.go
-index 2fd8da4..e8ec31f 100644
+index bc35d47..7f89d2f 100644
 --- a/fastip/fastest.go
 +++ b/fastip/fastest.go
 @@ -4,6 +4,7 @@
@@ -42,7 +42,7 @@ index 2fd8da4..e8ec31f 100644
  	"log/slog"
  	"net"
  	"net/netip"
-@@ -49,6 +50,72 @@ type FastestAddr struct {
+@@ -49,6 +50,49 @@ type FastestAddr struct {
  	pingWaitTimeout time.Duration
  }
  
@@ -86,36 +86,13 @@ index 2fd8da4..e8ec31f 100644
 +	req *dns.Msg,
 +	ups []upstream.Upstream,
 +) (resp *dns.Msg, u upstream.Upstream, err error) {
-+	replies, err := upstream.ExchangeAll(ups, req)
-+	if err != nil {
-+		return nil, nil, err
-+	}
-+
-+	ipSet := container.NewMapSet[netip.Addr]()
-+	for _, r := range replies {
-+		for _, rr := range r.Resp.Answer {
-+			ip := ipFromRR(rr)
-+			if ip.IsValid() && !ip.IsUnspecified() {
-+				ipSet.Add(ip)
-+			}
-+		}
-+	}
-+
-+	ips := ipSet.Values()
-+	host := strings.ToLower(req.Question[0].Name)
-+	if pingRes := f.pingAll(host, ips); pingRes != nil {
-+		return f.prepareReply(pingRes, replies)
-+	}
-+
-+	f.logger.Debug("no fastest ip found, using the first response", "host", host)
-+
-+	return replies[0].Resp, replies[0].Upstream, nil
++	return f.ExchangeFastestContext(context.Background(), req, ups)
 +}
 +
- // NewFastestAddr initializes a new instance of *FastestAddr.
- //
- // Deprecated: Use [New] instead.
-@@ -105,39 +172,6 @@ func New(c *Config) (f *FastestAddr) {
+ // Config contains all the fields necessary for proxy configuration.
+ type Config struct {
+ 	// Logger is used as the base logger for the service.  If nil,
+@@ -88,39 +132,6 @@ func New(c *Config) (f *FastestAddr) {
  	return f
  }
  
@@ -305,49 +282,45 @@ index 0000000..42bb917
 +}
 diff --git a/internal/bootstrap/bootstrap_mark_stub.go b/internal/bootstrap/bootstrap_mark_stub.go
 new file mode 100644
-index 0000000..f0704b0
+index 0000000..7172cce
 --- /dev/null
 +++ b/internal/bootstrap/bootstrap_mark_stub.go
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,12 @@
 +//go:build !linux
 +
 +package bootstrap
 +
 +import (
-+	"github.com/AdguardTeam/golibs/errors"
 +	"syscall"
 +)
 +
 +// setConnMarkRaw is a no-op on non-Linux platforms.
-+// It returns nil to avoid failing on unsupported systems while keeping API parity.
 +func setConnMarkRaw(_ syscall.RawConn, _ uint32) error {
-+    return nil
++	return nil
 +}
 diff --git a/proxy/config.go b/proxy/config.go
-index cd61a91..c542676 100644
+index 2a8282e..185cb94 100644
 --- a/proxy/config.go
 +++ b/proxy/config.go
-@@ -242,6 +242,14 @@ type Config struct {
+@@ -272,6 +272,10 @@ type Config struct {
  	// PreferIPv6 tells the proxy to prefer IPv6 addresses when bootstrapping
  	// upstreams that use hostnames.
  	PreferIPv6 bool
 +
-+	// EnableConntrack enables synchronization of connection marks between downstream DNS
-+	// queries and their corresponding upstream queries. When enabled, the proxy will:
-+	// 1. Query the conntrack subsystem to get the mark of the incoming DNS query connection
-+	// 2. Set this mark on the socket used for the upstream DNS query
-+	// This allows for policy-based routing of DNS queries based on their source.
-+	// Connection marks support is disabled by default. When disabled, no connection marks will be queried or set.
++	// EnableConntrack enables synchronization of connection marks between
++	// downstream DNS queries and their corresponding upstream queries.
 +	EnableConntrack bool
  }
  
- // validateConfig verifies that the supplied configuration is valid and returns
-diff --git a/proxy/conntrack.go b/proxy/conntrack.go
+ // PendingRequestsConfig is the configuration for tracking identical requests.
+diff --git a/proxy/conntrack_linux.go b/proxy/conntrack_linux.go
 new file mode 100644
 index 0000000..95e120c
 --- /dev/null
-+++ b/proxy/conntrack.go
-@@ -0,0 +1,121 @@
++++ b/proxy/conntrack_linux.go
+@@ -0,0 +1,123 @@
++//go:build linux
++
 +package proxy
 +
 +import (
@@ -470,7 +443,7 @@ index 0000000..95e120c
 +	return &v
 +}
 diff --git a/proxy/dns64.go b/proxy/dns64.go
-index 8738eae..989c86d 100644
+index 2779ee1..f0c9a0a 100644
 --- a/proxy/dns64.go
 +++ b/proxy/dns64.go
 @@ -1,6 +1,7 @@
@@ -481,7 +454,7 @@ index 8738eae..989c86d 100644
  	"fmt"
  	"net"
  	"net/netip"
-@@ -281,6 +282,7 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
+@@ -283,6 +284,7 @@ func (p *Proxy) synthRR(rr dns.RR, soaTTL uint32) (result dns.RR) {
  // performDNS64 returns the upstream that was used to perform DNS64 request, or
  // nil, if the request was not performed.
  func (p *Proxy) performDNS64(
@@ -489,7 +462,7 @@ index 8738eae..989c86d 100644
  	origReq *dns.Msg,
  	origResp *dns.Msg,
  	upstreams []upstream.Upstream,
-@@ -297,7 +299,7 @@ func (p *Proxy) performDNS64(
+@@ -299,7 +301,7 @@ func (p *Proxy) performDNS64(
  	host := origReq.Question[0].Name
  	p.logger.Debug("received an empty aaaa response, checking dns64", "host", host)
  
@@ -499,10 +472,10 @@ index 8738eae..989c86d 100644
  		p.logger.Error("dns64 request failed", slogutil.KeyError, err)
  
 diff --git a/proxy/dnscontext.go b/proxy/dnscontext.go
-index d88e804..706f744 100644
+index bd3acba..9c071bf 100644
 --- a/proxy/dnscontext.go
 +++ b/proxy/dnscontext.go
-@@ -99,6 +99,9 @@ type DNSContext struct {
+@@ -96,6 +96,9 @@ type DNSContext struct {
  
  	// doBit is the DNSSEC OK flag from request's EDNS0 RR if presented.
  	doBit bool
@@ -513,7 +486,7 @@ index d88e804..706f744 100644
  
  // newDNSContext returns a new properly initialized *DNSContext.
 diff --git a/proxy/exchange.go b/proxy/exchange.go
-index 04ccb7e..d0bbdd9 100644
+index a34eaf6..0b86a48 100644
 --- a/proxy/exchange.go
 +++ b/proxy/exchange.go
 @@ -1,6 +1,7 @@
@@ -548,40 +521,39 @@ index 04ccb7e..d0bbdd9 100644
  
  	if len(ups) == 1 {
  		u = ups[0]
--		resp, _, err = p.exchange(u, req, p.time)
-+		resp, _, err = p.exchange(ctx, u, req, p.time)
- 		// TODO(e.burkov):  p.updateRTT(u.Address(), elapsed)
- 
- 		return resp, u, err
-@@ -46,7 +48,7 @@ func (p *Proxy) exchangeUpstreams(
+-		resp, _, err = p.exchange(u, req)
++		resp, _, err = p.exchange(ctx, u, req)
+ 		if err != nil {
+ 			return nil, nil, err
+ 		}
+@@ -50,7 +52,7 @@ func (p *Proxy) exchangeUpstreams(
  		u = ups[i]
  
  		var elapsed time.Duration
--		resp, elapsed, err = p.exchange(u, req, p.time)
-+		resp, elapsed, err = p.exchange(ctx, u, req, p.time)
+-		resp, elapsed, err = p.exchange(u, req)
++		resp, elapsed, err = p.exchange(ctx, u, req)
  		if err == nil {
  			p.updateRTT(u.Address(), elapsed)
  
-@@ -69,12 +71,13 @@ func (p *Proxy) exchangeUpstreams(
+@@ -73,11 +75,12 @@ func (p *Proxy) exchangeUpstreams(
  // upstream and the elapsed time in milliseconds.  It uses the given clock to
  // measure the request duration.
  func (p *Proxy) exchange(
 +	ctx context.Context,
  	u upstream.Upstream,
  	req *dns.Msg,
- 	c clock,
  ) (resp *dns.Msg, dur time.Duration, err error) {
- 	startTime := c.Now()
+ 	startTime := p.time.Now()
 -	resp, err = u.Exchange(req)
 +	resp, err = upstream.ExchangeContext(u, ctx, req)
  
  	// Don't use [time.Since] because it uses [time.Now].
- 	dur = c.Now().Sub(startTime)
+ 	dur = p.time.Now().Sub(startTime)
 diff --git a/proxy/proxy.go b/proxy/proxy.go
-index 2573ef9..2240ff6 100644
+index 44ca67c..4103341 100644
 --- a/proxy/proxy.go
 +++ b/proxy/proxy.go
-@@ -17,6 +17,7 @@ import (
+@@ -18,6 +18,7 @@ import (
  	"time"
  
  	"github.com/AdguardTeam/dnsproxy/fastip"
@@ -589,33 +561,33 @@ index 2573ef9..2240ff6 100644
  	"github.com/AdguardTeam/dnsproxy/internal/dnsmsg"
  	proxynetutil "github.com/AdguardTeam/dnsproxy/internal/netutil"
  	"github.com/AdguardTeam/dnsproxy/upstream"
-@@ -557,9 +558,58 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
- 	start := time.Now()
+@@ -604,9 +605,58 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
  	src := "upstream"
+ 	wrapped := upstreamsWithStats(upstreams)
  
-+	// Strict conntrack check: if conntrack is enabled, we must have successfully
-+	// retrieved the connection mark. This prevents policy bypass attacks.
++	// Strict conntrack check: if conntrack is enabled, we must have
++	// successfully retrieved the connection mark.
 +	if p.EnableConntrack && (d.Proto == ProtoTCP || d.Proto == ProtoUDP) && d.ConnectionMark == 0 {
-+		// Check if we actually failed to get the mark vs. the mark being legitimately 0
-+		// We need to re-attempt getting the mark to distinguish between these cases
 +		if tcpConn, ok := d.Conn.(*net.TCPConn); ok {
 +			localAddr, _ := tcpConn.LocalAddr().(*net.TCPAddr)
 +			remoteAddr, _ := tcpConn.RemoteAddr().(*net.TCPAddr)
 +			mark, markErr := p.GetConnectionMark(localAddr, remoteAddr)
 +			if markErr != nil {
-+				return false, fmt.Errorf("strict conntrack mode: failed to get connection mark, blocking upstream query: %w", markErr)
++				return false, fmt.Errorf(
++					"strict conntrack mode: failed to get connection mark, blocking upstream query: %w",
++					markErr,
++				)
 +			}
-+			// Update the connection mark if we successfully retrieved it
++
 +			d.ConnectionMark = mark
 +		} else if udpAddr := d.Addr; udpAddr.IsValid() {
-+			// For UDP, we need to reconstruct the addresses from DNSContext
-+			// We need to get the actual listening port from the connection
-+			localPort := 53 // Default fallback
++			localPort := 53
 +			if d.Conn != nil {
 +				if udpConn, ok := d.Conn.(*net.UDPConn); ok {
 +					localPort = udpConn.LocalAddr().(*net.UDPAddr).Port
 +				}
 +			}
++
 +			localUDPAddr := &net.UDPAddr{
 +				IP:   d.localIP.AsSlice(),
 +				Port: localPort,
@@ -626,81 +598,90 @@ index 2573ef9..2240ff6 100644
 +			}
 +			mark, markErr := p.GetUDPConnectionMark(localUDPAddr, remoteUDPAddr)
 +			if markErr != nil {
-+				return false, fmt.Errorf("strict conntrack mode: failed to get UDP connection mark, blocking upstream query: %w", markErr)
++				return false, fmt.Errorf(
++					"strict conntrack mode: failed to get UDP connection mark, blocking upstream query: %w",
++					markErr,
++				)
 +			}
-+			// Update the connection mark if we successfully retrieved it
++
 +			d.ConnectionMark = mark
 +		}
 +	}
 +
-+	// Build a context carrying the per-request connection mark, removing the
-+	// need for any global MarkProvider.
-+	// Only propagate when conntrack is enabled; even if the mark is 0, include
-+	// it to ensure SO_MARK is explicitly set/cleared by dialers on Linux.
 +	ctx := context.Background()
 +	if p.EnableConntrack && (d.Proto == ProtoTCP || d.Proto == ProtoUDP) {
++		// Even if mark is 0, propagate it to explicitly clear SO_MARK.
 +		ctx = bootstrap.WithMark(ctx, d.ConnectionMark)
 +	}
 +
  	// Perform the DNS request.
--	resp, u, err := p.exchangeUpstreams(req, upstreams)
--	if dns64Ups := p.performDNS64(req, resp, upstreams); dns64Ups != nil {
-+	resp, u, err := p.exchangeUpstreams(ctx, req, upstreams)
-+	if dns64Ups := p.performDNS64(ctx, req, resp, upstreams); dns64Ups != nil {
+-	resp, u, err := p.exchangeUpstreams(req, wrapped)
+-	if dns64Ups := p.performDNS64(req, resp, wrapped); dns64Ups != nil {
++	resp, u, err := p.exchangeUpstreams(ctx, req, wrapped)
++	if dns64Ups := p.performDNS64(ctx, req, resp, wrapped); dns64Ups != nil {
  		u = dns64Ups
  	} else if p.isBogusNXDomain(resp) {
  		p.logger.Debug("response contains bogus-nxdomain ip")
-@@ -577,7 +627,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
- 		// creating proxy.
+@@ -624,7 +674,7 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
  		upstreams = p.Fallbacks.getUpstreamsForDomain(req.Question[0].Name)
  
--		resp, u, err = upstream.ExchangeParallel(upstreams, req)
-+		resp, u, err = upstream.ExchangeParallelContext(ctx, upstreams, req)
+ 		wrappedFallbacks = upstreamsWithStats(upstreams)
+-		resp, u, err = upstream.ExchangeParallel(wrappedFallbacks, req)
++		resp, u, err = upstream.ExchangeParallelContext(ctx, wrappedFallbacks, req)
  	}
  
  	if err != nil {
-diff --git a/proxy/server_tcp.go b/proxy/server_tcp.go
-index bccb392..a6aa940 100644
---- a/proxy/server_tcp.go
-+++ b/proxy/server_tcp.go
-@@ -123,6 +123,16 @@ func (p *Proxy) handleTCPConnection(conn net.Conn, proto Proto, reqSema syncutil
- 		d := p.newDNSContext(proto, req, netutil.NetAddrToAddrPort(conn.RemoteAddr()))
- 		d.Conn = conn
+@@ -638,8 +688,8 @@ func (p *Proxy) replyFromUpstream(d *DNSContext) (ok bool, err error) {
+ 	unwrapped, stats := collectQueryStats(p.UpstreamMode, u, wrapped, wrappedFallbacks)
+ 	d.queryStatistics = stats
  
-+		// Get connection mark
-+		if tcpConn, ok := conn.(*net.TCPConn); ok {
-+			localAddr, _ := tcpConn.LocalAddr().(*net.TCPAddr)
-+			remoteAddr, _ := tcpConn.RemoteAddr().(*net.TCPAddr)
-+			mark, _ := p.GetConnectionMark(localAddr, remoteAddr)
-+			d.ConnectionMark = mark
-+		}
-+
-+		// Global MarkProvider removed; per-request mark is carried via context in upstream exchanges.
-+
- 		err = p.handleDNSRequest(d)
- 		if err != nil {
- 			logWithNonCrit(err, "handling request", ProtoTCP, p.logger)
-diff --git a/proxy/server_udp.go b/proxy/server_udp.go
-index 4198999..c37a691 100644
---- a/proxy/server_udp.go
-+++ b/proxy/server_udp.go
-@@ -134,6 +134,16 @@ func (p *Proxy) udpHandlePacket(
- 	d.Conn = conn
- 	d.localIP = localIP
+-	ctx := context.TODO()
+-	p.handleExchangeResult(ctx, d, req, resp, unwrapped)
++	handleCtx := context.TODO()
++	p.handleExchangeResult(handleCtx, d, req, resp, unwrapped)
  
-+	// Get connection mark
-+	localUDPAddr := &net.UDPAddr{
-+		IP:   localIP.AsSlice(),
-+		Port: conn.LocalAddr().(*net.UDPAddr).Port,
-+	}
-+	mark, _ := p.GetUDPConnectionMark(localUDPAddr, remoteAddr)
-+	d.ConnectionMark = mark
+ 	return resp != nil, err
+ }
+diff --git a/proxy/stats.go b/proxy/stats.go
+index 1b406ee..9962593 100644
+--- a/proxy/stats.go
++++ b/proxy/stats.go
+@@ -1,6 +1,7 @@
+ package proxy
+ 
+ import (
++	"context"
+ 	"fmt"
+ 	"time"
+ 
+@@ -23,6 +24,7 @@ type upstreamWithStats struct {
+ 
+ // type check
+ var _ upstream.Upstream = (*upstreamWithStats)(nil)
++var _ upstream.UpstreamWithContext = (*upstreamWithStats)(nil)
+ 
+ // Exchange implements the [upstream.Upstream] for *upstreamWithStats.
+ func (u *upstreamWithStats) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+@@ -34,6 +36,19 @@ func (u *upstreamWithStats) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	return resp, err
+ }
+ 
++// ExchangeContext implements [upstream.UpstreamWithContext] so that per-request
++// context (e.g. connection mark for SO_MARK) reaches plain DNS / DoH / DoT / DoQ
++// upstreams.  Without this, [upstream.ExchangeContext] falls back to
++// [Upstream.Exchange] and drops the context — breaking conntrack mark propagation.
++func (u *upstreamWithStats) ExchangeContext(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error) {
++	start := time.Now()
++	resp, err = upstream.ExchangeContext(u.upstream, ctx, req)
++	u.err = err
++	u.queryDuration = time.Since(start)
 +
-+	// Global MarkProvider removed; per-request mark is carried via context in upstream exchanges.
++	return resp, err
++}
 +
- 	err = p.handleDNSRequest(d)
- 	if err != nil {
- 		p.logger.Debug("handling dns request", "proto", d.Proto, slogutil.KeyError, err)
+ // Address implements the [upstream.Upstream] for *upstreamWithStats.
+ func (u *upstreamWithStats) Address() (addr string) {
+ 	return u.upstream.Address()
 diff --git a/upstream/dnscrypt.go b/upstream/dnscrypt.go
 index 5745977..e16bba1 100644
 --- a/upstream/dnscrypt.go
@@ -979,10 +960,10 @@ index 5745977..e16bba1 100644
 +	}
  }
 diff --git a/upstream/doh.go b/upstream/doh.go
-index 2a6c1de..f4adad6 100644
+index 239aa47..db78c66 100644
 --- a/upstream/doh.go
 +++ b/upstream/doh.go
-@@ -60,9 +60,11 @@ type dnsOverHTTPS struct {
+@@ -60,21 +60,33 @@ type dnsOverHTTPS struct {
  	// The Client's Transport typically has internal state (cached TCP
  	// connections), so Clients should be reused instead of created as needed.
  	// Clients are safe for concurrent use by multiple goroutines.
@@ -996,15 +977,49 @@ index 2a6c1de..f4adad6 100644
  	clientMu *sync.Mutex
  
  	// logger is used for exchange logging.  It is never nil.
-@@ -122,6 +124,7 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
+ 	logger *slog.Logger
+ 
+-	// quicConf is the QUIC configuration that is used if HTTP/3 is enabled
+-	// for this upstream.
++	// quicConf is the QUIC configuration template if HTTP/3 is enabled.
++	// Each per-mark http3.Transport uses quicConfigForMark (clone + per-mark
++	// TokenStore) so policy-routing marks do not share QUIC/TLS session state.
+ 	quicConf *quic.Config
+ 
+ 	// quicConfMu protects quicConf.
+ 	quicConfMu *sync.Mutex
+ 
++	// markDialMu protects tokenStoresByMark and tlsSessionCachesByMark.
++	markDialMu sync.Mutex
++
++	// tokenStoresByMark holds a separate QUIC token store per mark (HTTP/3).
++	tokenStoresByMark map[uint32]quic.TokenStore
++
++	// tlsSessionCachesByMark holds a separate TLS session cache per mark.
++	tlsSessionCachesByMark map[uint32]tls.ClientSessionCache
++
+ 	// transportH2 is an HTTP/2 transport if any.
+ 	transportH2 *http2.Transport
+ 
+@@ -127,10 +139,13 @@ func newDoH(addr *url.URL, opts *Options) (u Upstream, err error) {
  			VerifyPeerCertificate: opts.VerifyServerCertificate,
  			VerifyConnection:      opts.VerifyConnection,
  		},
-+		clients:      make(map[uint32]*http.Client),
- 		clientMu:     &sync.Mutex{},
- 		logger:       opts.Logger,
- 		addrRedacted: addr.Redacted(),
-@@ -146,6 +149,13 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
+-		clientMu:     &sync.Mutex{},
+-		logger:       opts.Logger,
+-		addrRedacted: addr.Redacted(),
+-		timeout:      opts.Timeout,
++		clients:                make(map[uint32]*http.Client),
++		clientMu:               &sync.Mutex{},
++		logger:                 opts.Logger,
++		addrRedacted:           addr.Redacted(),
++		timeout:                opts.Timeout,
++		tokenStoresByMark:      map[uint32]quic.TokenStore{},
++		tlsSessionCachesByMark: map[uint32]tls.ClientSessionCache{},
+ 	}
+ 	for _, v := range httpVersions {
+ 		ups.tlsConf.NextProtos = append(ups.tlsConf.NextProtos, string(v))
+@@ -151,6 +166,13 @@ func (p *dnsOverHTTPS) Address() string { return p.addrRedacted }
  
  // Exchange implements the [Upstream] interface for *dnsOverHTTPS.
  func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -1018,7 +1033,7 @@ index 2a6c1de..f4adad6 100644
  	// In order to maximize HTTP cache friendliness, DoH clients using media
  	// formats that include the ID field from the DNS message header, such as
  	// "application/dns-message", SHOULD use a DNS ID of 0 in every DNS request.
-@@ -163,13 +173,13 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+@@ -168,13 +190,13 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
  
  	// Check if there was already an active client before sending the request.
  	// We'll only attempt to re-connect if there was one.
@@ -1034,7 +1049,7 @@ index 2a6c1de..f4adad6 100644
  
  	// Make up to 2 attempts to re-create the HTTP client and send the request
  	// again.  There are several cases (mostly, with QUIC) where this workaround
-@@ -177,17 +187,19 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+@@ -182,17 +204,19 @@ func (p *dnsOverHTTPS) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
  	// the case when the connection was closed (due to inactivity for example)
  	// AND the server refuses to open a 0-RTT connection.
  	for i := 0; isCached && p.shouldRetry(err) && i < 2; i++ {
@@ -1057,7 +1072,7 @@ index 2a6c1de..f4adad6 100644
  
  		return nil, errors.WithDeferred(err, resErr)
  	}
-@@ -202,11 +214,24 @@ func (p *dnsOverHTTPS) Close() (err error) {
+@@ -207,11 +231,24 @@ func (p *dnsOverHTTPS) Close() (err error) {
  
  	runtime.SetFinalizer(p, nil)
  
@@ -1085,7 +1100,7 @@ index 2a6c1de..f4adad6 100644
  }
  
  // closeClient cleans up resources used by client if necessary.  Note that this
-@@ -223,7 +248,7 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
+@@ -228,7 +265,7 @@ func (p *dnsOverHTTPS) closeClient(client *http.Client) (err error) {
  }
  
  // exchangeHTTPS logs the request and its result and calls exchangeHTTPSClient.
@@ -1094,7 +1109,7 @@ index 2a6c1de..f4adad6 100644
  	n := networkTCP
  	if isHTTP3(client) {
  		n = networkUDP
-@@ -232,12 +257,13 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
+@@ -237,12 +274,13 @@ func (p *dnsOverHTTPS) exchangeHTTPS(client *http.Client, req *dns.Msg) (resp *d
  	logBegin(p.logger, p.addrRedacted, n, req)
  	defer func() { logFinish(p.logger, p.addrRedacted, n, err) }()
  
@@ -1109,7 +1124,7 @@ index 2a6c1de..f4adad6 100644
  	client *http.Client,
  	req *dns.Msg,
  ) (resp *dns.Msg, err error) {
-@@ -266,7 +292,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
+@@ -271,7 +309,7 @@ func (p *dnsOverHTTPS) exchangeHTTPSClient(
  		RawQuery: q.Encode(),
  	}
  
@@ -1118,7 +1133,7 @@ index 2a6c1de..f4adad6 100644
  	if err != nil {
  		return nil, fmt.Errorf("creating http request to %s: %w", p.addrRedacted, err)
  	}
-@@ -338,10 +364,12 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
+@@ -343,61 +381,118 @@ func (p *dnsOverHTTPS) shouldRetry(err error) (ok bool) {
  	return false
  }
  
@@ -1133,8 +1148,11 @@ index 2a6c1de..f4adad6 100644
  	p.clientMu.Lock()
  	defer p.clientMu.Unlock()
  
-@@ -350,49 +378,61 @@ func (p *dnsOverHTTPS) resetClient(resetErr error) (client *http.Client, err err
- 		p.resetQUICConfig()
+ 	if errors.Is(resetErr, quic.Err0RTTRejected) {
+-		// Reset the TokenStore only if 0-RTT was rejected.
+-		p.resetQUICConfig()
++		// Reset the token store for this mark only if 0-RTT was rejected.
++		p.resetTokenStoreForMark(mark)
  	}
  
 -	oldClient := p.client
@@ -1156,42 +1174,85 @@ index 2a6c1de..f4adad6 100644
 +	if err != nil {
 +		return nil, err
 +	}
- 
--	return p.client, err
++
 +	// Store the new client for this connection mark
 +	p.clients[mark] = client
-+
+ 
+-	return p.client, err
 +	return client, nil
  }
  
 -// getQUICConfig returns the QUIC config in a thread-safe manner.  Note, that
 -// this method returns a pointer, it is forbidden to change its properties.
-+// getQUICConfig returns the QUIC config in a thread-safe manner. Note that
-+// this method returns a pointer; it is forbidden to change its properties.
- func (p *dnsOverHTTPS) getQUICConfig() (c *quic.Config) {
+-func (p *dnsOverHTTPS) getQUICConfig() (c *quic.Config) {
 -	p.quicConfMu.Lock()
 -	defer p.quicConfMu.Unlock()
-+    p.quicConfMu.Lock()
-+    defer p.quicConfMu.Unlock()
++// tokenStoreForMark returns a QUIC TokenStore used only for HTTP/3 dials on this mark.
++func (p *dnsOverHTTPS) tokenStoreForMark(mark uint32) (ts quic.TokenStore) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tokenStoresByMark == nil {
++		p.tokenStoresByMark = map[uint32]quic.TokenStore{}
++	}
++
++	if ts = p.tokenStoresByMark[mark]; ts != nil {
++		return ts
++	}
++
++	ts = newQUICTokenStore()
++	p.tokenStoresByMark[mark] = ts
++
++	return ts
++}
++
++// tlsSessionCacheForMark returns a TLS client session cache for this mark only.
++func (p *dnsOverHTTPS) tlsSessionCacheForMark(mark uint32) (c tls.ClientSessionCache) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tlsSessionCachesByMark == nil {
++		p.tlsSessionCachesByMark = map[uint32]tls.ClientSessionCache{}
++	}
++
++	if c = p.tlsSessionCachesByMark[mark]; c != nil {
++		return c
++	}
++
++	c = tls.NewLRUClientSessionCache(32)
++	p.tlsSessionCachesByMark[mark] = c
++
++	return c
++}
++
++// resetTokenStoreForMark replaces the QUIC token store for a mark after 0-RTT rejection.
++func (p *dnsOverHTTPS) resetTokenStoreForMark(mark uint32) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tokenStoresByMark == nil {
++		p.tokenStoresByMark = map[uint32]quic.TokenStore{}
++	}
  
 -	return p.quicConf
-+    return p.quicConf
++	p.tokenStoresByMark[mark] = newQUICTokenStore()
  }
  
 -// resetQUICConfig Re-create the token store to make sure we're not trying to
 -// use invalid for 0-RTT.
-+// resetQUICConfig re-creates the token store to make sure we're not trying to
-+// use invalid tokens for 0-RTT.
- func (p *dnsOverHTTPS) resetQUICConfig() {
--	p.quicConfMu.Lock()
--	defer p.quicConfMu.Unlock()
-+    p.quicConfMu.Lock()
-+    defer p.quicConfMu.Unlock()
+-func (p *dnsOverHTTPS) resetQUICConfig() {
++// quicConfigForMark returns a cloned QUIC config with a TokenStore for this mark only.
++func (p *dnsOverHTTPS) quicConfigForMark(mark uint32) (qc *quic.Config) {
++	ts := p.tokenStoreForMark(mark)
+ 	p.quicConfMu.Lock()
+ 	defer p.quicConfMu.Unlock()
  
 -	p.quicConf = p.quicConf.Clone()
 -	p.quicConf.TokenStore = newQUICTokenStore()
-+    p.quicConf = p.quicConf.Clone()
-+    p.quicConf.TokenStore = newQUICTokenStore()
++	qc = p.quicConf.Clone()
++	qc.TokenStore = ts
++
++	return qc
  }
  
  // getClient gets or lazily initializes an HTTP client (and transport) that will
@@ -1217,7 +1278,7 @@ index 2a6c1de..f4adad6 100644
  	}
  
  	// Timeout can be exceeded while waiting for the lock. This happens quite
-@@ -402,21 +442,27 @@ func (p *dnsOverHTTPS) getClient() (c *http.Client, isCached bool, err error) {
+@@ -407,21 +502,27 @@ func (p *dnsOverHTTPS) getClient() (c *http.Client, isCached bool, err error) {
  		return nil, false, fmt.Errorf("timeout exceeded: %s", elapsed)
  	}
  
@@ -1228,11 +1289,11 @@ index 2a6c1de..f4adad6 100644
 +	if err != nil {
 +		return nil, false, err
 +	}
-+
-+	// Store the client for this connection mark
-+	p.clients[mark] = client
  
 -	return p.client, false, err
++	// Store the client for this connection mark
++	p.clients[mark] = client
++
 +	return client, false, nil
  }
  
@@ -1253,7 +1314,7 @@ index 2a6c1de..f4adad6 100644
  
  	client := &http.Client{
  		Transport: transport,
-@@ -426,9 +472,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
+@@ -431,9 +532,7 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
  		Jar:     nil,
  	}
  
@@ -1264,7 +1325,7 @@ index 2a6c1de..f4adad6 100644
  }
  
  // createTransport initializes an HTTP transport that will be used specifically
-@@ -437,17 +481,17 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
+@@ -442,17 +541,19 @@ func (p *dnsOverHTTPS) createClient() (*http.Client, error) {
  // that this function will first attempt to establish a QUIC connection (if
  // HTTP3 is enabled in the upstream options).  If this attempt is successful,
  // it returns an HTTP3 transport, otherwise it returns the H1/H2 transport.
@@ -1282,13 +1343,15 @@ index 2a6c1de..f4adad6 100644
  	// First, we attempt to create an HTTP3 transport.  If the probe QUIC
  	// connection is established successfully, we'll be using HTTP3 for this
  	// upstream.
++	mark, _ := bootstrap.MarkFromContext(ctx)
  	tlsConf := p.tlsConf.Clone()
 -	transportH3, err := p.createTransportH3(tlsConf, dialContext)
-+    transportH3, err := p.createTransportH3(ctx, tlsConf, dialContext)
++	tlsConf.ClientSessionCache = p.tlsSessionCacheForMark(mark)
++	transportH3, err := p.createTransportH3(ctx, tlsConf, dialContext, mark)
  	if err == nil {
  		p.logger.Debug("using http/3 for this upstream, quic was faster")
  
-@@ -488,14 +532,14 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
+@@ -493,14 +594,14 @@ func (p *dnsOverHTTPS) createTransport() (t http.RoundTripper, err error) {
  }
  
  // http3Transport is a wrapper over [*http3.Transport] that tries to optimize
@@ -1308,7 +1371,7 @@ index 2a6c1de..f4adad6 100644
  }
  
  // type check
-@@ -503,22 +547,22 @@ var _ http.RoundTripper = (*http3Transport)(nil)
+@@ -508,22 +609,22 @@ var _ http.RoundTripper = (*http3Transport)(nil)
  
  // RoundTrip implements the http.RoundTripper interface for *http3Transport.
  func (h *http3Transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
@@ -1343,7 +1406,7 @@ index 2a6c1de..f4adad6 100644
  }
  
  // type check
-@@ -526,12 +570,12 @@ var _ io.Closer = (*http3Transport)(nil)
+@@ -531,12 +632,12 @@ var _ io.Closer = (*http3Transport)(nil)
  
  // Close implements the io.Closer interface for *http3Transport.
  func (h *http3Transport) Close() (err error) {
@@ -1360,90 +1423,59 @@ index 2a6c1de..f4adad6 100644
  }
  
  // createTransportH3 tries to create an HTTP/3 transport for this upstream.  We
-@@ -540,35 +584,57 @@ func (h *http3Transport) Close() (err error) {
+@@ -545,14 +646,16 @@ func (h *http3Transport) Close() (err error) {
  // parallel (one for TLS, the other one for QUIC) and if QUIC is faster it will
  // create the [*http3.Transport] instance.
  func (p *dnsOverHTTPS) createTransportH3(
--	tlsConfig *tls.Config,
--	dialContext bootstrap.DialHandler,
-+    ctx context.Context,
-+    tlsConfig *tls.Config,
-+    dialContext bootstrap.DialHandler,
++	ctx context.Context,
+ 	tlsConfig *tls.Config,
+ 	dialContext bootstrap.DialHandler,
++	mark uint32,
  ) (roundTripper http.RoundTripper, err error) {
--	if !p.supportsH3() {
--		return nil, errors.Error("HTTP3 support is not enabled")
--	}
-+    if !p.supportsH3() {
-+        return nil, errors.Error("HTTP3 support is not enabled")
-+    }
+ 	if !p.supportsH3() {
+ 		return nil, errors.Error("HTTP3 support is not enabled")
+ 	}
  
 -	addr, err := p.probeH3(tlsConfig, dialContext)
--	if err != nil {
--		return nil, err
--	}
-+    addr, err := p.probeH3(ctx, tlsConfig, dialContext)
-+    if err != nil {
-+        return nil, err
-+    }
- 
- 	rt := &http3.Transport{
--		Dial: func(
--			ctx context.Context,
--
--			// Ignore the address and always connect to the one that we got
--			// from the bootstrapper.
--			_ string,
--			tlsCfg *tls.Config,
--			cfg *quic.Config,
--		) (c quic.EarlyConnection, err error) {
--			c, err = quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
--			return c, err
--		},
--		DisableCompression: true,
--		TLSClientConfig:    tlsConfig,
++	addr, err := p.probeH3(ctx, tlsConfig, dialContext)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -567,11 +670,31 @@ func (p *dnsOverHTTPS) createTransportH3(
+ 			tlsCfg *tls.Config,
+ 			cfg *quic.Config,
+ 		) (c *quic.Conn, err error) {
+-			return quic.DialAddrEarly(ctx, addr, tlsCfg, cfg)
++			pc, err := net.ListenPacket("udp", ":0")
++			if err != nil {
++				return nil, fmt.Errorf("creating UDP socket for QUIC: %w", err)
++			}
++
++			if mark, ok := bootstrap.MarkFromContext(ctx); ok {
++				if err := bootstrap.SetPacketMark(pc, mark); err != nil {
++					_ = pc.Close()
++
++					return nil, fmt.Errorf("setting SO_MARK on QUIC socket: %w", err)
++				}
++			}
++
++			raddr, err := net.ResolveUDPAddr("udp", addr)
++			if err != nil {
++				_ = pc.Close()
++
++				return nil, fmt.Errorf("resolving UDP address: %w", err)
++			}
++
++			return quic.DialEarly(ctx, pc, raddr, tlsCfg, cfg)
+ 		},
+ 		DisableCompression: true,
+ 		TLSClientConfig:    tlsConfig,
 -		QUICConfig:         p.getQUICConfig(),
--	}
-+		        Dial: func(
-+            ctx context.Context,
-+
-+            // Ignore the address and always connect to the one that we got
-+            // from the bootstrapper.
-+            _ string,
-+            tlsCfg *tls.Config,
-+            cfg *quic.Config,
-+        ) (c quic.EarlyConnection, err error) {
-+            // Create unconnected UDP socket for QUIC
-+            udpConn, err := net.ListenPacket("udp", ":0")
-+            if err != nil {
-+                return nil, fmt.Errorf("creating UDP socket for QUIC: %w", err)
-+            }
-+            // Apply per-request mark from context to the packet socket
-+            if mark, ok := bootstrap.MarkFromContext(ctx); ok {
-+                if err := bootstrap.SetPacketMark(udpConn, mark); err != nil {
-+                    _ = udpConn.Close()
-+                    return nil, fmt.Errorf("setting SO_MARK on QUIC socket: %w", err)
-+                }
-+            }
-+
-+            // Parse remote address
-+            remoteAddr, err := net.ResolveUDPAddr("udp", addr)
-+            if err != nil {
-+                _ = udpConn.Close()
-+                return nil, fmt.Errorf("resolving UDP address: %w", err)
-+            }
-+            
-+            // Create QUIC connection using the marked unconnected UDP socket
-+            c, err = quic.DialEarly(ctx, udpConn, remoteAddr, tlsCfg, cfg)
-+            return c, err
-+        },
-+        DisableCompression: true,
-+        TLSClientConfig:    tlsConfig,
-+        QUICConfig:         p.getQUICConfig(),
-+    }
++		QUICConfig:         p.quicConfigForMark(mark),
+ 	}
  
  	return &http3Transport{baseTransport: rt}, nil
- }
-@@ -577,16 +643,17 @@ func (p *dnsOverHTTPS) createTransportH3(
+@@ -581,16 +704,17 @@ func (p *dnsOverHTTPS) createTransportH3(
  // upstream.  If the test is successful it will return the address that we
  // should use to establish the QUIC connections.
  func (p *dnsOverHTTPS) probeH3(
@@ -1467,7 +1499,7 @@ index 2a6c1de..f4adad6 100644
  	// It's never actually used.
  	_ = rawConn.Close()
  
-@@ -616,10 +683,10 @@ func (p *dnsOverHTTPS) probeH3(
+@@ -620,10 +744,10 @@ func (p *dnsOverHTTPS) probeH3(
  	probeTLSCfg.VerifyConnection = nil
  
  	// Run probeQUIC and probeTLS in parallel and see which one is faster.
@@ -1482,7 +1514,7 @@ index 2a6c1de..f4adad6 100644
  
  	select {
  	case quicErr := <-chQUIC:
-@@ -629,7 +696,7 @@ func (p *dnsOverHTTPS) probeH3(
+@@ -633,7 +757,7 @@ func (p *dnsOverHTTPS) probeH3(
  		}
  
  		// Return immediately, QUIC was faster.
@@ -1491,7 +1523,7 @@ index 2a6c1de..f4adad6 100644
  	case tlsErr := <-chTLS:
  		if tlsErr != nil {
  			// Return immediately, TLS failed.
-@@ -644,22 +711,44 @@ func (p *dnsOverHTTPS) probeH3(
+@@ -648,22 +772,45 @@ func (p *dnsOverHTTPS) probeH3(
  
  // probeQUIC attempts to establish a QUIC connection to the specified address.
  // We run probeQUIC and probeTLS in parallel and see which one is faster.
@@ -1544,7 +1576,8 @@ index 2a6c1de..f4adad6 100644
 +        ch <- fmt.Errorf("resolving UDP addr for QUIC probe: %w", err)
 +        return
 +    }
-+    conn, err := quic.DialEarly(ctx, pc, raddr, tlsConfig, p.getQUICConfig())
++	mark, _ := bootstrap.MarkFromContext(ctx)
++	conn, err := quic.DialEarly(ctx, pc, raddr, tlsConfig, p.quicConfigForMark(mark))
 +    if err != nil {
 +        ch <- fmt.Errorf("opening quic connection to %s: %w", p.addrRedacted, err)
 +        return
@@ -1552,7 +1585,7 @@ index 2a6c1de..f4adad6 100644
  	// Ignore the error since there's no way we can use it for anything useful.
  	_ = conn.CloseWithError(QUICCodeNoError, "")
  
-@@ -671,17 +760,32 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
+@@ -675,17 +822,32 @@ func (p *dnsOverHTTPS) probeQUIC(addr string, tlsConfig *tls.Config, ch chan err
  
  // probeTLS attempts to establish a TLS connection to the specified address. We
  // run probeQUIC and probeTLS in parallel and see which one is faster.
@@ -1597,10 +1630,14 @@ index 2a6c1de..f4adad6 100644
  	ch <- nil
  
 diff --git a/upstream/doq.go b/upstream/doq.go
-index 82e5499..55276e0 100644
+index f5ffbde..a23158c 100644
 --- a/upstream/doq.go
 +++ b/upstream/doq.go
-@@ -12,6 +12,7 @@ import (
+@@ -9,9 +9,11 @@ import (
+ 	"net/url"
+ 	"os"
+ 	"runtime"
++	"strings"
  	"sync"
  	"time"
  
@@ -1608,20 +1645,68 @@ index 82e5499..55276e0 100644
  	"github.com/AdguardTeam/dnsproxy/proxyutil"
  	"github.com/AdguardTeam/golibs/errors"
  	"github.com/AdguardTeam/golibs/logutil/slogutil"
-@@ -71,9 +72,9 @@ type dnsOverQUIC struct {
- 	// re-create the connection.
+@@ -65,15 +67,26 @@ type dnsOverQUIC struct {
+ 	// tlsConf is the configuration of TLS.
+ 	tlsConf *tls.Config
+ 
+-	// quicConfig is the QUIC configuration that is used for establishing
+-	// connections to the upstream.  This configuration includes the TokenStore
+-	// that needs to be stored for the lifetime of dnsOverQUIC since we can
+-	// re-create the connection.
++	// quicConfig is the QUIC configuration template for establishing connections.
++	// Each dial clones it and attaches a per-mark TokenStore (see tokenStoreForMark)
++	// so that different policy-routing marks do not share QUIC/TLS session state.
  	quicConfig *quic.Config
  
 -	// conn is the current active QUIC connection.  It can be closed and
 -	// re-opened when needed.
--	conn quic.Connection
+-	conn *quic.Conn
 +	// conns stores QUIC connections for different mark values.
 +	// The map key is the SO_MARK value.
-+	conns map[uint32]quic.Connection
++	conns map[uint32]*quic.Conn
++
++	// markDialMu protects tokenStoresByMark and tlsSessionCachesByMark.
++	markDialMu sync.Mutex
++
++	// tokenStoresByMark holds a separate QUIC token store per mark.  Sharing one
++	// store across marks caused the second route to fail under policy routing while
++	// the first worked (0-RTT tokens / path mixing).
++	tokenStoresByMark map[uint32]quic.TokenStore
++
++	// tlsSessionCachesByMark holds a separate TLS session cache per mark.  A shared
++	// ClientSessionCache across marks lets sessions from one mark bleed into another dial.
++	tlsSessionCachesByMark map[uint32]tls.ClientSessionCache
  
  	// bytesPool is a *sync.Pool we use to store byte buffers in.  These byte
  	// buffers are used to read responses from the upstream.
-@@ -143,10 +144,17 @@ func (p *dnsOverQUIC) Address() string { return p.addr.String() }
+@@ -128,11 +141,14 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
+ 			VerifyConnection:      opts.VerifyConnection,
+ 			NextProtos:            compatProtoDQ,
+ 		},
+-		quicConfigMu: &sync.Mutex{},
+-		connMu:       &sync.Mutex{},
+-		bytesPoolMu:  &sync.Mutex{},
+-		logger:       opts.Logger,
+-		timeout:      opts.Timeout,
++		quicConfigMu:           &sync.Mutex{},
++		connMu:                 &sync.Mutex{},
++		bytesPoolMu:            &sync.Mutex{},
++		logger:                 opts.Logger,
++		timeout:                opts.Timeout,
++		conns:                  map[uint32]*quic.Conn{},
++		tokenStoresByMark:      map[uint32]quic.TokenStore{},
++		tlsSessionCachesByMark: map[uint32]tls.ClientSessionCache{},
+ 	}
+ 
+ 	runtime.SetFinalizer(u, (*dnsOverQUIC).Close)
+@@ -142,16 +158,24 @@ func newDoQ(addr *url.URL, opts *Options) (u Upstream, err error) {
+ 
+ // type check
+ var _ Upstream = (*dnsOverQUIC)(nil)
++var _ UpstreamWithContext = (*dnsOverQUIC)(nil)
+ 
+ // Address implements the [Upstream] interface for *dnsOverQUIC.
+ func (p *dnsOverQUIC) Address() string { return p.addr.String() }
  
  // Exchange implements the [Upstream] interface for *dnsOverQUIC.
  func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
@@ -1640,7 +1725,7 @@ index 82e5499..55276e0 100644
  	// See https://www.rfc-editor.org/rfc/rfc9250#section-4.2.1.
  	id := req.Id
  	req.Id = 0
-@@ -158,8 +166,8 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+@@ -163,8 +187,8 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
  		}
  	}()
  
@@ -1651,12 +1736,28 @@ index 82e5499..55276e0 100644
  	if err != nil {
  		return nil, fmt.Errorf("getting conn: %w", err)
  	}
-@@ -173,13 +181,11 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
- 	if cached && err != nil {
- 		p.logger.Debug("recreating the quic connection and retrying", slogutil.KeyError, err)
- 
+@@ -175,16 +199,24 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+ 	// Failure to use a cached connection should be handled gracefully as this
+ 	// connection could have been closed by the server or simply be broken due
+ 	// to how UDP NAT works.  In this case the connection should be re-created.
+-	if cached && err != nil {
+-		p.logger.Debug("recreating the quic connection and retrying", slogutil.KeyError, err)
+-
 -		// Close the active connection to make sure the cached connection is
 -		// cleaned up.
++	//
++	// Also retry when the connection was just dialed (cached=false) but the
++	// exchange failed with a recoverable QUIC error.  DialEarly can succeed while
++	// the first stream still hits 0-RTT rejection; the old logic only retried
++	// when cached==true, so the second client/mark in the same process got no
++	// retry and surfaced an empty DNS answer.
++	if err != nil && (cached || isQUICRetryError(err)) {
++		p.logger.Debug(
++			"recreating the quic connection and retrying",
++			"cached", cached,
++			slogutil.KeyError, err,
++		)
++
 +		// Close the active connection to make sure the cached connection is cleaned up.
  		p.closeConnWithError(conn, err)
  
@@ -1668,7 +1769,7 @@ index 82e5499..55276e0 100644
  		if err != nil {
  			return nil, fmt.Errorf("getting new conn: %w", err)
  		}
-@@ -189,8 +195,7 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
+@@ -194,8 +226,7 @@ func (p *dnsOverQUIC) Exchange(req *dns.Msg) (resp *dns.Msg, err error) {
  	}
  
  	if err != nil {
@@ -1678,7 +1779,7 @@ index 82e5499..55276e0 100644
  		p.closeConnWithError(conn, err)
  	}
  
-@@ -204,9 +209,13 @@ func (p *dnsOverQUIC) Close() (err error) {
+@@ -209,9 +240,18 @@ func (p *dnsOverQUIC) Close() (err error) {
  
  	runtime.SetFinalizer(p, nil)
  
@@ -1691,56 +1792,112 @@ index 82e5499..55276e0 100644
 +		}
  	}
 +	p.conns = nil
++
++	p.markDialMu.Lock()
++	p.tokenStoresByMark = nil
++	p.tlsSessionCachesByMark = nil
++	p.markDialMu.Unlock()
  
  	return err
  }
-@@ -273,21 +282,31 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
+@@ -278,21 +318,25 @@ func (p *dnsOverQUIC) getBytesPool() (pool *sync.Pool) {
  
- // getConnection opens or returns an existing quic.Connection and indicates
- // whether it opened a new connection or used an existing cached one.
--func (p *dnsOverQUIC) getConnection() (conn quic.Connection, cached bool, err error) {
-+func (p *dnsOverQUIC) getConnection(ctx context.Context) (conn quic.Connection, cached bool, err error) {
+ // getConnection opens or returns an existing *quic.Conn and indicates whether
+ // it opened a new connection or used an existing cached one.
+-func (p *dnsOverQUIC) getConnection() (conn *quic.Conn, cached bool, err error) {
++func (p *dnsOverQUIC) getConnection(ctx context.Context) (conn *quic.Conn, cached bool, err error) {
  	p.connMu.Lock()
  	defer p.connMu.Unlock()
  
 -	conn = p.conn
 -	if conn != nil {
-+	// Get current mark value (including 0)
-+	mark, _ := bootstrap.MarkFromContext(ctx)
++	mark, markOK := bootstrap.MarkFromContext(ctx)
 +
-+	// Initialize connection map
-+	if p.conns == nil {
-+		p.conns = make(map[uint32]quic.Connection)
-+	}
-+
-+	// Try to get cached connection for current mark
 +	if conn = p.conns[mark]; conn != nil {
++		p.logger.Debug("doq: reuse connection", "mark", mark, "mark_ok", markOK, "cached", true)
  		return conn, true, nil
  	}
  
 -	conn, err = p.openConnection()
-+	// Create new connection
++	p.logger.Debug("doq: dial new connection", "mark", mark, "mark_ok", markOK, "cached", false)
++
 +	conn, err = p.openConnection(ctx)
  	if err != nil {
  		return nil, false, err
  	}
  
 -	p.conn = conn
-+	// Cache the new connection
 +	p.conns[mark] = conn
  
  	return conn, false, nil
  }
-@@ -325,7 +344,7 @@ func (p *dnsOverQUIC) openStream(conn quic.Connection) (quic.Stream, error) {
+@@ -306,6 +350,56 @@ func (p *dnsOverQUIC) getQUICConfig() (c *quic.Config) {
+ 	return p.quicConfig
+ }
+ 
++// tokenStoreForMark returns a QUIC TokenStore used only for dials on this mark.
++func (p *dnsOverQUIC) tokenStoreForMark(mark uint32) (ts quic.TokenStore) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tokenStoresByMark == nil {
++		p.tokenStoresByMark = map[uint32]quic.TokenStore{}
++	}
++
++	if ts = p.tokenStoresByMark[mark]; ts != nil {
++		return ts
++	}
++
++	ts = newQUICTokenStore()
++	p.tokenStoresByMark[mark] = ts
++
++	return ts
++}
++
++// tlsSessionCacheForMark returns a TLS client session cache for this mark only.
++func (p *dnsOverQUIC) tlsSessionCacheForMark(mark uint32) (c tls.ClientSessionCache) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tlsSessionCachesByMark == nil {
++		p.tlsSessionCachesByMark = map[uint32]tls.ClientSessionCache{}
++	}
++
++	if c = p.tlsSessionCachesByMark[mark]; c != nil {
++		return c
++	}
++
++	c = tls.NewLRUClientSessionCache(32)
++	p.tlsSessionCachesByMark[mark] = c
++
++	return c
++}
++
++// resetTokenStoreForMark replaces the token store for a mark after 0-RTT rejection.
++func (p *dnsOverQUIC) resetTokenStoreForMark(mark uint32) {
++	p.markDialMu.Lock()
++	defer p.markDialMu.Unlock()
++
++	if p.tokenStoresByMark == nil {
++		p.tokenStoresByMark = map[uint32]quic.TokenStore{}
++	}
++
++	p.tokenStoresByMark[mark] = newQUICTokenStore()
++}
++
+ // resetQUICConfig re-creates the tokens store as we may need to use a new one
+ // if we failed to connect.
+ func (p *dnsOverQUIC) resetQUICConfig() {
+@@ -330,7 +424,7 @@ func (p *dnsOverQUIC) openStream(conn *quic.Conn) (*quic.Stream, error) {
  }
  
  // openConnection dials a new QUIC connection.
--func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
-+func (p *dnsOverQUIC) openConnection(ctx context.Context) (conn quic.Connection, err error) {
+-func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
++func (p *dnsOverQUIC) openConnection(ctx context.Context) (conn *quic.Conn, err error) {
  	dialContext, err := p.getDialer()
  	if err != nil {
  		return nil, fmt.Errorf("bootstrapping %s: %w", p.addr, err)
-@@ -334,28 +353,49 @@ func (p *dnsOverQUIC) openConnection() (conn quic.Connection, err error) {
+@@ -339,32 +433,78 @@ func (p *dnsOverQUIC) openConnection() (conn *quic.Conn, err error) {
  	// we're using bootstrapped address instead of what's passed to the function
  	// it does not create an actual connection, but it helps us determine
  	// what IP is actually reachable (when there're v4/v6 addresses).
@@ -1766,25 +1923,30 @@ index 82e5499..55276e0 100644
 -	udpConn, ok := rawConn.(*net.UDPConn)
 -	if !ok {
 -		return nil, fmt.Errorf("unexpected type %T of connection; should be %T", rawConn, udpConn)
-+	// Set SO_MARK from context (strict when non-zero)
-+	mark, _ := bootstrap.MarkFromContext(ctx)
-+	if err := bootstrap.SetPacketMark(udpConn, mark); err != nil {
-+		udpConn.Close()
-+		return nil, fmt.Errorf("setting SO_MARK: %w", err)
- 	}
- 
--	addr := udpConn.RemoteAddr().String()
-+	// Create transport with marked connection
-+	transport := &quic.Transport{
-+		Conn: udpConn,
-+	}
+-	}
++	// If we return an error before handing udpConn to quic.DialEarly, close it.
++	// (quic.Transport with default isSingleUse=false does not auto-close the
++	// socket when the Conn is closed; we use quic.DialEarly below so the
++	// internal Transport is single-use and closes with the connection.)
++	udpOwner := false
 +	defer func() {
-+		if err != nil {
-+			transport.Close()
++		if !udpOwner {
++			_ = udpConn.Close()
 +		}
 +	}()
  
- 	ctx, cancel := p.withDeadline(context.Background())
+-	addr := udpConn.RemoteAddr().String()
++	// Set SO_MARK from context only when a non-zero mark is explicitly provided.
++	// (Aligns with upsteam56: avoids treating "missing mark" like explicit 0 for policy routing.)
++	if mark, ok := bootstrap.MarkFromContext(ctx); ok && mark != 0 {
++		if err := bootstrap.SetPacketMark(udpConn, mark); err != nil {
++			return nil, fmt.Errorf("setting SO_MARK: %w", err)
++		}
++	}
+ 
+-	ctx, cancel := p.withDeadline(context.Background())
++	// Do not inherit parent ctx deadlines/cancellation into the QUIC dial (aligns with upsteam56).
++	dialCtx, cancel := p.withDeadline(context.Background())
  	defer cancel()
  
 -	conn, err = quic.DialAddrEarly(ctx, addr, p.tlsConf.Clone(), p.getQUICConfig())
@@ -1794,27 +1956,87 @@ index 82e5499..55276e0 100644
 +		return nil, fmt.Errorf("resolving address %s: %w", addr, err)
 +	}
 +
-+	// Use transport to dial
-+	conn, err = transport.DialEarly(ctx, udpAddr, p.tlsConf.Clone(), p.getQUICConfig())
++	mark, markOK := bootstrap.MarkFromContext(ctx)
++
++	// QUIC/TLS state must be isolated per SO_MARK (policy routing).  Reusing a
++	// single TokenStore or TLS session cache across marks caused only the first
++	// mark's path to succeed.
++	qConf := p.getQUICConfig().Clone()
++	qConf.TokenStore = p.tokenStoreForMark(mark)
++
++	tlsDial := p.tlsConf.Clone()
++	tlsDial.ClientSessionCache = p.tlsSessionCacheForMark(mark)
++
++	p.logger.Debug(
++		"doq: dial QUIC",
++		"addr", p.addr.String(),
++		"remote_udp", udpAddr.String(),
++		"mark", mark,
++		"mark_ok", markOK,
++	)
++
++	// Use package DialEarly (single-use Transport) so UDP and listen goroutine
++	// are released when the QUIC connection is closed.
++	conn, err = quic.DialEarly(dialCtx, udpConn, udpAddr, tlsDial, qConf)
  	if err != nil {
  		return nil, fmt.Errorf("dialing quic connection to %s: %w", p.addr, err)
  	}
-@@ -385,9 +425,12 @@ func (p *dnsOverQUIC) closeConnWithError(conn quic.Connection, err error) {
+ 
++	udpOwner = true
++
+ 	return conn, nil
+ }
+ 
+@@ -380,9 +520,23 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
+ 		code = QUICCodeInternalError
+ 	}
+ 
++	var resetMark uint32
++	var markFound bool
++	for mark, c := range p.conns {
++		if c == conn {
++			resetMark = mark
++			markFound = true
++			break
++		}
++	}
++
+ 	if errors.Is(err, quic.Err0RTTRejected) {
+-		// Reset the TokenStore only if 0-RTT was rejected.
+-		p.resetQUICConfig()
++		// Reset the TokenStore for this mark only if 0-RTT was rejected.
++		if markFound {
++			p.resetTokenStoreForMark(resetMark)
++		} else {
++			p.resetQUICConfig()
++		}
+ 	}
+ 
+ 	err = conn.CloseWithError(code, "")
+@@ -390,9 +544,8 @@ func (p *dnsOverQUIC) closeConnWithError(conn *quic.Conn, err error) {
  		p.logger.Error("failed to close the conn", slogutil.KeyError, err)
  	}
  
 -	// If the connection that's being closed is cached, reset the cache.
 -	if p.conn == conn {
 -		p.conn = nil
-+	// Remove this connection from cache
-+	for mark, c := range p.conns {
-+		if c == conn {
-+			delete(p.conns, mark)
-+			break
-+		}
++	if markFound {
++		delete(p.conns, resetMark)
  	}
  }
  
+@@ -490,6 +643,11 @@ func isQUICRetryError(err error) (ok bool) {
+ 		return true
+ 	}
+ 
++	// Some stacks may wrap 0-RTT rejection differently (e.g., "http3: ... 0-RTT rejected").
++	if err != nil && strings.Contains(err.Error(), "0-RTT rejected") {
++		return true
++	}
++
+ 	if errors.Is(err, os.ErrDeadlineExceeded) {
+ 		// A timeout that could happen when the server has been restarted.
+ 		return true
 diff --git a/upstream/dot.go b/upstream/dot.go
 index 0d7c3ab..1201d40 100644
 --- a/upstream/dot.go
@@ -2001,7 +2223,7 @@ index 0d7c3ab..1201d40 100644
  		return nil, err
  	}
 diff --git a/upstream/parallel.go b/upstream/parallel.go
-index 182b391..34e775c 100644
+index a2c3c49..45901f1 100644
 --- a/upstream/parallel.go
 +++ b/upstream/parallel.go
 @@ -1,6 +1,7 @@
@@ -2012,68 +2234,17 @@ index 182b391..34e775c 100644
  	"fmt"
  	"slices"
  
-@@ -65,6 +66,109 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
+@@ -65,6 +66,51 @@ func ExchangeParallel(ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Up
  	return nil, nil, errors.Join(errs...)
  }
  
-+// ExchangeAllContext returns the responses from all of u using ctx.  It returns
-+// an error only if all upstreams failed to exchange the request.
-+func ExchangeAllContext(ctx context.Context, ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err error) {
-+    upsNum := len(ups)
-+    switch upsNum {
-+    case 0:
-+        return nil, ErrNoUpstreams
-+    case 1:
-+        var reply *dns.Msg
-+        reply, err = ExchangeContext(ups[0], ctx, req)
-+        if err != nil {
-+            return nil, err
-+        } else if reply == nil {
-+            return nil, ErrNoReply
-+        }
-+
-+        return []ExchangeAllResult{{Upstream: ups[0], Resp: reply}}, nil
-+    default:
-+        // Go on.
-+    }
-+
-+    res = make([]ExchangeAllResult, 0, upsNum)
-+    var errs []error
-+
-+    resCh := make(chan any, upsNum)
-+
-+    // Start exchanging concurrently.
-+    for _, u := range ups {
-+        // Use a copy to prevent data races, as [dns.Client] can modify the DNS
-+        // request during the exchange.
-+        //
-+        // TODO(s.chzhen):  Consider using buffer pool.
-+        copyReq := req.Copy()
-+        go exchangeAsyncCtx(ctx, u, copyReq, resCh)
-+    }
-+
-+    // Wait for all exchanges to finish.
-+    for range ups {
-+        var r *ExchangeAllResult
-+        r, err = receiveAsyncResult(resCh)
-+        if err != nil {
-+            errs = append(errs, err)
-+        } else {
-+            res = append(res, *r)
-+        }
-+    }
-+
-+    if len(errs) == upsNum {
-+        return res, fmt.Errorf("all upstreams failed: %w", errors.Join(errs...))
-+    }
-+
-+    return slices.Clip(res), nil
-+}
-+
-+// ExchangeParallelContext returns the first successful response from one of u using ctx.
-+// It propagates ctx to each upstream exchange to carry deadlines/cancellation and
-+// context-based metadata like SO_MARK.
-+func ExchangeParallelContext(ctx context.Context, ups []Upstream, req *dns.Msg) (reply *dns.Msg, resolved Upstream, err error) {
++// ExchangeParallelContext returns the first successful response from one of u.
++// It propagates ctx to each upstream exchange.
++func ExchangeParallelContext(
++	ctx context.Context,
++	ups []Upstream,
++	req *dns.Msg,
++) (reply *dns.Msg, resolved Upstream, err error) {
 +	upsNum := len(ups)
 +	switch upsNum {
 +	case 0:
@@ -2088,10 +2259,6 @@ index 182b391..34e775c 100644
 +
 +	resCh := make(chan any, upsNum)
 +	for _, f := range ups {
-+		// Use a copy to prevent data races, as [dns.Client] can modify the DNS
-+		// request during the exchange.
-+		//
-+		// TODO(s.chzhen):  Consider using buffer pool.
 +		copyReq := req.Copy()
 +		go exchangeAsyncCtx(ctx, f, copyReq, resCh)
 +	}
@@ -2109,9 +2276,6 @@ index 182b391..34e775c 100644
 +		}
 +	}
 +
-+	// TODO(e.burkov):  Probably it's better to return the joined error from
-+	// each upstream that returned no response, and get rid of multiple
-+	// [errors.Is] calls.  This will change the behavior though.
 +	if len(errs) == 0 {
 +		return nil, nil, errors.Error("none of upstream servers responded")
 +	}
@@ -2119,10 +2283,68 @@ index 182b391..34e775c 100644
 +	return nil, nil, errors.Join(errs...)
 +}
 +
- // ExchangeAllResult is the successful result of [ExchangeAll] for a single
- // upstream.
- type ExchangeAllResult struct {
-@@ -156,3 +260,13 @@ func exchangeAsync(u Upstream, req *dns.Msg, resCh chan any) {
+ // exchangeSingle returns a successful response and resolver if a DNS lookup was
+ // successful.
+ func exchangeSingle(
+@@ -143,6 +189,57 @@ func ExchangeAll(ups []Upstream, req *dns.Msg) (res []ExchangeAllResult, err err
+ 	return slices.Clip(res), nil
+ }
+ 
++// ExchangeAllContext returns the responses from all of u using ctx.  It returns
++// an error only if all upstreams failed to exchange the request.
++func ExchangeAllContext(
++	ctx context.Context,
++	ups []Upstream,
++	req *dns.Msg,
++) (res []ExchangeAllResult, err error) {
++	upsNum := len(ups)
++	switch upsNum {
++	case 0:
++		return nil, ErrNoUpstreams
++	case 1:
++		var reply *dns.Msg
++		reply, err = ExchangeContext(ups[0], ctx, req)
++		if err != nil {
++			return nil, err
++		} else if reply == nil {
++			return nil, ErrNoReply
++		}
++
++		return []ExchangeAllResult{{Upstream: ups[0], Resp: reply}}, nil
++	default:
++		// Go on.
++	}
++
++	res = make([]ExchangeAllResult, 0, upsNum)
++	var errs []error
++
++	resCh := make(chan any, upsNum)
++	for _, u := range ups {
++		copyReq := req.Copy()
++		go exchangeAsyncCtx(ctx, u, copyReq, resCh)
++	}
++
++	for range ups {
++		var r *ExchangeAllResult
++		r, err = receiveAsyncResult(resCh)
++		if err != nil {
++			errs = append(errs, err)
++		} else {
++			res = append(res, *r)
++		}
++	}
++
++	if len(errs) == upsNum {
++		return res, fmt.Errorf("all upstreams failed: %w", errors.Join(errs...))
++	}
++
++	return slices.Clip(res), nil
++}
++
+ // receiveAsyncResult receives a single result from resCh or an error from
+ // errCh.  It returns either a non-nil result or an error.
+ func receiveAsyncResult(resCh chan any) (res *ExchangeAllResult, err error) {
+@@ -170,3 +267,13 @@ func exchangeAsync(u Upstream, req *dns.Msg, resCh chan any) {
  		resCh <- &ExchangeAllResult{Resp: reply, Upstream: u}
  	}
  }
@@ -2211,33 +2433,32 @@ index eb932a6..8b70353 100644
  
  	// There is either no error or the error isn't related to the received
 diff --git a/upstream/upstream.go b/upstream/upstream.go
-index 2c50510..86337d9 100644
+index 730e8d2..be9e4fb 100644
 --- a/upstream/upstream.go
 +++ b/upstream/upstream.go
-@@ -45,6 +45,23 @@ type Upstream interface {
+@@ -45,6 +45,22 @@ type Upstream interface {
  	io.Closer
  }
  
 +// UpstreamWithContext is an optional extension that allows passing a context
-+// (including per-request connection mark) through the exchange pipeline.
-+// Implementations should honor ctx for deadlines/cancellation and for
-+// context-propagated metadata such as SO_MARK.
++// through the exchange pipeline.
 +type UpstreamWithContext interface {
-+    ExchangeContext(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error)
++	ExchangeContext(ctx context.Context, req *dns.Msg) (resp *dns.Msg, err error)
 +}
 +
-+// ExchangeContext calls ExchangeContext on u if it implements
-+// UpstreamWithContext. Otherwise, it falls back to the legacy Exchange method.
++// ExchangeContext calls ExchangeContext on u if implemented and falls back to
++// legacy Exchange otherwise.
 +func ExchangeContext(u Upstream, ctx context.Context, req *dns.Msg) (*dns.Msg, error) {
-+    if cu, ok := any(u).(UpstreamWithContext); ok {
-+        return cu.ExchangeContext(ctx, req)
-+    }
-+    return u.Exchange(req)
++	if cu, ok := any(u).(UpstreamWithContext); ok {
++		return cu.ExchangeContext(ctx, req)
++	}
++
++	return u.Exchange(req)
 +}
 +
- // QUICTraceFunc is a function that returns a [logging.ConnectionTracer]
- // specific for a given role and connection ID.
- type QUICTraceFunc func(
+ // QUICTracer creates [qlogwriter.Trace] instances for QUIC connection tracing.
+ type QUICTracer interface {
+ 	// TraceForConnection creates a [qlogwriter.Trace] specific for a given
 -- 
 2.34.1
 

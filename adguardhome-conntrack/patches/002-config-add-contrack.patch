@@ -1,35 +1,50 @@
+From d7dd5c9ed68329308e483f6bb5e49713db0e023a Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Sun, 22 Mar 2026 23:03:51 +0800
+Subject: [PATCH] adguardhome: add enable_conntrack config field and wire
+ it into proxy.Config
+
+---
+ internal/dnsforward/config.go | 4 ++++
+ internal/home/config.go       | 3 ++-
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
 diff --git a/internal/dnsforward/config.go b/internal/dnsforward/config.go
-index e91657ed..a44447a9 100644
+index 6045120..e2b3f75 100644
 --- a/internal/dnsforward/config.go
 +++ b/internal/dnsforward/config.go
-@@ -171,6 +171,10 @@ type Config struct {
+@@ -167,6 +167,9 @@ type Config struct {
  	// BootstrapPreferIPv6, if true, instructs the bootstrapper to prefer IPv6
  	// addresses to IPv4 ones for DoH, DoQ, and DoT.
  	BootstrapPreferIPv6 bool `yaml:"bootstrap_prefer_ipv6"`
 +
-+	// EnableConntrack enables the conntrack functionality for connection mark tracking.
-+	// If disabled, connection marks will not be queried or set.
++	// EnableConntrack enables conntrack-based connection mark propagation.
 +	EnableConntrack bool `yaml:"enable_conntrack"`
  }
  
  // EDNSClientSubnet is the settings list for EDNS Client Subnet.
-@@ -341,6 +345,7 @@ func (s *Server) newProxyConfig() (conf *proxy.Config, err error) {
- 		UsePrivateRDNS:            srvConf.UsePrivateRDNS,
- 		PrivateSubnets:            s.privateNets,
- 		MessageConstructor:        s,
+@@ -346,6 +349,7 @@ func (s *Server) newProxyConfig(ctx context.Context) (conf *proxy.Config, err er
+ 		HTTPSServerName:           aghhttp.UserAgent(),
+ 		EnableEDNSClientSubnet:    srvConf.EDNSClientSubnet.Enabled,
+ 		MaxGoroutines:             srvConf.MaxGoroutines,
 +		EnableConntrack:           srvConf.EnableConntrack,
- 	}
- 
- 	if srvConf.EDNSClientSubnet.UseCustom {
+ 		UseDNS64:                  srvConf.UseDNS64,
+ 		DNS64Prefs:                srvConf.DNS64Prefixes,
+ 		UsePrivateRDNS:            srvConf.UsePrivateRDNS,
 diff --git a/internal/home/config.go b/internal/home/config.go
-index 315a3345..10dc4bea 100644
+index 082f0e6..4625ce5 100644
 --- a/internal/home/config.go
 +++ b/internal/home/config.go
-@@ -375,6 +375,7 @@ var config = &configuration{
+@@ -489,7 +489,8 @@ var config = &configuration{
+ 			// we introduced a default limit due to this:
  			// https://github.com/AdguardTeam/AdGuardHome/issues/2015#issuecomment-674041912
  			// was later increased to 300 due to https://github.com/AdguardTeam/AdGuardHome/issues/2257
- 			MaxGoroutines: 300,
+-			MaxGoroutines: 300,
++			MaxGoroutines:  300,
 +			EnableConntrack: true,
  		},
  		UpstreamTimeout:  timeutil.Duration(dnsforward.DefaultTimeout),
  		UsePrivateRDNS:   true,
+-- 
+2.34.1
+

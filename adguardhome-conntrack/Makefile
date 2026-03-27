@@ -6,27 +6,27 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=adguardhome-conntrack
-PKG_VERSION:=0.107.56
-PKG_RELEASE:=3
+PKG_VERSION:=0.107.73
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/AdguardTeam/AdGuardHome/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=e4285c8d7611fe677e45dad469fbc0237ebeea57094148a059edd5aa32ab8fce
+PKG_HASH:=f5f2c97dc1425ba1445d0c4050911e6924f153bd64926f27c677087586f9a4fb
 
-DNSPROXY_VERSION:=0.73.5
+DNSPROXY_VERSION:=0.78.2
 DNSPROXY_SOURCE:=dnsproxy-$(DNSPROXY_VERSION).tar.gz
 DNSPROXY_URL:=https://codeload.github.com/AdguardTeam/dnsproxy/tar.gz/v$(DNSPROXY_VERSION)?
-DNSPROXY_HASH:=fc5a7335048cc488906c540ad6562b4662aba8e3edcad77ebd1075ee3ed3792e
+DNSPROXY_HASH:=dabb78173f518da7c2a5394cf52e3f6cdd09d9cb48f3dafa59f5b5788459bf75
 
-DNSCRYPT_VERSION:=2.3.0
+DNSCRYPT_VERSION:=2.4.0
 DNSCRYPT_SOURCE:=dnscrypt-$(DNSCRYPT_VERSION).tar.gz
 DNSCRYPT_URL:=https://codeload.github.com/ameshkov/dnscrypt/tar.gz/v$(DNSCRYPT_VERSION)?
-DNSCRYPT_HASH:=67b8ffb44f2a6065f7714b347f58a966fa3aa02d187afb6c853a50eaf882f5c2
+DNSCRYPT_HASH:=a3b01bd53a169369a3c96f7aa60516fbb843af0f58cd2b866c38b52a4e4344c1
 
 FRONTEND_FILE:=AdGuardHome_frontend-$(PKG_VERSION).tar.gz
 FRONTEND_ORIG:=AdGuardHome_frontend.tar.gz
 FRONTEND_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)
-FRONTEND_HASH:=f7d6308d17ed7ac97b62e4cb5bec79a647695ade94b91a8803a6dc0fdbac407f
+FRONTEND_HASH:=a69c540fe6959575330bdea150e31eee0c0c204985bf50e3522ce6d292e3c64e
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/AdGuardHome-$(PKG_VERSION)
 
@@ -97,6 +97,9 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/../dnsproxy
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
+	cd $(PKG_BUILD_DIR)/../dnsproxy && \
+		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0 && \
+		GOPROXY=https://goproxy.cn,direct go mod tidy
 	rm -rf $(PKG_BUILD_DIR)/../dnscrypt
 	mkdir -p $(PKG_BUILD_DIR)/../dnscrypt
 	$(TAR) -xzf $(DL_DIR)/$(DNSCRYPT_SOURCE) -C $(PKG_BUILD_DIR)/../dnscrypt --strip-components=1
@@ -104,7 +107,8 @@ define Build/Prepare
 	cd $(PKG_BUILD_DIR) && \
 		go mod edit -replace=github.com/AdguardTeam/dnsproxy=../dnsproxy && \
 		go mod edit -replace=github.com/ameshkov/dnscrypt/v2=../dnscrypt && \
-		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0
+		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0 && \
+		GOPROXY=https://goproxy.cn,direct go mod tidy
 endef
 
 define Build/Compile

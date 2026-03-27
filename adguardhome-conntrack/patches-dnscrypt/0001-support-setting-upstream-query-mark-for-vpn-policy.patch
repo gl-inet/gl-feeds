@@ -1,20 +1,20 @@
-From 53330f35a582c4a917c39a92a6949e8f1201d05f Mon Sep 17 00:00:00 2001
+From c655b5c6ef28a8f4955d5717fa5c59c1671f87b2 Mon Sep 17 00:00:00 2001
 From: Dongming Han <handongming@gl-inet.com>
-Date: Thu, 7 Aug 2025 09:32:46 +0800
-Subject: [PATCH] support setting upstream query mark for vpn policy
+Date: Sun, 22 Mar 2026 23:04:09 +0800
+Subject: [PATCH] dnscrypt: add Client.Dialer for custom connection marks
+ (SO_MARK) on Exchange and fetchCert paths
 
-Signed-off-by: Dongming Han <handongming@gl-inet.com>
 ---
- client.go | 40 ++++++++++++++++++++++++++++++++++++++--
- 1 file changed, 38 insertions(+), 2 deletions(-)
+ client.go | 41 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 39 insertions(+), 2 deletions(-)
 
 diff --git a/client.go b/client.go
-index 5ad7572..8fbe0a8 100644
+index a829979..44f2ba2 100644
 --- a/client.go
 +++ b/client.go
-@@ -22,6 +22,11 @@ type Client struct {
+@@ -27,6 +27,11 @@ type Client struct {
  	// UDPSize is the maximum size of a DNS response (or query) this client can
- 	// sent or receive. If not set, we use dns.MinMsgSize by default.
+ 	// send or receive. If not set, we use dns.MinMsgSize by default.
  	UDPSize int
 +
 +	// Dialer is a custom dialer function for creating network connections.
@@ -24,7 +24,7 @@ index 5ad7572..8fbe0a8 100644
  }
  
  // ResolverInfo contains DNSCrypt resolver information necessary for decryption/encryption
-@@ -94,7 +99,12 @@ func (c *Client) Exchange(m *dns.Msg, resolverInfo *ResolverInfo) (resp *dns.Msg
+@@ -99,7 +104,12 @@ func (c *Client) Exchange(m *dns.Msg, resolverInfo *ResolverInfo) (resp *dns.Msg
  		network = "tcp"
  	}
  
@@ -38,41 +38,42 @@ index 5ad7572..8fbe0a8 100644
  	if err != nil {
  		return nil, fmt.Errorf("dialing: %w", err)
  	}
-@@ -233,7 +243,33 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
+@@ -238,7 +248,34 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
  	query.SetQuestion(providerName, dns.TypeTXT)
  	// use 1252 as a UDPSize for this client to make sure the buffer is not too small
  	client := dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
 -	r, _, err := client.Exchange(query, stamp.ServerAddrStr)
-+    
-+    // Use custom dialer if available
-+    var r *dns.Msg
-+    if c.Dialer != nil {
-+        // Use custom dialer to obtain a connection with proper socket options (e.g., SO_MARK)
-+        conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
-+        if dialErr != nil {
-+            return nil, dialErr
-+        }
-+        defer func() { err = errors.WithDeferred(err, conn.Close()) }()
 +
-+        // Apply deadline to avoid indefinite blocking
-+        if c.Timeout > 0 {
-+            _ = conn.SetDeadline(time.Now().Add(c.Timeout))
-+        }
++	// Use custom dialer if available.
++	var r *dns.Msg
++	if c.Dialer != nil {
++		// Use custom dialer to obtain a connection with proper socket options
++		// (for example, SO_MARK).
++		conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
++		if dialErr != nil {
++			return nil, dialErr
++		}
++		defer func() { err = errors.WithDeferred(err, conn.Close()) }()
 +
-+        // Wrap the connection and leverage dns.Client to handle framing/timeouts
-+        dc := &dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
-+        dconn := &dns.Conn{Conn: conn}
-+        if c.Net == "udp" {
-+            dconn.UDPSize = uint16(1252)
-+        }
++		// Apply deadline to avoid indefinite blocking.
++		if c.Timeout > 0 {
++			_ = conn.SetDeadline(time.Now().Add(c.Timeout))
++		}
 +
-+        r, _, err = dc.ExchangeWithConn(query, dconn)
-+    } else {
-+        r, _, err = client.Exchange(query, stamp.ServerAddrStr)
-+    }
++		// Wrap the connection and leverage dns.Client to handle framing.
++		dc := &dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
++		dconn := &dns.Conn{Conn: conn}
++		if c.Net == "udp" {
++			dconn.UDPSize = uint16(1252)
++		}
++
++		r, _, err = dc.ExchangeWithConn(query, dconn)
++	} else {
++		r, _, err = client.Exchange(query, stamp.ServerAddrStr)
++	}
  	if err != nil {
  		return nil, err
  	}
 -- 
-2.25.1
+2.34.1
 
