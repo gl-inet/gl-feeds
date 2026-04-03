@@ -1,3 +1,16 @@
+From 068f191a4ad70f2ebcdef17e8693308586cce4d6 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Fri, 3 Apr 2026 15:43:10 +0800
+Subject: [PATCH] fix(rtnl): Fix build rtnl fail
+
+Change-Id: I7533b7e11da6a4cfafd0479909ea57981790fe15
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ rtnl.c | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/rtnl.c b/rtnl.c
+index 1db713f..9784eca 100644
 --- a/rtnl.c
 +++ b/rtnl.c
 @@ -410,10 +410,10 @@ int luaopen_eco_rtnl(lua_State *L)
@@ -15,3 +28,6 @@
  
      lua_add_constant(L, "RTNLGRP_LINK", RTNLGRP_LINK);
      lua_add_constant(L, "RTNLGRP_NOTIFY", RTNLGRP_NOTIFY);
+-- 
+2.34.1
+
