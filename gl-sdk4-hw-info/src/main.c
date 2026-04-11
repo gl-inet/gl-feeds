@@ -155,10 +155,13 @@ static int __init gl_hw_info_init(void)
     if (ret)
         goto err_out;
 
-    if (data_np)
+    if (data_np) {
         ret = platform_driver_register(&gl_hw_info_driver);
-    else
+    } else {
         ret = gl_find_hw_info();
+        if (ret)
+            ret = gl_hw_info_from_sndata();
+    }
 
     if (ret)
         goto err_proc_exit;

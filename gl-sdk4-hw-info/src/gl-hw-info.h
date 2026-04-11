@@ -13,6 +13,11 @@
 #define GL_DEVICE_FILE_PATH        "/lib/firmware/sn.data"
 #define GL_DEVICE_BUFFER_SIZE      1024
 
+/* 新格式：板级 + factory_data.* 分区行，见 factory_data_from_sndata.c */
+#define GL_DEVICE_FILE_PATH_SN2    "/lib/firmware/sn2.data"
+/* sn2.data 中工厂区分区行前缀，与 DT 中 factory_data 子节点属性名一致 */
+#define GL_SN_DATA_FACTORY_PREFIX  "factory_data."
+
 #define GL_DEVICE_SN               "device_sn="
 #define GL_DEVICE_DDNS             "device_ddns="
 #define GL_DEVICE_MAC              "device_mac="
@@ -50,6 +55,10 @@ int proc_init_gl_hw_info(void);
 int proc_remove_gl_hw_info(void);
 
 void make_factory_data(struct device_node *np);
+
+void make_factory_data_from_sndata(void);
+void gl_hw_info_board_props_from_sndata(void);
+int gl_hw_info_from_sndata(void);
 
 const char *lookup_country(int iso3166);
 
