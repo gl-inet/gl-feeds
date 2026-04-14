@@ -1,0 +1,168 @@
+From 940455c51145ea3708ea800259e85123f7dc3533 Mon Sep 17 00:00:00 2001
+From: "tianwei.ma" <tianwei.ma@gl-inet.com>
+Date: Tue, 14 Apr 2026 12:03:56 +0800
+Subject: [PATCH] smstools3: add SMS receive handling for DSDS (Dual SIM Single
+ Standby) modem
+
+---
+ src/modeminit.c | 25 +++++++++++++++++++++++++
+ src/modeminit.h |  4 ++++
+ src/smsd.c      | 33 +++++++++++++++++++++++++++++----
+ src/smsd_cfg.c  | 10 ++++++++++
+ src/smsd_cfg.h  |  1 +
+ 5 files changed, 69 insertions(+), 4 deletions(-)
+
+diff --git a/src/modeminit.c b/src/modeminit.c
+index f7ee28e..dfc039a 100755
+--- a/src/modeminit.c
++++ b/src/modeminit.c
+@@ -2902,3 +2902,28 @@ int try_openmodem()
+ 
+   return result;
+ }
++
++// Get current SIM slot for dual-SIM standby mode
++// Returns the current active slot number (1 or 2), or 0 if unable to determine
++int get_current_sim_slot(void)
++{
++  char command[64];
++  char answer[256];
++  char slot_resp[64];
++  int current_slot;
++
++  // Try to get current active SIM slot using AT+QUIMSLOT? command
++  // Response format: \r\n+QUIMSLOT: <slot>\r\n\r\nOK\r\n
++  snprintf(command, sizeof(command), "AT+QUIMSLOT?\r");
++  put_command(command, answer, sizeof(answer), "default", EXPECT_OK_ERROR);
++
++  // Parse response for SIM slot
++  // Response format: +QUIMSLOT: <slot>
++  if (sscanf(answer, "+QUIMSLOT: %d", &current_slot) == 1)
++  {
++    writelogfile(LOG_DEBUG, 0, "Current active SIM slot: %d", current_slot);
++    return current_slot;
++  }
++
++  return 0;
++}
+diff --git a/src/modeminit.h b/src/modeminit.h
+index 8c688c0..c6f360f 100755
+--- a/src/modeminit.h
++++ b/src/modeminit.h
+@@ -75,4 +75,8 @@ int wait_network_registration(int waitnetwork_errorsleeptime, int retry_count);
+ int try_closemodem(int force);
+ int try_openmodem();
+ 
++// Get current SIM slot for dual-SIM standby mode
++// Returns the current active slot number (1 or 2), or 0 if unable to determine
++int get_current_sim_slot(void);
++
+ #endif
+diff --git a/src/smsd.c b/src/smsd.c
+index 52fb014..262b1aa 100755
+--- a/src/smsd.c
++++ b/src/smsd.c
+@@ -655,8 +655,8 @@ int test_header(int *hlen, char *line, const char *header, char *header2)
+   // header2:
+   // NULL or "" = no translation
+   // "-" = no translation and header is not printed
+-  // "-Relatório:" = input translated, header is not printed
+-  // "Relatório:" = input and output translated
++  // "-Relatï¿½rio:" = input translated, header is not printed
++  // "Relatï¿½rio:" = input and output translated
+ 
+   if (header2 && *header2 && strcmp(header2, "-"))
+   {
+@@ -841,7 +841,7 @@ int extract_macros(char *buffer, int buffer_size, char *macros)
+ int apply_filename_preview(char *filename, char *arg_text, int alphabet)
+ {
+ /*
+-£$¥èéùìòÇØøÅå Ææ É ÄÖÑÜ§ äöñüà ¤
++ï¿½$ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ ï¿½ï¿½ï¿½Ü§ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½
+ LSYeeuioCOoAa Aa E AONUS aonua e
+ */
+   char *allowed_chars = "-.";
+@@ -851,7 +851,7 @@ LSYeeuioCOoAa Aa E AONUS aonua e
+     0xC9,
+     0xC4, 0xD6, 0xD1, 0xDC, 0xA7,
+     0xE4, 0xF6, 0xF1, 0xFC, 0xE0,
+-    0xA4, /* 3.1.16beta: ISO character caused warning: '¤', */
++    0xA4, /* 3.1.16beta: ISO character caused warning: 'ï¿½', */
+     0x00
+   };
+   char *replace_to   = "LSYeeuioCOoAaAaEAONUSaonuae";
+@@ -3796,6 +3796,31 @@ int receivesms(int* quick, int only1st)
+   if (DEVICE.modem_disabled)
+     writelogfile(LOG_DEBUG, 0, "receivesms, quick: %i", *quick);
+ 
++  // Check for dual-SIM standby mode (standby_type == 3)
++  // In dual standby mode, only receive SMS when current SIM slot matches configured slot
++  if (DEVICE.standby_type == 3 && DEVICE.slot[0] != '\0')
++  {
++    int current_slot = get_current_sim_slot();
++    int configured_slot = atoi(DEVICE.slot);
++
++    writelogfile(LOG_DEBUG, 0, "Dual standby mode: current_slot=%d, configured_slot=%d, DEVICE.slot=%s",
++                 current_slot, configured_slot, DEVICE.slot);
++
++    // If unable to determine current slot or doesn't match configured slot, skip SMS reception
++    if (current_slot <= 0)
++    {
++      writelogfile(LOG_NOTICE, 0, "Skipping SMS reception: unable to determine current SIM slot");
++      return 0;
++    }
++
++    if (current_slot != configured_slot)
++    {
++      writelogfile(LOG_NOTICE, 0, "Skipping SMS reception: current slot %d != configured slot %d",
++                   current_slot, configured_slot);
++      return 0;
++    }
++  }
++
+   if (*quick==0 && DEVICE.modem_disabled == 0)
+   {
+     int ret = initialize_modem_receiving();
+diff --git a/src/smsd_cfg.c b/src/smsd_cfg.c
+index 22a5c38..5b2c2b1 100755
+--- a/src/smsd_cfg.c
++++ b/src/smsd_cfg.c
+@@ -286,6 +286,7 @@ void initcfg_device(int i)
+   devices[i].check_sim_reset[0] = 0; // 3.1.21.
+   devices[i].check_sim_retries = 10; // 3.1.21.
+   devices[i].check_sim_wait = 30; // 3.1.21.
++  devices[i].standby_type = 0; // Standby type for dual-SIM modems
+ }
+ 
+ void initcfg()
+@@ -643,6 +644,15 @@ int readcfg_device(int device, char *device_name)
+             printf("name:%s NEWDEVICE.slot:%s\n",name,NEWDEVICE.slot);
+             continue;
+           }
++
++          // standby_type for dual-SIM modems: 3=dual standby mode
++          if (!strcasecmp(name, "standby_type"))
++          {
++            NEWDEVICE.standby_type = atoi(ask_value(NEWDEVICE.name, name, value));
++            printf("name:%s NEWDEVICE.standby_type:%d\n", name, NEWDEVICE.standby_type);
++            continue;
++          }
++
+           // .name is set by the program
+ 
+           if (!strcasecmp(name, "number"))
+diff --git a/src/smsd_cfg.h b/src/smsd_cfg.h
+index 8772979..c503e8a 100755
+--- a/src/smsd_cfg.h
++++ b/src/smsd_cfg.h
+@@ -285,6 +285,7 @@ typedef struct
+   char check_sim_reset[64]; // 3.1.21.
+   int check_sim_retries; // 3.1.21.
+   int check_sim_wait; // 3.1.21.
++  int standby_type; // Standby type for dual-SIM modems: 3=dual standby mode
+ } _device;
+ 
+ // NOTE for regular run intervals: effective value is at least delaytime.
+-- 
+2.34.1
+
