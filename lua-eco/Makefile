@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=lua-eco
-PKG_VERSION:=3.17.0
+PKG_VERSION:=3.18.0
 PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL=https://github.com/zhaojh329/lua-eco/releases/download/v$(PKG_VERSION)
-PKG_HASH:=d14066e0f80f4d16c1ea3070de72c016b18475766d3f931315ff567506787b10
+PKG_HASH:=8a4db4006801b4abe63ce340ae5396db56385ee120f286f1221097b81029c33a
 
 PKG_MAINTAINER:=Jianhui Zhao <zhaojh329@gmail.com>
 PKG_LICENSE:=MIT
@@ -147,8 +147,9 @@ define Package/lua-eco-socket/install
 endef
 
 define Package/lua-eco-dns/install
-	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.4/eco
+	$(INSTALL_DIR) $(1)/usr/local/lib/lua/5.4/eco/core
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/dns.lua $(1)/usr/local/lib/lua/5.4/eco
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/dns.so $(1)/usr/local/lib/lua/5.4/eco/core
 endef
 
 define Package/lua-eco-ssl/install
