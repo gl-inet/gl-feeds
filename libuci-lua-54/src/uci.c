@@ -1065,6 +1065,7 @@ uci_lua_cursor(lua_State *L)
 
 static const luaL_Reg uci[] = {
 	{ "__gc", uci_lua_gc },
+	{ "__close", uci_lua_gc },
 	{ "close", uci_lua_gc },
 	{ "cursor", uci_lua_cursor },
 	{ "load", uci_lua_load },
