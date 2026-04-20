@@ -12,7 +12,7 @@ include $(INCLUDE_DIR)/package.mk
 define Package/blue-merle
 	SECTION:=utils
 	CATEGORY:=Utilities
-	EXTRA_DEPENDS:=luci-base, gl-sdk4-mcu, coreutils-shred, python3-pyserial
+	DEPENDS:=+luci-base +gl-sdk4-mcu +coreutils-shred +python3-pyserial +gl-sdk4-clients
 	TITLE:=Anonymity Enhancements for GL-E750 Mudi
 endef
 
@@ -90,6 +90,8 @@ endef
 
 define Package/blue-merle/postinst
 	#!/bin/sh
+	[ -n "$${IPKG_INSTROOT}" ] && exit 0    # if run within buildroot exit
+
 	uci set switch-button.@main[0].func='sim'
 	uci commit switch-button
 
