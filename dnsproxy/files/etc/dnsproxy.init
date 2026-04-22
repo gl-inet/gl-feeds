@@ -17,6 +17,13 @@ start_service() {
     [ "$mode" == "secure" ] || exit 0
     [ "$proto" == "odoh" ] && exit 0
 
+    # Wait for port 5453 to be released (in case previous instance is still shutting down)
+    local i=0
+    while [ $i -lt 30 ] && netstat -lntu 2>/dev/null | grep -q ':5453 '; do
+        sleep 0.1
+        i=$((i + 1))
+    done
+
     /etc/init.d/dnsproxy-vpn start
 
     procd_open_instance
@@ -31,4 +38,19 @@ start_service() {
 
 stop_service() {
     /etc/init.d/dnsproxy-vpn stop
+
+    # Ensure dnsproxy process is fully terminated and port is released
+    local pid
+    pid=$(pgrep -f '/usr/sbin/dnsproxy.*dnsproxy.yaml' | head -1)
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null
+        # Wait up to 3 seconds for the process to exit
+        local i=0
+        while [ $i -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
+            sleep 0.1
+            i=$((i + 1))
+        done
+        # Force kill if still alive
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+    fi
 }
