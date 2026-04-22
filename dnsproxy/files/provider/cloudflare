@@ -6,7 +6,7 @@
             "name": "Standard",
             "description": "Nothing is filtered, which is suitable for users who need complete access to the Internet.",
             "url_doh": "https://cloudflare-dns.com/dns-query",
-            "url_dot": "tls://1.1.1.1",
+            "url_dot": "tls://one.one.one.one",
             "address": ["1.1.1.1","1.0.0.1"],
             "address6":["2606:4700:4700::1111","2606:4700:4700::1001"]
         },
