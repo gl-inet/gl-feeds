@@ -358,6 +358,9 @@ uci_lua_each_iter(lua_State *L)
 	int i = lua_tointeger(L, lua_upvalueindex(5));
 	struct uci_section *s;
 
+	if (!list)
+        return 0;
+
 again:
 	if (i) {
 		e = tmp;
@@ -397,32 +400,32 @@ uci_lua_each(lua_State *L)
 	const char *package, *type;
 	int offset = 0;
 	int i = 0;
+	int n = 5;
 
 	ctx = find_context(L, &offset);
 	package = luaL_checkstring(L, 1 + offset);
 
 	type = lua_tostring(L, 2 + offset);
-
-	p = find_package(L, ctx, package, true);
-	if (!p) {
-		lua_pushnil(L);
-		return 1;
-	}
-
-	e = list_to_element(p->sections.next);
-	tmp = list_to_element(e->list.next);
-
 	if (type)
 		lua_pushstring(L, type);
 	else
 		lua_pushnil(L);
 
-	lua_pushlightuserdata(L, &p->sections);
-	lua_pushlightuserdata(L, e);
-	lua_pushlightuserdata(L, tmp);
-	lua_pushinteger(L, i);
+	p = find_package(L, ctx, package, true);
+	if (p) {
+		e = list_to_element(p->sections.next);
+		tmp = list_to_element(e->list.next);
 
-	lua_pushcclosure(L, uci_lua_each_iter, 5);
+		lua_pushlightuserdata(L, &p->sections);
+		lua_pushlightuserdata(L, e);
+		lua_pushlightuserdata(L, tmp);
+		lua_pushinteger(L, i);
+	} else {
+        n = 2;
+        lua_pushlightuserdata(L, NULL);
+	}
+
+	lua_pushcclosure(L, uci_lua_each_iter, n);
 	return 1;
 }
 
