@@ -51,6 +51,13 @@ MAKE_VARS += LFLAGS="$(TARGET_LDFLAGS) $(if $(ICONV_FULL),-liconv)"
 define Package/smstools3/configure
 endef
 
+
+define Build/InstallDev
+	$(INSTALL_DIR) $(1)/usr/lib/smstools3/features
+	touch $(1)/usr/lib/smstools3/features/multi_modem_multi_sim_sms
+endef
+
+
 define Package/smstools3/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_BIN) \
