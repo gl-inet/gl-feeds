@@ -9,20 +9,28 @@ STOP=89
 
 PROG=/usr/sbin/dnsproxy
 CONFIG_FILE=/etc/dnsproxy/dnsproxy.yaml
+PORT=5453
+
+wait_port_release() {
+    local i=0
+    while [ $i -lt 5 ] && netstat -lntu 2>/dev/null | grep -q ":$PORT[[:space:]]"; do
+        sleep 1
+        i=$((i + 1))
+    done
+    if netstat -lntu 2>/dev/null | grep -q ":$PORT[[:space:]]"; then
+        killall -9 dnsproxy 2>/dev/null
+        sleep 1
+    fi
+}
 
 start_service() {
     local mode=$(uci -q get gl-dns-v2.@dns[0].mode)
     local proto=$(uci -q get gl-dns-v2.@dns[0].proto)
 
-    [ "$mode" == "secure" ] || exit 0
-    [ "$proto" == "odoh" ] && exit 0
+    [ "$mode" = "secure" ] || return 0
+    [ "$proto" = "odoh" ] && return 0
 
-    # Wait for port 5453 to be released (in case previous instance is still shutting down)
-    local i=0
-    while [ $i -lt 30 ] && netstat -lntu 2>/dev/null | grep -q ':5453 '; do
-        sleep 0.1
-        i=$((i + 1))
-    done
+    wait_port_release
 
     /etc/init.d/dnsproxy-vpn start
 
@@ -38,19 +46,4 @@ start_service() {
 
 stop_service() {
     /etc/init.d/dnsproxy-vpn stop
-
-    # Ensure dnsproxy process is fully terminated and port is released
-    local pid
-    pid=$(pgrep -f '/usr/sbin/dnsproxy.*dnsproxy.yaml' | head -1)
-    if [ -n "$pid" ]; then
-        kill "$pid" 2>/dev/null
-        # Wait up to 3 seconds for the process to exit
-        local i=0
-        while [ $i -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
-            sleep 0.1
-            i=$((i + 1))
-        done
-        # Force kill if still alive
-        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
-    fi
 }
