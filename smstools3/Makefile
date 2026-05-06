@@ -39,6 +39,13 @@ define Package/smstools3/description
  short messages through GSM modems and mobile phones.
 endef
 
+define Package/smstools3/config
+	config GL_FEED_SMSTOOLS3
+		bool
+		default y
+endef
+
+TARGET_CFLAGS += -D USE_SMSTOOLS3_NEW
 TARGET_CFLAGS += -D NUMBER_OF_MODEMS=5
 TARGET_CFLAGS += $(if $(ICONV_FULL),-D USE_ICONV)
 #TARGET_CFLAGS += -D DISABLE_INET_SOCKET
@@ -49,12 +56,6 @@ TARGET_CFLAGS += -fcommon
 MAKE_VARS += LFLAGS="$(TARGET_LDFLAGS) $(if $(ICONV_FULL),-liconv)"
 
 define Package/smstools3/configure
-endef
-
-
-define Build/InstallDev
-	$(INSTALL_DIR) $(1)/usr/lib/smstools3/features
-	touch $(1)/usr/lib/smstools3/features/multi_modem_multi_sim_sms
 endef
 
 
