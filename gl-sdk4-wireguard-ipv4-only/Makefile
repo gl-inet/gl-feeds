@@ -4,14 +4,6 @@
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
 #
-# gl-sdk4-wireguard-ipv4-only
-#
-# Per-server "IPv4-only" enforcement for the GL.iNet WireGuard backend.
-# When `enable_ipv6` on a wireguard_server section is set to 0, this
-# package strips IPv6 from the WG interface, peers, sysctl and firewall
-# and keeps it that way against GUI regeneration, reboots and ifup
-# events. When the option is unset or 1, behaviour is unchanged.
-#
 
 include $(TOPDIR)/rules.mk
 include ./version.mk
@@ -34,17 +26,15 @@ define Package/gl-sdk4-wireguard-ipv4-only
 endef
 
 define Package/gl-sdk4-wireguard-ipv4-only/description
- Adds per-server `enable_ipv6` handling to GL.iNet's WireGuard backend.
- When the toggle is disabled, the WG interface is forced into IPv4-only
- mode: IPv6 addresses are stripped from the kernel device and from the
- wireguard_server / network UCI configs, IPv6 entries are removed from
- each peer's allowed_ips/client_ip, an nftables (fw4) drop-in blocks
- IPv6 traffic on the WG interface, and hotplug + init.d hooks re-apply
- enforcement on every ifup or wireguard_server restart.
-endef
-
-define Package/gl-sdk4-wireguard-ipv4-only/conffiles
-/etc/config/wireguard_server
+ Native IPv4-only enforcement for GL.iNet's WireGuard backend, keyed
+ off the existing global IPv6 toggle on /#/ipv6 -- no new GUI
+ control. When IPv6 is disabled globally, every WG interface is
+ forced into IPv4-only mode: IPv6 addresses are stripped from the
+ kernel device and from the wireguard_server / network UCI configs,
+ IPv6 entries are removed from each peer's allowed_ips/client_ip,
+ an nftables (fw4) drop-in or fw3 include blocks IPv6 traffic on
+ the WG interface, and hotplug + init.d hooks re-apply enforcement
+ on every ifup or wireguard_server restart.
 endef
 
 define Build/Compile

@@ -1,28 +1,13 @@
 #!/bin/sh
-#
-# /etc/hotplug.d/iface/99-wg-noipv6
-#
 # Re-apply IPv4-only enforcement when a netifd interface comes up.
-# We only act on WG-related events to keep boot-time noise minimal.
 
 [ "$ACTION" = "ifup" ] || exit 0
 [ -n "$INTERFACE" ] || exit 0
 
-# Cheap pre-filter: if there are no WG sections at all, exit fast.
-if ! grep -q "proto.*wireguard" /etc/config/network 2>/dev/null \
-		&& [ ! -f /etc/config/wireguard_server ]; then
-	exit 0
-fi
-
 . /usr/lib/wg-noipv6/functions.sh
 
-# If this ifup belongs to a netifd WG interface or to the GL.iNet
-# wireguard_server section, just re-sync everything -- it is cheap
-# and idempotent.
 case " $(wg_list_netifd_ifaces) $(wg_list_glinet_servers) " in
-	*" ${INTERFACE} "*)
-		wg_sync_all
-		;;
+	*" ${INTERFACE} "*) wg_sync_all ;;
 esac
 
 exit 0
