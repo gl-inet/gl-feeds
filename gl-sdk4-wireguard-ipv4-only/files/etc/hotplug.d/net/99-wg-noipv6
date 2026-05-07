@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+# /etc/hotplug.d/net/99-wg-noipv6
+#
+# The GL.iNet wireguard_server daemon brings up its kernel device
+# without a netifd ifup event, so the iface hotplug above never
+# fires for it. The net (netdev) hotplug is the only reliable hook
+# in that case.
+#
+# We act on `add` / `register` events for any wgN-style device, then
+# defer the heavy lifting to /usr/sbin/wg-noipv6 so the policy logic
+# stays in one place.
+
+case "$ACTION" in
+	add|register|"") ;;
+	*) exit 0 ;;
+esac
+
+[ -n "$DEVICENAME" ] || exit 0
+[ -d "/sys/class/net/$DEVICENAME" ] || exit 0
+
+# Limit ourselves to wireguard-shaped device names. Anything else
+# would be wasted work and would risk acting on names we shouldn't
+# interpolate into firewall / sysctl drop-ins.
+case "$DEVICENAME" in
+	wg*|*wgserver*) ;;
+	*) exit 0 ;;
+esac
+
+. /usr/lib/wg-noipv6/functions.sh
+
+# Reject unsafe names defensively even though the case above is
+# already conservative -- this protects the firewall / sysctl
+# drop-ins, which interpolate the device name into root-owned files.
+wg_iface_is_valid "$DEVICENAME" || exit 0
+
+# Only enforce if at least one WG server section is configured to
+# disable IPv6. Otherwise this is a no-op, which keeps the hotplug
+# cheap on devices that do not use the IPv4-only mode.
+_want_off=0
+for _srv in $(wg_list_glinet_servers); do
+	[ "$(wg_glinet_enable_ipv6 "$_srv")" = "0" ] && _want_off=1
+done
+for _iface in $(wg_list_netifd_ifaces); do
+	[ "$(wg_netifd_enable_ipv6 "$_iface")" = "0" ] && _want_off=1
+done
+
+[ "$_want_off" -eq 1 ] || exit 0
+
+/usr/sbin/wg-noipv6 apply "$DEVICENAME" >/dev/null 2>&1 || true
+
+exit 0

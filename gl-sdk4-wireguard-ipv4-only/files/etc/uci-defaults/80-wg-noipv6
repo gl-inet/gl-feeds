@@ -1,0 +1,29 @@
+#!/bin/sh
+#
+# /etc/uci-defaults/80-wg-noipv6
+#
+# Run-once-on-first-boot bootstrap for gl-sdk4-wireguard-ipv4-only.
+#
+# Seeds the per-server `enable_ipv6` UCI option to '1' (existing
+# GL.iNet default) on every existing wireguard_server section that
+# has not already set it, so the option always exists for the GUI
+# to read. Then triggers an initial sync.
+
+[ -f /etc/config/wireguard_server ] || exit 0
+
+# Add `option enable_ipv6 '1'` on each "servers" section if missing.
+for _srv in $(uci -q show wireguard_server 2>/dev/null \
+		| awk -F= '/=.?servers.?$/ { n = split($1, p, "."); if (n >= 2) print p[2] }' \
+		| sort -u); do
+	if [ -z "$(uci -q get "wireguard_server.${_srv}.enable_ipv6")" ]; then
+		uci -q set "wireguard_server.${_srv}.enable_ipv6=1"
+	fi
+done
+uci -q commit wireguard_server
+
+# Run the initial sync only at runtime, not while building an image.
+if [ -z "$IPKG_INSTROOT" ]; then
+	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+fi
+
+exit 0

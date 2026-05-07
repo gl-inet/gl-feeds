@@ -1,0 +1,36 @@
+#!/bin/sh /etc/rc.common
+#
+# /etc/init.d/wg-noipv6
+#
+# Runs after wireguard_server / network / firewall and re-applies
+# IPv4-only enforcement based on each WG server's enable_ipv6 toggle.
+#
+# Reload-only service: there is no long-running daemon. We just
+# re-evaluate state on boot and on UCI changes to wireguard_server,
+# network or firewall.
+
+START=96
+STOP=10
+USE_PROCD=1
+
+start_service() {
+	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+}
+
+reload_service() {
+	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+}
+
+stop_service() {
+	# Don't blow away enforcement on a routine `stop`: the caller
+	# may just be sequencing a network restart. Full teardown lives
+	# in `wg-noipv6 clear-all`, which is invoked by the package
+	# prerm script.
+	return 0
+}
+
+service_triggers() {
+	procd_add_reload_trigger "wireguard_server"
+	procd_add_reload_trigger "network"
+	procd_add_reload_trigger "firewall"
+}

@@ -1,0 +1,196 @@
+--[[
+    @object-name: wireguard_ipv4_only
+    @object-desc: GL.iNet WireGuard IPv4-only enforcement.
+
+    Companion to gl-sdk4-wireguard-ipv4-only. Reads / writes the
+    per-server `enable_ipv6` toggle on /etc/config/wireguard_server
+    and triggers /usr/sbin/wg-noipv6 sync to apply changes.
+
+    The toggle defaults to true (1) so existing dual-stack behaviour
+    is preserved for users who never touch it.
+--]]
+
+local uci = require "uci"
+
+local M = {}
+
+-- Internal: list every "servers"-typed section in wireguard_server.
+local function list_servers(c)
+    local out = {}
+    c:foreach("wireguard_server", "servers", function(s)
+        if s and s[".name"] then
+            out[#out + 1] = s[".name"]
+        end
+    end)
+    return out
+end
+
+-- Internal: normalise UCI bool / string / number into an explicit
+-- boolean. Anything not-explicitly-disabled stays enabled.
+local function as_bool(v)
+    if v == nil then return true end
+    local s = tostring(v):lower()
+    if s == "0" or s == "false" or s == "off" or s == "no" or s == "disabled" then
+        return false
+    end
+    return true
+end
+
+-- Internal: spawn `wg-noipv6 sync` in the background. Best-effort;
+-- failures are swallowed so the RPC reply still goes out promptly.
+local function trigger_sync()
+    if ngx and ngx.pipe and ngx.pipe.spawn then
+        local ok, p = pcall(ngx.pipe.spawn, { "/usr/sbin/wg-noipv6", "sync" })
+        if ok and p and p.wait then
+            pcall(p.wait, p)
+        end
+    else
+        os.execute("/usr/sbin/wg-noipv6 sync >/dev/null 2>&1")
+    end
+end
+
+--[[
+    @method-name: get_config
+    @method-desc: Get IPv6 enable state for a WireGuard server.
+
+    @in  string  server           Optional server section name.
+                                  Defaults to the first `servers`
+                                  section found.
+    @out string  server           Resolved server section name.
+    @out bool    enable_ipv6      true = IPv6 allowed (default),
+                                  false = IPv4-only enforced.
+
+    @in-example:  {"jsonrpc":"2.0","method":"call","params":["","wireguard_ipv4_only","get_config",{}],"id":1}
+    @out-example: {"jsonrpc":"2.0","id":1,"result":{"server":"main_server","enable_ipv6":true}}
+--]]
+M.get_config = function(params)
+    params = params or {}
+    local c = uci.cursor()
+    local servers = list_servers(c)
+    if #servers == 0 then
+        return { server = nil, enable_ipv6 = true }
+    end
+
+    local target = params.server
+    if target == nil or target == "" then
+        target = servers[1]
+    end
+
+    local v = c:get("wireguard_server", target, "enable_ipv6")
+    return {
+        server = target,
+        enable_ipv6 = as_bool(v),
+    }
+end
+
+--[[
+    @method-name: set_config
+    @method-desc: Toggle IPv6 on / off for a WireGuard server. When
+                  set to false the gl-sdk4-wireguard-ipv4-only
+                  enforcement (sysctl drop-in, firewall block,
+                  IPv4-only AllowedIPs / address_v6 strip) is
+                  applied. When set to true, all enforcement for
+                  this server is removed.
+
+    @in  string  server           Optional server section name.
+                                  Defaults to the first `servers`
+                                  section found.
+    @in  bool    enable_ipv6      true to allow IPv6 (default),
+                                  false to enforce IPv4-only.
+
+    @out string  server           Resolved server section name.
+    @out bool    enable_ipv6      Effective new value.
+
+    @in-example:  {"jsonrpc":"2.0","method":"call","params":["","wireguard_ipv4_only","set_config",{"enable_ipv6":false}],"id":1}
+    @out-example: {"jsonrpc":"2.0","id":1,"result":{"server":"main_server","enable_ipv6":false}}
+--]]
+M.set_config = function(params)
+    params = params or {}
+    local c = uci.cursor()
+    local servers = list_servers(c)
+    if #servers == 0 then
+        return { server = nil, enable_ipv6 = true, error = "no_wireguard_server_configured" }
+    end
+
+    local target = params.server
+    if target == nil or target == "" then
+        target = servers[1]
+    end
+
+    -- Verify the section actually exists -- never write to a
+    -- caller-controlled section name without validating it first.
+    local exists = false
+    for _, name in ipairs(servers) do
+        if name == target then exists = true; break end
+    end
+    if not exists then
+        return { server = target, enable_ipv6 = true, error = "unknown_server" }
+    end
+
+    local desired = as_bool(params.enable_ipv6)
+    local new_val = desired and "1" or "0"
+    local cur_val = c:get("wireguard_server", target, "enable_ipv6")
+    if cur_val ~= new_val then
+        c:set("wireguard_server", target, "enable_ipv6", new_val)
+        c:commit("wireguard_server")
+    end
+
+    -- Re-evaluate enforcement based on the new state. This is
+    -- idempotent and also re-runs when the value did not change.
+    trigger_sync()
+
+    return { server = target, enable_ipv6 = desired }
+end
+
+--[[
+    @method-name: get_status
+    @method-desc: Read-only snapshot of the enforcement state for
+                  every WG server section. Useful for the GUI to
+                  surface drift / "applied" indicators.
+
+    @out array   servers          One entry per server section:
+                                    { server, enable_ipv6,
+                                      enforced, kernel_dev,
+                                      live_global_ipv6 }
+
+    @in-example:  {"jsonrpc":"2.0","method":"call","params":["","wireguard_ipv4_only","get_status",{}],"id":1}
+--]]
+M.get_status = function(_)
+    local c = uci.cursor()
+    local servers = list_servers(c)
+    local out = {}
+    for _, name in ipairs(servers) do
+        local enable_ipv6 = as_bool(c:get("wireguard_server", name, "enable_ipv6"))
+        local dev = c:get("wireguard_server", name, "ifname")
+            or c:get("wireguard_server", name, "device")
+            or "wgserver"
+        local enforced = false
+        local f = io.open("/etc/sysctl.d/99-wg-noipv6-" .. dev .. ".conf", "r")
+        if f then enforced = true; f:close() end
+
+        local live_v6 = 0
+        local sys_path = "/sys/class/net/" .. dev
+        local s = io.open(sys_path .. "/ifindex", "r")
+        if s then
+            s:close()
+            local p = io.popen("ip -6 addr show dev " .. dev
+                .. " 2>/dev/null | awk '/inet6/ && $2 !~ /^fe80/' | wc -l")
+            if p then
+                local n = p:read("*n")
+                p:close()
+                live_v6 = tonumber(n) or 0
+            end
+        end
+
+        out[#out + 1] = {
+            server = name,
+            enable_ipv6 = enable_ipv6,
+            enforced = enforced,
+            kernel_dev = dev,
+            live_global_ipv6 = live_v6,
+        }
+    end
+    return { servers = out }
+end
+
+return M
