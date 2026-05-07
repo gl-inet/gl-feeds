@@ -50,7 +50,17 @@ cmd_status() {
 		_dev="$(wg_glinet_kernel_dev "$_srv")"
 		_label="glinet/${_srv} (${_dev})"
 		if [ "$_global" = "enabled" ]; then
-			printf '  [INFO] %s: no enforcement expected\n' "$_label"
+			_snap="$(_wg_snap_path_glinet "$_srv")"
+			[ ! -f "$_snap" ] && _ok=0 || _ok=1
+			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
+				"snapshot still present (un-restored): $_snap"
+
+			if wg_iface_is_valid "$_dev"; then
+				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+					&& _ok=0 || _ok=1
+				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
+					"stale sysctl drop-in present"
+			fi
 			continue
 		fi
 
@@ -90,7 +100,21 @@ cmd_status() {
 		_dev="$(wg_netifd_kernel_dev "$_iface")"
 		_label="netifd/${_iface} (${_dev})"
 		if [ "$_global" = "enabled" ]; then
-			printf '  [INFO] %s: no enforcement expected\n' "$_label"
+			_snap="$(_wg_snap_path_netifd "$_iface")"
+			[ ! -f "$_snap" ] && _ok=0 || _ok=1
+			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
+				"snapshot still present (un-restored): $_snap"
+
+			[ "$(uci -q get "network.${_iface}.ipv6")" != "0" ] && _ok=0 || _ok=1
+			_pf "$_ok" "netifd/${_iface}" "ipv6 not pinned to 0" \
+				"ipv6=0 still pinned"
+
+			if wg_iface_is_valid "$_dev"; then
+				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+					&& _ok=0 || _ok=1
+				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
+					"stale sysctl drop-in present"
+			fi
 			continue
 		fi
 
@@ -128,10 +152,12 @@ main() {
 		apply)
 			_need_dev "${1:-}"
 			wg_apply_dev_hostside "$1"
+			_wg_say "apply: enforced IPv4-only host-side state on $1"
 			;;
 		clear)
 			_need_dev "${1:-}"
 			wg_clear_dev "$1"
+			_wg_say "clear: removed host-side enforcement on $1"
 			;;
 		clear-all)
 			wg_clear_all

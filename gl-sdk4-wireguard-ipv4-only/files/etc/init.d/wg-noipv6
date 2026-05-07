@@ -7,11 +7,13 @@ STOP=10
 USE_PROCD=1
 
 start_service() {
-	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+	# Hooks should only log to syslog -- never to stderr -- to keep procd
+	# logs and serial consoles clean.
+	WG_NOIPV6_QUIET=1 /usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
 }
 
 reload_service() {
-	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+	WG_NOIPV6_QUIET=1 /usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
 }
 
 stop_service() {
@@ -24,4 +26,5 @@ service_triggers() {
 	procd_add_reload_trigger "wireguard_server"
 	procd_add_reload_trigger "network"
 	procd_add_reload_trigger "firewall"
+	procd_add_reload_trigger "glconfig"
 }

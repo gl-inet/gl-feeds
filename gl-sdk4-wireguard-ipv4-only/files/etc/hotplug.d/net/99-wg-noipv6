@@ -19,8 +19,24 @@ esac
 . /usr/lib/wg-noipv6/functions.sh
 
 wg_iface_is_valid "$DEVICENAME" || exit 0
-[ "$(wg_global_ipv6_enabled)" = "0" ] || exit 0
 
-/usr/sbin/wg-noipv6 apply "$DEVICENAME" >/dev/null 2>&1 || true
+# Hotplug context: never echo to stderr, just syslog.
+export WG_NOIPV6_QUIET=1
+
+if [ "$(wg_global_ipv6_enabled)" = "0" ]; then
+	/usr/sbin/wg-noipv6 apply "$DEVICENAME" >/dev/null 2>&1 || true
+else
+	# Global IPv6 was re-enabled but we still hold leftover host-side
+	# enforcement or pending UCI snapshots. Run a full sync so the enable
+	# path can clean up and restore.
+	_stale=0
+	[ -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${DEVICENAME}.conf" ] && _stale=1
+	if [ "$_stale" -eq 0 ] && [ -d "$WG_NOIPV6_BACKUP_DIR" ]; then
+		for _f in "$WG_NOIPV6_BACKUP_DIR"/*.snap; do
+			[ -f "$_f" ] && { _stale=1; break; }
+		done
+	fi
+	[ "$_stale" -eq 1 ] && /usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+fi
 
 exit 0

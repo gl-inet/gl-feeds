@@ -1,10 +1,13 @@
 #!/bin/sh
-# Re-apply IPv4-only enforcement when a netifd interface comes up.
+# Re-apply IPv4-only enforcement when a tracked netifd interface comes up.
 
 [ "$ACTION" = "ifup" ] || exit 0
 [ -n "$INTERFACE" ] || exit 0
 
 . /usr/lib/wg-noipv6/functions.sh
+
+# Hotplug context: never echo to stderr, just syslog.
+export WG_NOIPV6_QUIET=1
 
 case " $(wg_list_netifd_ifaces) $(wg_list_glinet_servers) " in
 	*" ${INTERFACE} "*) wg_sync_all ;;
