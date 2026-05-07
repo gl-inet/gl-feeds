@@ -28,6 +28,9 @@ FRONTEND_ORIG:=AdGuardHome_frontend.tar.gz
 FRONTEND_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)
 FRONTEND_HASH:=a69c540fe6959575330bdea150e31eee0c0c204985bf50e3522ce6d292e3c64e
 
+GO_MOD_PROXY?=https://proxy.golang.org,direct
+GO_MOD_SUMDB?=sum.golang.org
+
 PKG_BUILD_DIR:=$(BUILD_DIR)/AdGuardHome-$(PKG_VERSION)
 
 PKG_LICENSE:=GPL-3.0-only
@@ -98,8 +101,8 @@ define Build/Prepare
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
 	cd $(PKG_BUILD_DIR)/../dnsproxy && \
-		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0 && \
-		GOPROXY=https://goproxy.cn,direct go mod tidy
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/florianl/go-conntrack@v0.4.0 && \
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go mod tidy
 	rm -rf $(PKG_BUILD_DIR)/../dnscrypt
 	mkdir -p $(PKG_BUILD_DIR)/../dnscrypt
 	$(TAR) -xzf $(DL_DIR)/$(DNSCRYPT_SOURCE) -C $(PKG_BUILD_DIR)/../dnscrypt --strip-components=1
@@ -107,8 +110,8 @@ define Build/Prepare
 	cd $(PKG_BUILD_DIR) && \
 		go mod edit -replace=github.com/AdguardTeam/dnsproxy=../dnsproxy && \
 		go mod edit -replace=github.com/ameshkov/dnscrypt/v2=../dnscrypt && \
-		GOPROXY=https://goproxy.cn,direct go get github.com/florianl/go-conntrack@v0.4.0 && \
-		GOPROXY=https://goproxy.cn,direct go mod tidy
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/florianl/go-conntrack@v0.4.0 && \
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go mod tidy
 endef
 
 define Build/Compile
