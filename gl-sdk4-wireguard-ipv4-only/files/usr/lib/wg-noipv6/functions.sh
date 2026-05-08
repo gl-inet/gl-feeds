@@ -622,11 +622,14 @@ wg_clear_dev() {
 _wg_teardown_section() {
 	_state="$1"
 	_dev="$2"
+	_old=""
 	if [ -f "$_state" ]; then
 		_old="$(head -n1 "$_state" 2>/dev/null)"
 		wg_iface_is_valid "$_old" && wg_clear_dev "$_old"
 		rm -f "$_state"
 	fi
+	# Avoid clearing the same dev twice when the state file matched.
+	[ "$_old" = "$_dev" ] && return 0
 	wg_iface_is_valid "$_dev" && wg_clear_dev "$_dev"
 }
 

@@ -50,16 +50,43 @@ cmd_status() {
 		_dev="$(wg_glinet_kernel_dev "$_srv")"
 		_label="glinet/${_srv} (${_dev})"
 		if [ "$_global" = "enabled" ]; then
+			# Two PASS checks: nothing leftover from a previous enforce.
 			_snap="$(_wg_snap_path_glinet "$_srv")"
 			[ ! -f "$_snap" ] && _ok=0 || _ok=1
 			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
-				"snapshot still present (un-restored): $_snap"
+				"snapshot still present (un-restored): $_snap -- run: wg-noipv6 sync"
 
 			if wg_iface_is_valid "$_dev"; then
 				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
 					&& _ok=0 || _ok=1
 				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
-					"stale sysctl drop-in present"
+					"stale sysctl drop-in present -- run: wg-noipv6 clear ${_dev}"
+			fi
+
+			# INFO lines: show what IPv6 is actually present so the user
+			# can confirm restore put things back the way they expect.
+			_v6srv="$(uci -q get "wireguard_server.${_srv}.address_v6" 2>/dev/null)"
+			if [ -n "$_v6srv" ]; then
+				printf '  [INFO] %s: UCI address_v6 = %s\n' "$_label" "$_v6srv"
+			else
+				printf '  [INFO] %s: UCI address_v6 not set\n' "$_label"
+			fi
+
+			_v6peers=0
+			for _p in $(wg_list_glinet_peers); do
+				for _key in client_ip allowed_ips; do
+					_cur="$(uci -q get "wireguard_server.${_p}.${_key}" 2>/dev/null)"
+					case "$_cur" in *:*) _v6peers=$((_v6peers+1));; esac
+				done
+			done
+			printf '  [INFO] %s: %d peer entry/entries contain IPv6\n' \
+				"$_label" "$_v6peers"
+
+			if wg_iface_is_valid "$_dev" && [ -d "/sys/class/net/$_dev" ]; then
+				_live=$(ip -6 addr show dev "$_dev" 2>/dev/null \
+						| awk '/inet6/ && $2 !~ /^fe80/' | wc -l)
+				printf '  [INFO] %s: %d global IPv6 address(es) on kernel dev\n' \
+					"$_label" "$_live"
 			fi
 			continue
 		fi
@@ -103,17 +130,33 @@ cmd_status() {
 			_snap="$(_wg_snap_path_netifd "$_iface")"
 			[ ! -f "$_snap" ] && _ok=0 || _ok=1
 			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
-				"snapshot still present (un-restored): $_snap"
+				"snapshot still present (un-restored): $_snap -- run: wg-noipv6 sync"
 
 			[ "$(uci -q get "network.${_iface}.ipv6")" != "0" ] && _ok=0 || _ok=1
 			_pf "$_ok" "netifd/${_iface}" "ipv6 not pinned to 0" \
-				"ipv6=0 still pinned"
+				"ipv6=0 still pinned -- run: wg-noipv6 sync"
 
 			if wg_iface_is_valid "$_dev"; then
 				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
 					&& _ok=0 || _ok=1
 				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
-					"stale sysctl drop-in present"
+					"stale sysctl drop-in present -- run: wg-noipv6 clear ${_dev}"
+			fi
+
+			# INFO lines: show what IPv6 is actually present.
+			_v6addrs=0
+			_addrs="$(uci -q get "network.${_iface}.addresses" 2>/dev/null)"
+			for _a in $_addrs; do
+				case "$_a" in *:*) _v6addrs=$((_v6addrs+1));; esac
+			done
+			printf '  [INFO] %s: %d IPv6 address(es) in network UCI\n' \
+				"$_label" "$_v6addrs"
+
+			if wg_iface_is_valid "$_dev" && [ -d "/sys/class/net/$_dev" ]; then
+				_live=$(ip -6 addr show dev "$_dev" 2>/dev/null \
+						| awk '/inet6/ && $2 !~ /^fe80/' | wc -l)
+				printf '  [INFO] %s: %d global IPv6 address(es) on kernel dev\n' \
+					"$_label" "$_live"
 			fi
 			continue
 		fi
