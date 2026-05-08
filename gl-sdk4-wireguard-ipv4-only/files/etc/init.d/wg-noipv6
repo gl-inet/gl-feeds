@@ -17,8 +17,15 @@ reload_service() {
 }
 
 stop_service() {
-	# Routine `stop` may just be a network restart; full teardown
-	# lives in `wg-noipv6 clear-all` (invoked by package prerm).
+	# No-op: we have no procd instance to kill. Full teardown lives in
+	# `wg-noipv6 clear-all` (invoked by package prerm). Returning early
+	# here also avoids any procd ubus chatter on a manual `stop`.
+	return 0
+}
+
+# Belt-and-suspenders for procd revisions that run service_stopped after
+# stop_service: same no-op, same reason.
+service_stopped() {
 	return 0
 }
 

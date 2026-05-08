@@ -10,7 +10,7 @@ include ./version.mk
 
 PKG_NAME:=gl-sdk4-wireguard-ipv4-only
 PKG_VERSION:=$(strip $(call findrev))
-PKG_RELEASE:=6
+PKG_RELEASE:=8
 
 PKG_LICENSE:=GPL-2.0
 PKG_MAINTAINER:=GL.iNet <support@gl-inet.com>
@@ -73,9 +73,24 @@ endef
 define Package/gl-sdk4-wireguard-ipv4-only/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
-	/etc/init.d/wg-noipv6 stop >/dev/null 2>&1 || true
-	/etc/init.d/wg-noipv6 disable >/dev/null 2>&1 || true
+	# Cleanup first: snapshot restore, drop-in removal, deferred coalesced
+	# reloads. This MUST happen before init.d/disable so a half-uninstall
+	# (interrupted opkg) still reverts the system to a sane state.
 	/usr/sbin/wg-noipv6 clear-all >/dev/null 2>&1 || true
+
+	# We deliberately do NOT call `/etc/init.d/wg-noipv6 stop` here.
+	# Under USE_PROCD=1 procd's stop verb issues a `ubus call service
+	# delete` for the service name, which prints "Command failed: Not
+	# found" to opkg's console because we never register a procd instance
+	# (we are a reload-only service, no daemon). `disable` alone is enough
+	# to remove the rc.d symlinks before opkg deletes the init.d script.
+	/etc/init.d/wg-noipv6 disable >/dev/null 2>&1 || true
+
+	# Drop our cron-tick entry (matched by trailing comment marker).
+	if [ -f /etc/crontabs/root ]; then
+		sed -i '/# wg-noipv6 reconcile$$/d' /etc/crontabs/root 2>/dev/null || true
+		/etc/init.d/cron reload >/dev/null 2>&1 || /etc/init.d/cron restart >/dev/null 2>&1 || true
+	fi
 fi
 exit 0
 endef

@@ -10,7 +10,7 @@ export LC_ALL
 
 usage() {
 	cat <<USAGE
-Usage: wg-noipv6 [sync|apply <dev>|clear <dev>|clear-all|status]
+Usage: wg-noipv6 [sync|apply <dev>|clear <dev>|clear-all|status|cron-tick]
 
   sync          (default) reconcile every WG server section against the
                 global IPv6 state shown on /#/ipv6.
@@ -18,6 +18,8 @@ Usage: wg-noipv6 [sync|apply <dev>|clear <dev>|clear-all|status]
   clear <dev>   remove IPv4-only state for kernel device <dev>.
   clear-all     remove every drop-in installed by this package.
   status        print PASS/FAIL audit per WG server section.
+  cron-tick     periodic safety-net for the /#/ipv6 toggle. Silent
+                unless the global IPv6 state changed since last tick.
 USAGE
 }
 
@@ -26,6 +28,35 @@ _need_dev() {
 		echo "wg-noipv6: invalid device name: ${1:-<empty>}" >&2
 		exit 1
 	}
+}
+
+# Periodic safety net for the /#/ipv6 toggle.
+#
+# Some GL.iNet 4.x firmware revisions only commit `glconfig.general.
+# enable_ipv6` on the disable path -- without an `ifdown wan6`, without a
+# `network` reload, and without a `ubus call service event ...` for the
+# glconfig package. None of our procd reload triggers or hotplugs see this
+# transition, so a slow-poll reconciler is the only fully reliable way to
+# notice it.
+#
+# Logs nothing unless the global state has actually changed since the
+# previous tick (delegated to wg_sync_all, which already emits one summary
+# line per real reconcile).
+cmd_cron_tick() {
+	_state_dir="$WG_NOIPV6_STATE_DIR"
+	_last_file="${_state_dir}/last-global"
+	mkdir -p "$_state_dir" 2>/dev/null || true
+
+	_cur="$(wg_global_ipv6_enabled)"
+	_last="$(cat "$_last_file" 2>/dev/null)"
+
+	if [ "$_cur" = "$_last" ]; then
+		return 0
+	fi
+
+	printf '%s\n' "$_cur" > "$_last_file"
+	WG_NOIPV6_QUIET=1 wg_sync_all
+	return 0
 }
 
 cmd_status() {
@@ -208,6 +239,9 @@ main() {
 		status)
 			cmd_status
 			exit $?
+			;;
+		cron-tick)
+			cmd_cron_tick
 			;;
 		help|-h|--help)
 			usage
