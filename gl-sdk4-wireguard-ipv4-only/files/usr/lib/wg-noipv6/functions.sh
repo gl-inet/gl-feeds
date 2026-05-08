@@ -170,15 +170,34 @@ _wg_count_snaps() {
 }
 
 # Best-effort init.d reloads. Safe no-op when the script is absent.
+#
+# When _WG_NOIPV6_DEFER_KICK=1 is set in the environment of the caller,
+# the kick is skipped and the request is recorded in _WG_NOIPV6_PENDING_*
+# so the caller can issue a single coalesced reload at the end of a
+# multi-step operation (see wg_clear_all). This avoids cascading firewall
+# / wireguard_server / network reloads which on GL.iNet 4.x can leave the
+# router with broken outbound DNS for several seconds.
 _wg_kick_wgserver() {
+	if [ "${_WG_NOIPV6_DEFER_KICK:-0}" = "1" ]; then
+		_WG_NOIPV6_PENDING_WGSERVER=1
+		return 0
+	fi
 	[ -x /etc/init.d/wireguard_server ] && \
 		/etc/init.d/wireguard_server reload >/dev/null 2>&1 || true
 }
 _wg_kick_network() {
+	if [ "${_WG_NOIPV6_DEFER_KICK:-0}" = "1" ]; then
+		_WG_NOIPV6_PENDING_NETWORK=1
+		return 0
+	fi
 	[ -x /etc/init.d/network ] && \
 		/etc/init.d/network reload >/dev/null 2>&1 || true
 }
 _wg_kick_firewall() {
+	if [ "${_WG_NOIPV6_DEFER_KICK:-0}" = "1" ]; then
+		_WG_NOIPV6_PENDING_FIREWALL=1
+		return 0
+	fi
 	[ -x /etc/init.d/firewall ] && \
 		/etc/init.d/firewall reload >/dev/null 2>&1 || true
 }
@@ -684,15 +703,29 @@ wg_sync_all() {
 }
 
 # Package prerm helper. Restore everything to the pre-install state without
-# touching the global IPv6 toggle. Step-by-step in code below.
+# touching the global IPv6 toggle.
+#
+# IMPORTANT: defer all init.d reloads until the very end and issue at most
+# one each, in safe order (firewall -> wireguard_server -> network). On
+# GL.iNet 4.x, multiple cascading firewall reloads overlapping with a
+# wireguard_server reload can leave the router's own outbound traffic
+# (including DNS) blackholed for several seconds.
 wg_clear_all() {
 	_wg_say "uninstall: starting full restore"
 
 	_g_total="$(_wg_count_snaps glinet)"
 	_n_total="$(_wg_count_snaps netifd)"
 
-	# 1. Tear down host-side enforcement BEFORE reloading wireguard_server,
-	#    so the daemon can re-add v6 addresses to a re-enabled kernel device.
+	# Defer every kick from here on; we'll coalesce at the end.
+	_WG_NOIPV6_DEFER_KICK=1
+	_WG_NOIPV6_PENDING_FIREWALL=0
+	_WG_NOIPV6_PENDING_WGSERVER=0
+	_WG_NOIPV6_PENDING_NETWORK=0
+	export _WG_NOIPV6_DEFER_KICK
+
+	# 1. Tear down host-side enforcement (sysctl drop-ins, fw4 nft drop-ins,
+	#    fw3 scripts). wg_clear_dev will set _WG_NOIPV6_PENDING_FIREWALL=1
+	#    via _wg_kick_firewall instead of reloading immediately.
 	if [ -d "$WG_NOIPV6_STATE_DIR" ]; then
 		for _f in "$WG_NOIPV6_STATE_DIR"/*.dev; do
 			[ -f "$_f" ] || continue
@@ -701,33 +734,47 @@ wg_clear_all() {
 			rm -f "$_f"
 		done
 	fi
+	# Belt-and-suspenders: drop any leftover drop-in files whose state file
+	# was already gone (e.g. someone deleted /var/run by hand).
 	for _f in "$WG_NOIPV6_SYSCTL_DIR"/99-wg-noipv6-*.conf \
 	          "$WG_NOIPV6_NFT_DIR"/99-wg-noipv6-*.nft \
 	          "$WG_NOIPV6_FW3_DIR"/wg-noipv6-*.sh; do
-		[ -f "$_f" ] && rm -f "$_f"
+		[ -f "$_f" ] || continue
+		rm -f "$_f"
+		_WG_NOIPV6_PENDING_FIREWALL=1
 	done
 
-	# 2. Drop our firewall UCI includes.
+	# 2. Drop our firewall UCI includes (fw3 case). One commit if anything
+	#    changed; the firewall reload is still deferred.
 	_changed=0
 	for _i in $(uci -q show firewall 2>/dev/null \
 			| awk -F. '/^firewall\.wg_noipv6_/ { sub(/=.*/, "", $2); print $2 }' \
 			| sort -u); do
 		uci -q delete "firewall.${_i}" 2>/dev/null && _changed=1
 	done
-	[ "$_changed" -eq 1 ] && uci -q commit firewall
+	if [ "$_changed" -eq 1 ]; then
+		uci -q commit firewall
+		_WG_NOIPV6_PENDING_FIREWALL=1
+	fi
 
-	# 3. Reload firewall + re-apply system sysctls so /proc reflects only
-	#    what the user actually wants.
-	_wg_kick_firewall
-	sysctl --system >/dev/null 2>&1 || true
-
-	# 4. Restore UCI snapshots; wg_restore_glinet kicks wireguard_server.
+	# 3. Restore UCI snapshots. wg_restore_glinet will set
+	#    _WG_NOIPV6_PENDING_WGSERVER via the deferred kick rather than
+	#    reloading wireguard_server once per server.
 	wg_restore_all
+	[ "$_n_total" -gt 0 ] && _WG_NOIPV6_PENDING_NETWORK=1
 
-	# 5. Reload netifd only when something was put back into network UCI.
-	[ "$_n_total" -gt 0 ] && _wg_kick_network
+	# 4. Coalesced reloads, in the only safe order:
+	#    a) firewall first -- our drop-ins must be gone before
+	#       wireguard_server tries to bring wgserver back with v6 addrs.
+	#    b) wireguard_server next -- so the daemon re-emits its own zone
+	#       on top of a clean firewall.
+	#    c) network last -- only when netifd UCI was actually mutated.
+	unset _WG_NOIPV6_DEFER_KICK
+	[ "$_WG_NOIPV6_PENDING_FIREWALL" = "1" ] && _wg_kick_firewall
+	[ "$_WG_NOIPV6_PENDING_WGSERVER" = "1" ] && _wg_kick_wgserver
+	[ "$_WG_NOIPV6_PENDING_NETWORK"  = "1" ] && _wg_kick_network
 
-	# 6. Drop on-disk backup + state.
+	# 5. Drop on-disk backup + state.
 	rm -rf "$WG_NOIPV6_BACKUP_DIR" 2>/dev/null || true
 	rmdir /etc/wg-noipv6 2>/dev/null || true
 	rm -rf "$WG_NOIPV6_STATE_DIR" 2>/dev/null || true

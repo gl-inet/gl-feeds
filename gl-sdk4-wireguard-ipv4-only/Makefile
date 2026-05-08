@@ -10,7 +10,7 @@ include ./version.mk
 
 PKG_NAME:=gl-sdk4-wireguard-ipv4-only
 PKG_VERSION:=$(strip $(call findrev))
-PKG_RELEASE:=5
+PKG_RELEASE:=6
 
 PKG_LICENSE:=GPL-2.0
 PKG_MAINTAINER:=GL.iNet <support@gl-inet.com>
