@@ -1,0 +1,16 @@
+--- a/nl80211.lua
++++ b/nl80211.lua
+@@ -605,11 +605,11 @@ local function parse_rsn(data, defcipher, defauth)
+         local id = str_byte(data, 4)
+ 
+         if oui == OUI_MICROSOFT then
+-            if id < 3 then
++            if id < 3 and auth_suite_names[id] then
+                 auth_suites[auth_suite_names[id]] = true
+             end
+         elseif oui == OUI_IEEE80211 then
+-            if id < 19 then
++            if id < 19 and auth_suite_names[id] then
+                 auth_suites[auth_suite_names[id]] = true
+             end
+         end
