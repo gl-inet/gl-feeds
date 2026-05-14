@@ -292,17 +292,85 @@ uci_lua_load(lua_State *L)
 	return uci_push_status(L, ctx, false);
 }
 
+struct uci_foreach_state {
+    const struct uci_list *list;
+    struct uci_element *e;
+    struct uci_element *tmp;
+    const char *type;
+    int i;
+    int cb;
+};
+
+static int lua_uci_foreach_k(lua_State *L, int status, lua_KContext kctx)
+{
+    struct uci_foreach_state *state = (struct uci_foreach_state *)kctx;
+    const char *type = state->type;
+    const struct uci_list *list = state->list;
+    struct uci_element *e = state->e;
+    struct uci_element *tmp = state->tmp;
+    struct uci_section *s;
+    bool stop = false;
+
+    switch (status) {
+    case LUA_ERRRUN:
+    case LUA_ERRMEM:
+    case LUA_ERRERR:
+        return lua_error(L);
+    case LUA_YIELD:
+        if (lua_isboolean(L, -1))
+            stop = !lua_toboolean(L, -1);
+        lua_pop(L, 1);
+        break;
+    }
+
+    while (!stop) {
+        int i = state->i++;
+        if (i) {
+            e = tmp;
+            tmp = list_to_element(e->list.next);
+        }
+
+        if (&e->list == list)
+            break;
+
+        s = uci_to_section(e);
+
+        if (type && (strcmp(s->type, type) != 0))
+            continue;
+
+        lua_rawgeti(L, LUA_REGISTRYINDEX, state->cb);
+        uci_push_section(L, s, i);
+
+        state->e = e;
+        state->tmp = tmp;
+
+        status = lua_pcallk(L, 1, 1, 0, (lua_KContext)state, lua_uci_foreach_k);
+        if (status != LUA_OK)
+            return lua_error(L);
+
+        if (lua_isboolean(L, -1))
+            stop = !lua_toboolean(L, -1);
+
+        lua_pop(L, 1);
+    }
+
+    luaL_unref(L, LUA_REGISTRYINDEX, state->cb);
+    lua_pushboolean(L, true);
+    free(state);
+
+    return 1;
+}
 
 static int
 uci_lua_foreach(lua_State *L)
 {
+	struct uci_foreach_state *state;
 	struct uci_context *ctx;
 	struct uci_package *p;
 	struct uci_element *e, *tmp;
 	const char *package, *type;
 	bool ret = false;
 	int offset = 0;
-	int i = 0;
 
 	ctx = find_context(L, &offset);
 	package = luaL_checkstring(L, 1 + offset);
@@ -319,27 +387,20 @@ uci_lua_foreach(lua_State *L)
 	if (!p)
 		goto done;
 
-	uci_foreach_element_safe(&p->sections, tmp, e) {
-		struct uci_section *s = uci_to_section(e);
+	state = calloc(1, sizeof(struct uci_foreach_state));
+    if (!state)
+        goto done;
 
-		i++;
+    state->type = type;
+    state->list = &p->sections;
+    state->e = list_to_element(p->sections.next);
+    state->tmp = list_to_element(state->e->list.next);
+    state->i = 0;
 
-		if (type && (strcmp(s->type, type) != 0))
-			continue;
+    lua_pushvalue(L, 3 + offset);
+    state->cb = luaL_ref(L, LUA_REGISTRYINDEX);
 
-		lua_pushvalue(L, 3 + offset); /* iterator function */
-		uci_push_section(L, s, i - 1);
-		if (lua_pcall(L, 1, 1, 0) == 0) {
-			ret = true;
-			if (lua_isboolean(L, -1) && !lua_toboolean(L, -1))
-				break;
-		}
-		else
-		{
-			lua_error(L);
-			break;
-		}
-	}
+	return lua_uci_foreach_k(L, LUA_OK, (lua_KContext)state);
 
 done:
 	lua_pushboolean(L, ret);
