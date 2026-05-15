@@ -1,0 +1,22 @@
+diff --git a/src/rfc2131.c b/src/rfc2131.c
+index 9ff28da..de770d0 100644
+--- a/src/rfc2131.c
++++ b/src/rfc2131.c
+@@ -747,7 +747,7 @@ size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
+       
+       *pq = 0;
+       
+-      if (legal_hostname(daemon->dhcp_buff))
++      if (1 /* GL: disable legal_hostname */)
+ 	offer_hostname = client_hostname = daemon->dhcp_buff;
+     }
+   else if ((opt = option_find(mess, sz, OPTION_HOSTNAME, 1)))
+@@ -761,7 +761,7 @@ size_t dhcp_reply(struct dhcp_context *context, char *iface_name, int int_index,
+ 	borken_opt = 1;
+       else
+ 	daemon->dhcp_buff[len] = 0;
+-      if (legal_hostname(daemon->dhcp_buff))
++      if (1 /* GL: disable legal_hostname */)
+ 	client_hostname = daemon->dhcp_buff;
+     }
+ 

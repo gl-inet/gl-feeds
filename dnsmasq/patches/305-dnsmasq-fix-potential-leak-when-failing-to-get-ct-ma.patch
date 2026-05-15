@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GL.iNet <noreply@gl-inet.com>
+Subject: [PATCH] dnsmasq 2.92: defer ctmark fetch, SERVFAIL if mark unreadable
+
+Defer get_incoming_mark until after TCP query + EDNS0 processing when
+conntrack or CMARK allowlist is enabled. If mark cannot be read, reply
+SERVFAIL and avoid forwarding upstream (DNS leak mitigation).
+
+Apply after 304-feat-dnsmasq-support-config-mark-for-outgoing-packet.patch.
+
+---
+ src/forward.c | 53 +++++++++++++++++++++++++++++++++++++++--------------
+ 1 file changed, 38 insertions(+), 15 deletions(-)
+
+diff --git a/src/forward.c b/src/forward.c
+index 1111111..2222222 100644
+--- a/src/forward.c
++++ b/src/forward.c
+@@ -2386,21 +2386,6 @@ unsigned char *tcp_request(int confd, time_t now,
+   if (!packet || getpeername(confd, (struct sockaddr *)&peer_addr, &peer_len) == -1)
+     return packet;
+ 
+-#ifdef HAVE_CONNTRACK
+-  /* Get connection mark of incoming query to set on outgoing connections. */
+-  if (option_bool(OPT_CONNTRACK) || option_bool(OPT_CMARK_ALST_EN))
+-    {
+-      union all_addr local;
+-		      
+-      if (local_addr->sa.sa_family == AF_INET6)
+-	local.addr6 = local_addr->in6.sin6_addr;
+-      else
+-	local.addr4 = local_addr->in.sin_addr;
+-      
+-      have_mark = get_incoming_mark(&peer_addr, &local, 1, &mark);
+-    }
+-#endif	
+-
+   /* We can be configured to only accept queries from at-most-one-hop-away addresses. */
+   if (option_bool(OPT_LOCAL_SERVICE))
+     {
+@@ -2492,6 +2477,39 @@ unsigned char *tcp_request(int confd, time_t now,
+ 		}
+ 
+ 	      size = add_edns0_config(header, size, ((unsigned char *) header) + 65536, &peer_addr, now, &cacheable);
++
++#ifdef HAVE_CONNTRACK
++	      /* Get connection mark of incoming query to set on outgoing connections. */
++	      if (option_bool(OPT_CONNTRACK) || option_bool(OPT_CMARK_ALST_EN))
++		{
++		  union all_addr local;
++
++		  if (local_addr->sa.sa_family == AF_INET6)
++		    local.addr6 = local_addr->in6.sin6_addr;
++		  else
++		    local.addr4 = local_addr->in.sin_addr;
++
++		  have_mark = get_incoming_mark(&peer_addr, &local, 1, &mark);
++		}
++	      if ((option_bool(OPT_CONNTRACK) || option_bool(OPT_CMARK_ALST_EN)) && !have_mark)
++		{
++		  header->hb3 = (header->hb3 & ~(HB3_AA | HB3_TC )) | HB3_QR;
++		  header->hb4 = (header->hb4 & ~HB4_AD) | HB4_RA;
++		  header->nscount = htons(0);
++		  header->arcount = htons(0);
++		  header->ancount = htons(0);
++		  SET_RCODE(header, SERVFAIL);
++		  m = resize_packet(header, size, have_pseudoheader ? pheader : NULL, 0);
++		  if (have_pseudoheader)
++		    m = add_pseudoheader(header, m, ((unsigned char *) header) + daemon->edns_pktsz,
++					      0, NULL, 0, do_bit, 0);
++		  check_log_writer(1);
++		  *length = htons(m);
++		  (void)read_write(confd, packet, m + sizeof(u16), 0);
++		  continue;
++		}
++#endif
++
+ 	      saved_question = blockdata_alloc((char *)header, (size_t)size);
+ 	      saved_size = size;
+ 	

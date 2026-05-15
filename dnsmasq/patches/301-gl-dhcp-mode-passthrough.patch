@@ -1,0 +1,65 @@
+diff --git a/src/dnsmasq.h b/src/dnsmasq.h
+index 90f3704..1111111 100644
+--- a/src/dnsmasq.h
++++ b/src/dnsmasq.h
+@@ -1342,6 +1342,7 @@ extern struct daemon {
+   /* file for packet dumps. */
+   int dumpfd;
+ #endif
++  char *mode; /* GL --dhcp-mode passthrough|router */
+   int max_procs;
+   uint max_procs_used;
+ } *daemon;
+diff --git a/src/lease.c b/src/lease.c
+index 00748ad..2222222 100644
+--- a/src/lease.c
++++ b/src/lease.c
+@@ -645,6 +645,9 @@ struct dhcp_lease *lease_find_by_client(unsigned char *hwaddr, int hw_len, int h
+ {
+   struct dhcp_lease *lease;
+ 
++  if (daemon->mode && strcmp(daemon->mode, "passthrough") == 0)
++    return NULL;
++
+   if (clid)
+     for (lease = leases; lease; lease = lease->next)
+       {
+diff --git a/src/option.c b/src/option.c
+index a13f1fa..3333333 100644
+--- a/src/option.c
++++ b/src/option.c
+@@ -197,6 +197,7 @@ struct myoption {
+ #define LOPT_DO_ENCODE     388
+ #define LOPT_LEASEQUERY    389
+ #define LOPT_SPLIT_RELAY   390
++#define LOPT_DHCP_MODE     503
+ 
+ #ifdef HAVE_GETOPT_LONG
+ static const struct option opts[] =  
+@@ -389,6 +390,7 @@ static const struct myoption opts[] =
+     { "dumpmask", 1, 0, LOPT_DUMPMASK },
+     { "dhcp-ignore-clid", 0, 0,  LOPT_IGNORE_CLID },
+     { "dynamic-host", 1, 0, LOPT_DYNHOST },
++    { "dhcp-mode", 1, 0, LOPT_DHCP_MODE },
+     { "log-debug", 0, 0, LOPT_LOG_DEBUG },
+     { "umbrella", 2, 0, LOPT_UMBRELLA },
+     { "quiet-tftp", 0, 0, LOPT_QUIET_TFTP },
+@@ -598,6 +600,7 @@ static struct {
+   { LOPT_DUMPFILE, ARG_ONE, "<path>", gettext_noop("Path to debug packet dump file."), NULL },
+   { LOPT_DUMPMASK, ARG_ONE, "<hex>", gettext_noop("Mask which packets to dump."), NULL },
+   { LOPT_SCRIPT_TIME, OPT_LEASE_RENEW, NULL, gettext_noop("Call dhcp-script when lease expiry changes."), NULL },
++  { LOPT_DHCP_MODE, ARG_ONE, "<mode>", gettext_noop("DHCP mode router or passthrough (GL)."), NULL },
+   { LOPT_UMBRELLA, ARG_ONE, "[=<optspec>]", gettext_noop("Send Cisco Umbrella identifiers including remote IP."), NULL },
+   { LOPT_QUIET_TFTP, OPT_QUIET_TFTP, NULL, gettext_noop("Do not log routine TFTP."), NULL },
+   { LOPT_NORR, OPT_NORR, NULL, gettext_noop("Suppress round-robin ordering of DNS records."), NULL },
+@@ -2372,6 +2375,10 @@ static int one_opt(int option, char *arg, char *errstr, char *gen_err, int comma
+     case LOPT_DUMPMASK:  /* --dumpmask */
+       daemon->dump_mask = strtol(arg, NULL, 0);
+       break;
++
++    case LOPT_DHCP_MODE:  /* --dhcp-mode */
++      daemon->mode = opt_string_alloc(arg);
++      break;
+       
+ #ifdef HAVE_DHCP      
+     case 'l':  /* --dhcp-leasefile */
