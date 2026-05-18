@@ -1,0 +1,14 @@
+Index: tailscale-1.92.5/net/tstun/wrap.go
+===================================================================
+--- tailscale-1.92.5.orig/net/tstun/wrap.go
++++ tailscale-1.92.5/net/tstun/wrap.go
+@@ -1052,7 +1052,8 @@
+ // TODO(jwhited): plumb partial checksum awareness into net/packet/checksum.
+ func invertGSOChecksum(pkt []byte, gso netstack_GSO) {
+ 	if !buildfeatures.HasNetstack {
+-		panic("unreachable")
++		// injectedRead() always calls this; with ts_omit_netstack gso is unused.
++		return
+ 	}
+ 	if gso.NeedsCsum != true {
+ 		return

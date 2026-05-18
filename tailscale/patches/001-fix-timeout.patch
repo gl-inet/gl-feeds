@@ -1,0 +1,12 @@
+Index: tailscale-1.92.5/client/local/local.go
+===================================================================
+--- tailscale-1.92.5.orig/client/local/local.go
++++ tailscale-1.92.5/client/local/local.go
+@@ -141,6 +141,7 @@ func (lc *Client) DoLocalRequest(req *ht
+ 			Transport: cmp.Or(lc.Transport, http.RoundTripper(
+ 				&http.Transport{DialContext: lc.dialer()}),
+ 			),
++			Timeout: time.Second * 5,
+ 		}
+ 	})
+ 	if !lc.OmitAuth {
