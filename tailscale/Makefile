@@ -48,7 +48,7 @@ GO_TS_ROUTER_OMIT:=ts_omit_ace,ts_omit_acme,ts_omit_appconnectors,ts_omit_aws,ts
 GO_PKG_TAGS:=ts_include_cli,$(GO_TS_ROUTER_OMIT)
 
 include $(INCLUDE_DIR)/package.mk
-include ../golang/golang-package.mk
+include ../../gl_feed_common/golang/golang-package.mk
 
 define Package/tailscale
   SECTION:=net
