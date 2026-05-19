@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Subject: [PATCH] feat: dnsmasq support config mark for outgoing packet
+
+---
+ src/dnsmasq.h |  1 +
+ src/forward.c |  6 +++++-
+ src/option.c |  8 +++++++
+ 3 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/src/dnsmasq.h b/src/dnsmasq.h
+index 1111111..2222222 100644
+--- a/src/dnsmasq.h
++++ b/src/dnsmasq.h
+@@ -1207,6 +1207,7 @@
+   int max_logs;  /* queue limit */
+   int randport_limit; /* Maximum number of source ports for query. */
+   int cachesize, ftabsize;
++  unsigned int outgoing_mark;
+   int port, query_port, min_port, max_port, log_level;
+   unsigned long local_ttl, neg_ttl, max_ttl, min_cache_ttl, max_cache_ttl, auth_ttl, dhcp_ttl, use_dhcp_ttl;
+   char *dns_client_id;
+diff --git a/src/option.c b/src/option.c
+index 1111111..2222222 100644
+--- a/src/option.c
++++ b/src/option.c
+@@ -199,6 +199,7 @@
+ #define LOPT_SPLIT_RELAY   390
+ #define LOPT_DHCP_MODE     503
+ #define LOPT_LOG_LEVEL     504
++#define LOPT_MARK          500
+ 
+ #ifdef HAVE_GETOPT_LONG
+ static const struct option opts[] =  
+@@ -219,6 +220,8 @@
+     { "mx-host", 1, 0, 'm' },
+     { "mx-target", 1, 0, 't' },
+     { "cache-size", 2, 0, 'c' },
++    { "mark", 1, 0, LOPT_MARK },
++    { "outgoing-mark", 1, 0, LOPT_MARK },
+     { "port", 1, 0, 'p' },
+     { "dhcp-leasefile", 2, 0, 'l' },
+     { "dhcp-lease", 1, 0, 'l' },
+@@ -421,6 +424,7 @@
+   { 'a', ARG_DUP, "<ipaddr>",  gettext_noop("Specify local address(es) to listen on."), NULL },
+   { 'A', ARG_DUP, "/<domain>/<ipaddr>", gettext_noop("Return ipaddr for all hosts in specified domains."), NULL },
+   { 'b', OPT_BOGUSPRIV, NULL, gettext_noop("Fake reverse lookups for RFC1918 private address ranges."), NULL },
++  { LOPT_MARK, ARG_ONE, "<hex>", gettext_noop("Specify the outgoing packet mark."), NULL },
+   { 'B', ARG_DUP, "<ipaddr>", gettext_noop("Treat ipaddr as NXDOMAIN (defeats Verisign wildcard)."), NULL }, 
+   { 'c', ARG_ONE, "<integer>", gettext_noop("Specify the size of the cache in entries (defaults to %s)."), "$" },
+   { 'C', ARG_DUP, "<path>", gettext_noop("Specify configuration file (defaults to %s)."), CONFFILE },
+@@ -3445,6 +3449,10 @@
+ 	break;
+       }
+       
++    case LOPT_MARK:  /* --mark / --outgoing-mark */
++      daemon->outgoing_mark = strtoul(arg, NULL, 0);
++      break;
++      
+     case 'p':  /* --port */
+       if (!atoi_check16(arg, &daemon->port))
+ 	ret_err(gen_err);
+diff --git a/src/forward.c b/src/forward.c
+index 1111111..2222222 100644
+--- a/src/forward.c
++++ b/src/forward.c
+@@ -533,6 +533,8 @@
+ 	  if (option_bool(OPT_CONNTRACK))
+ 	    set_outgoing_mark(forward, fd);
+ #endif
++	  if (daemon->outgoing_mark)
++	    setsockopt(fd, SOL_SOCKET, SO_MARK, &daemon->outgoing_mark, sizeof(unsigned int));
+ 	  if (retry_send(sendto(fd, (char *)header, plen, 0,
+ 				&srv->addr.sa,
+ 				sa_len(&srv->addr))))
+@@ -2079,7 +2081,9 @@
+ 	  if (have_mark)
+ 	    setsockopt(serv->tcpfd, SOL_SOCKET, SO_MARK, &mark, sizeof(unsigned int));
+ #endif			  
+-	  
++	  if (daemon->outgoing_mark)
++	    setsockopt(serv->tcpfd, SOL_SOCKET, SO_MARK, &daemon->outgoing_mark, sizeof(unsigned int));
++
+ 	  if ((!local_bind(serv->tcpfd,  &serv->source_addr, serv->interface, 0, 1)))
+ 	    {
+ 	      close(serv->tcpfd);
