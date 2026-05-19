@@ -1,0 +1,14 @@
+diff --git a/src/lease.c b/src/lease.c
+index 2222222..9dfeb81 100644
+--- a/src/lease.c
++++ b/src/lease.c
+@@ -1104,6 +1107,9 @@ void lease_set_hostname(struct dhcp_lease *lease, const char *name, int auth, ch
+ 		continue; 
+ 	    }
+ 
++	  if (new_name && lease_tmp->hostname && strcmp(new_name, lease_tmp->hostname) == 0)
++	    continue;
++
+ 	  if (lease->flags & (LEASE_TA | LEASE_NA))
+ 	    {
+ 	      if (!(lease_tmp->flags & (LEASE_TA | LEASE_NA)))
