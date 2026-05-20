@@ -608,7 +608,27 @@ dhcp_add() {
 		unset START
 		unset END
 		unset NETMASK
-		ipcalc "$ipaddr/$prefix_or_netmask" "$start" "$limit"
+		passthrough=`uci -q get passthrough.passthrough.enable`
+		local block=`uci -q get passthrough.passthrough.cable_block`
+		if [ "$passthrough" = "1" ] && [ "$block" != 1 ] ;then
+			local LIP=`uci -q get passthrough.passthrough.gateway`
+			local tmp=`ifconfig br-lan | grep "$LIP"`
+			if [ "$LIP" != "" ] && [ "$tmp" != "" ];then
+				local subnet=`uci -q get passthrough.passthrough.ipaddr`
+				local netmask=`uci -q get passthrough.passthrough.netmask`
+				ipcalc "$subnet/$netmask" 0 0
+				START=$IP
+				END=$IP
+				local mac=`uci -q get passthrough.passthrough.mac | awk '{print toupper($0)}'`
+				local tag="${mac},${subnet}"
+				[ "$mac" != "" ] && xappend "--dhcp-host=$tag"
+				rm /tmp/dhcp.leases 2>/dev/null
+			else
+				ipcalc "$ipaddr/$prefix_or_netmask" "$start" "$limit"
+			fi
+		else
+			ipcalc "$ipaddr/$prefix_or_netmask" "$start" "$limit"
+		fi
 
 		if [ -z "$START" ] || [ -z "$END" ] || [ -z "$NETMASK" ]; then
 			logger -t dnsmasq \
@@ -707,6 +727,15 @@ dhcp_option_add() {
 
 	[ "$force" = "0" ] && force=
 	[ "$force" = "2" ] && opt="dhcp_option_force"
+
+	passthrough=`uci -q get passthrough.passthrough.enable`
+	if [ "$passthrough" = "1" ] && [ "$cfg" = "lan" ] && [ "$networkid" = "lan" ] && [ "$force" = "" ];then
+		DNS=`uci -q get passthrough.passthrough.dns`
+		dhcp_option_append "$DNS" "$networkid" "$force"
+		CLASS_STATIC=`uci -q get passthrough.passthrough.class_static`
+		dhcp_option_append "$CLASS_STATIC" "$networkid" "$force"
+		return 0
+	fi
 
 	local list_len
 	config_get list_len "$cfg" "${opt}_LENGTH"
@@ -1018,7 +1047,12 @@ dnsmasq_start()
 	append_bool "$cfg" quietdhcp "--quiet-dhcp"
 	append_bool "$cfg" sequential_ip "--dhcp-sequential-ip"
 	append_bool "$cfg" allservers "--all-servers"
-	append_bool "$cfg" noping "--no-ping"
+	passthrough=`uci -q get passthrough.passthrough.enable`
+	if [ "$passthrough" = "1" ];then
+		xappend "--no-ping"
+	else
+		append_bool "$cfg" noping "--no-ping"
+	fi
 	append_bool "$cfg" rapidcommit "--dhcp-rapid-commit"
 	append_bool "$cfg" scriptarp "--script-arp"
 
@@ -1271,7 +1305,12 @@ dnsmasq_start()
 	config_list_foreach "$cfg" addnmount append_extramount
 
 	procd_open_instance $cfg
-	procd_set_param command $PROG -C $CONFIGFILE -k -x /var/run/dnsmasq/dnsmasq."${cfg}".pid
+	local passthrough=`uci -q get passthrough.passthrough.enable`
+	if [ "$passthrough" = "1" ];then
+		procd_set_param command $PROG -C $CONFIGFILE -k -x /var/run/dnsmasq/dnsmasq."${cfg}".pid --dhcp-mode passthrough
+	else
+		procd_set_param command $PROG -C $CONFIGFILE -k -x /var/run/dnsmasq/dnsmasq."${cfg}".pid
+	fi
 	procd_set_param file $CONFIGFILE
 	[ -n "$user_dhcpscript" ] && procd_set_param env USER_DHCPSCRIPT="$user_dhcpscript"
 	procd_set_param respawn 5 5 -1
