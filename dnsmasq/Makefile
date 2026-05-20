@@ -68,7 +68,7 @@ $(call Package/dnsmasq/Default)
   DEPENDS+=+PACKAGE_dnsmasq_full_dnssec:libnettle \
 	+PACKAGE_dnsmasq_full_ipset:kmod-ipt-ipset \
 	+PACKAGE_dnsmasq_full_conntrack:libnetfilter-conntrack \
-	+PACKAGE_dnsmasq_full_nftset:nftables-json
+	+nftables-json
   VARIANT:=full
   PROVIDES:=dnsmasq
 endef
@@ -116,7 +116,6 @@ define Package/dnsmasq-full/config
 		default y
 	config PACKAGE_dnsmasq_full_nftset
 		bool "Build with Nftset support."
-		depends on PACKAGE_nftables-json
 		default y
 	config PACKAGE_dnsmasq_full_conntrack
 		bool "Build with Conntrack support."
