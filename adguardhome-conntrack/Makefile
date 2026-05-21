@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=adguardhome-conntrack
 PKG_VERSION:=0.107.73
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/AdguardTeam/AdGuardHome/tar.gz/v$(PKG_VERSION)?
@@ -101,6 +101,7 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)/../dnsproxy
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
+	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0002-upstream-assign-nonzero-udp-id-for-zero-id-queries.patch
 	cd $(PKG_BUILD_DIR)/../dnsproxy && \
 		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/florianl/go-conntrack@v0.4.0 && \
 		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go mod tidy
