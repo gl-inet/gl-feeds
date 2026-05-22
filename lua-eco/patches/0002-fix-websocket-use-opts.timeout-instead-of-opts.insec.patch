@@ -1,0 +1,32 @@
+From 72a4eac871a7acce1d65a4640e4173d22e1c0d2a Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Mon, 11 May 2026 09:56:36 +0800
+Subject: [PATCH] fix(websocket): use opts.timeout instead of opts.insecure for
+ connect timeout
+
+M.connect was passing opts.insecure as the timeout value when creating
+the HTTP/WebSocket connection. This mixed TLS verification settings with
+timeout configuration and could result in invalid timeout behavior.
+Use opts.timeout so connection timeout works as intended.
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ websocket.lua | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/websocket.lua b/websocket.lua
+index dc66d5e2..28f031a5 100644
+--- a/websocket.lua
++++ b/websocket.lua
+@@ -384,7 +384,7 @@ function M.connect(uri, opts)
+ 
+     local res, err = hc:request('GET', uri, nil, {
+         insecure = opts.insecure,
+-        timeout = opts.insecure,
++        timeout = opts.timeout,
+         headers = headers
+     })
+     if not res then
+-- 
+2.34.1
+
