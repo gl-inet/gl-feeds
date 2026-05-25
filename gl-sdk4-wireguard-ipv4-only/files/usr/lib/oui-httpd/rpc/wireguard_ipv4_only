@@ -1,0 +1,141 @@
+--[[
+    @object-name: wireguard_ipv4_only
+    @object-desc: Read-only status surface for gl-sdk4-wireguard-ipv4-only.
+                  Toggling lives on /#/ipv6; this RPC never mutates UCI.
+--]]
+
+local uci = require "uci"
+
+local M = {}
+
+local function list_servers(c)
+    local out = {}
+    c:foreach("wireguard_server", "servers", function(s)
+        if s and s[".name"] then
+            out[#out + 1] = s[".name"]
+        end
+    end)
+    return out
+end
+
+local function list_netifd_wg(c)
+    local out = {}
+    c:foreach("network", "interface", function(s)
+        if s and s.proto == "wireguard" and s[".name"] then
+            out[#out + 1] = s[".name"]
+        end
+    end)
+    return out
+end
+
+-- Mirror of wg_global_ipv6_enabled() in /usr/lib/wg-noipv6/functions.sh.
+local function global_ipv6_enabled(c)
+    local function as_explicit_bool(v)
+        if v == nil then return nil end
+        local s = tostring(v):lower()
+        if s == "0" or s == "false" or s == "off" or s == "no" or s == "disabled" then
+            return false
+        end
+        if s == "1" or s == "true" or s == "on" or s == "yes" or s == "enabled" then
+            return true
+        end
+        return nil
+    end
+
+    local v = as_explicit_bool(c:get("glconfig", "general", "enable_ipv6"))
+    if v ~= nil then return v end
+
+    if tostring(c:get("network", "wan6", "disabled") or "") == "1" then return false end
+    if tostring(c:get("network", "wan6", "proto") or "") == "none" then return false end
+    if tostring(c:get("network", "wan6", "auto") or "") == "0" then return false end
+    return true
+end
+
+local function live_global_ipv6_count(dev)
+    if not dev or dev == "" then return 0 end
+    local sentinel = io.open("/sys/class/net/" .. dev .. "/ifindex", "r")
+    if not sentinel then return 0 end
+    sentinel:close()
+    local p = io.popen("ip -6 addr show dev " .. dev
+        .. " 2>/dev/null | awk '/inet6/ && $2 !~ /^fe80/' | wc -l")
+    if not p then return 0 end
+    local n = p:read("*n")
+    p:close()
+    return tonumber(n) or 0
+end
+
+--[[
+    @method-name: get_status
+    @method-desc: Snapshot of the global IPv6 toggle and per-WG-interface
+                  enforcement state.
+
+    @out bool    global_ipv6_enabled
+    @out array   servers   { source, name, kernel_dev, enforced, live_global_ipv6 }
+
+    @in-example:  {"jsonrpc":"2.0","method":"call","params":["","wireguard_ipv4_only","get_status",{}],"id":1}
+    @out-example: {"jsonrpc":"2.0","id":1,"result":{"global_ipv6_enabled":false,"servers":[{"source":"glinet","name":"main_server","kernel_dev":"wgserver","enforced":true,"live_global_ipv6":0}]}}
+--]]
+M.get_status = function(_)
+    local c = uci.cursor()
+    local global_on = global_ipv6_enabled(c)
+
+    local out = {}
+    for _, name in ipairs(list_servers(c)) do
+        local dev = c:get("wireguard_server", name, "ifname")
+            or c:get("wireguard_server", name, "device")
+            or "wgserver"
+        local enforced = false
+        local f = io.open("/etc/sysctl.d/99-wg-noipv6-" .. dev .. ".conf", "r")
+        if f then enforced = true; f:close() end
+        out[#out + 1] = {
+            source = "glinet",
+            name = name,
+            kernel_dev = dev,
+            enforced = enforced,
+            live_global_ipv6 = live_global_ipv6_count(dev),
+        }
+    end
+
+    for _, name in ipairs(list_netifd_wg(c)) do
+        local dev = c:get("network", name, "ifname") or name
+        local enforced = false
+        local f = io.open("/etc/sysctl.d/99-wg-noipv6-" .. dev .. ".conf", "r")
+        if f then enforced = true; f:close() end
+        out[#out + 1] = {
+            source = "netifd",
+            name = name,
+            kernel_dev = dev,
+            enforced = enforced,
+            live_global_ipv6 = live_global_ipv6_count(dev),
+        }
+    end
+
+    return {
+        global_ipv6_enabled = global_on,
+        servers = out,
+    }
+end
+
+--[[
+    @method-name: sync
+    @method-desc: Trigger `wg-noipv6 sync` so enforcement applies
+                  immediately after the IPv6 page is toggled.
+
+    @out bool    ok
+
+    @in-example:  {"jsonrpc":"2.0","method":"call","params":["","wireguard_ipv4_only","sync",{}],"id":1}
+    @out-example: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}
+--]]
+M.sync = function(_)
+    if ngx and ngx.pipe and ngx.pipe.spawn then
+        local ok, p = pcall(ngx.pipe.spawn, { "/usr/sbin/wg-noipv6", "sync" })
+        if ok and p and p.wait then
+            pcall(p.wait, p)
+        end
+    else
+        os.execute("/usr/sbin/wg-noipv6 sync >/dev/null 2>&1")
+    end
+    return { ok = true }
+end
+
+return M
