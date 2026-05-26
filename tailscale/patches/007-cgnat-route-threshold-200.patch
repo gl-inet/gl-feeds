@@ -1,0 +1,11 @@
+--- a/ipn/ipnlocal/local.go
++++ b/ipn/ipnlocal/local.go
+@@ -5393,7 +5393,7 @@
+ //
+ // b.mu must be held.
+ func (b *LocalBackend) routerConfigLocked(cfg *wgcfg.Config, prefs ipn.PrefsView, oneCGNATRoute bool) *router.Config {
+-	singleRouteThreshold := 10_000
++	singleRouteThreshold := 200
+ 	if oneCGNATRoute {
+ 		singleRouteThreshold = 1
+ 	}

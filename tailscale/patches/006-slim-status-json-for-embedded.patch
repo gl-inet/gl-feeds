@@ -1,0 +1,195 @@
+--- a/ipn/ipnstate/ipnstate.go
++++ b/ipn/ipnstate/ipnstate.go
+@@ -7,6 +7,7 @@
+ package ipnstate
+ 
+ import (
++	"encoding/json"
+ 	"fmt"
+ 	"html"
+ 	"io"
+@@ -28,6 +29,25 @@
+ 
+ //go:generate go run tailscale.com/cmd/cloner  -clonefunc=false -type=TKAPeer
+ 
++// exitNodePeerJSON is a minimal Peer JSON object for embedded exit-node UIs.
++type exitNodePeerJSON struct {
++	PublicKey      key.NodePublic        `json:"PublicKey,omitempty"`
++	DNSName        string                `json:"DNSName,omitempty"`
++	TailscaleIPs   []netip.Addr          `json:"TailscaleIPs,omitempty"`
++	ExitNodeOption bool                  `json:"ExitNodeOption,omitempty"`
++	Tags           *views.Slice[string]  `json:"Tags,omitempty"`
++	Location       *exitNodeLocationJSON `json:"Location,omitempty"`
++}
++
++type exitNodeLocationJSON struct {
++	Country string `json:"Country,omitempty"`
++	City    string `json:"City,omitempty"`
++}
++
++type exitNodeStatusJSON struct {
++	TailscaleIPs []netip.Prefix `json:"TailscaleIPs,omitempty"`
++}
++
+ // Status represents the entire state of the IPN network.
+ type Status struct {
+ 	// Version is the daemon's long version (see version.Long).
+@@ -77,6 +97,9 @@
+ 	// Peer is the state of each peer, keyed by each peer's current public key.
+ 	Peer map[key.NodePublic]*PeerStatus
+ 
++	// slimPeers, when set by SlimStatusForJSON, replaces Peer in JSON output.
++	slimPeers map[key.NodePublic]exitNodePeerJSON `json:"-"`
++
+ 	// User contains profile information about UserIDs referenced by
+ 	// PeerStatus.UserID, PeerStatus.AltSharerUserID, etc.
+ 	User map[tailcfg.UserID]tailcfg.UserProfile
+@@ -361,6 +384,9 @@
+ type StatusBuilder struct {
+ 	WantPeers bool // whether caller wants peers
+ 
++	// MaxPeers, when non-zero, caps distinct peers in Status.Peer (embedded routers).
++	MaxPeers int
++
+ 	locked bool
+ 	st     Status
+ }
+@@ -380,6 +406,95 @@
+ 	return &sb.st
+ }
+ 
++// SlimStatusForJSON reduces Status JSON size for embedded routers.
++func SlimStatusForJSON(st *Status) {
++	if st == nil {
++		return
++	}
++	trimmed := make(map[key.NodePublic]exitNodePeerJSON)
++	for k, ps := range st.Peer {
++		if ps == nil || !ps.ExitNodeOption {
++			continue
++		}
++		trimmed[k] = peerToExitNodePeerJSON(ps)
++	}
++	st.slimPeers = trimmed
++	st.Peer = nil
++}
++
++func firstIPv4Addr(addrs []netip.Addr) []netip.Addr {
++	for _, a := range addrs {
++		if a.Is4() {
++			return []netip.Addr{a}
++		}
++	}
++	return nil
++}
++
++func firstIPv4Prefix(prefixes []netip.Prefix) []netip.Prefix {
++	for _, p := range prefixes {
++		if p.Addr().Is4() {
++			return []netip.Prefix{p}
++		}
++	}
++	return nil
++}
++
++func peerToExitNodePeerJSON(ps *PeerStatus) exitNodePeerJSON {
++	out := exitNodePeerJSON{
++		PublicKey:      ps.PublicKey,
++		DNSName:        ps.DNSName,
++		TailscaleIPs:   firstIPv4Addr(ps.TailscaleIPs),
++		ExitNodeOption: ps.ExitNodeOption,
++	}
++	if ps.Tags != nil && !ps.Tags.IsNil() {
++		out.Tags = ps.Tags
++	}
++	if ps.Location != nil {
++		out.Location = &exitNodeLocationJSON{
++			Country: ps.Location.Country,
++			City:    ps.Location.City,
++		}
++	}
++	return out
++}
++
++func (s *Status) MarshalJSON() ([]byte, error) {
++	if s.slimPeers == nil {
++		type statusAlias Status
++		return json.Marshal((*statusAlias)(s))
++	}
++	out := struct {
++		Version        string                                 `json:"Version,omitempty"`
++		TUN            bool                                   `json:"TUN,omitempty"`
++		BackendState   string                                 `json:"BackendState"`
++		HaveNodeKey    bool                                   `json:"HaveNodeKey,omitempty"`
++		AuthURL        string                                 `json:"AuthURL,omitempty"`
++		TailscaleIPs   []netip.Addr                           `json:"TailscaleIPs,omitempty"`
++		Self           *PeerStatus                            `json:"Self,omitempty"`
++		ExitNodeStatus *exitNodeStatusJSON                    `json:"ExitNodeStatus,omitempty"`
++		Health         []string                               `json:"Health,omitempty"`
++		MagicDNSSuffix string                                 `json:"MagicDNSSuffix,omitempty"`
++		CurrentTailnet *TailnetStatus                         `json:"CurrentTailnet,omitempty"`
++		CertDomains    []string                               `json:"CertDomains,omitempty"`
++		Peer           map[key.NodePublic]exitNodePeerJSON    `json:"Peer,omitempty"`
++		User           map[tailcfg.UserID]tailcfg.UserProfile `json:"User,omitempty"`
++		ClientVersion  *tailcfg.ClientVersion                 `json:"ClientVersion,omitempty"`
++	}{
++		Version: s.Version, TUN: s.TUN, BackendState: s.BackendState,
++		HaveNodeKey: s.HaveNodeKey, AuthURL: s.AuthURL,
++		TailscaleIPs: firstIPv4Addr(s.TailscaleIPs), Self: s.Self,
++		Health: s.Health, MagicDNSSuffix: s.MagicDNSSuffix,
++		CurrentTailnet: s.CurrentTailnet, CertDomains: s.CertDomains,
++		Peer: s.slimPeers, User: s.User, ClientVersion: s.ClientVersion,
++	}
++	if s.ExitNodeStatus != nil {
++		out.ExitNodeStatus = &exitNodeStatusJSON{TailscaleIPs: firstIPv4Prefix(s.ExitNodeStatus.TailscaleIPs)}
++	}
++	return json.Marshal(out)
++}
++
++
+ // MutateSelfStatus calls f with the PeerStatus of our own node to mutate.
+ //
+ // It may not assume other fields of status are already populated, and
+@@ -433,6 +548,11 @@
+ 	if sb.st.Peer == nil {
+ 		sb.st.Peer = make(map[key.NodePublic]*PeerStatus)
+ 	}
++	if sb.MaxPeers > 0 && len(sb.st.Peer) >= sb.MaxPeers {
++		if _, ok := sb.st.Peer[peer]; !ok {
++			return
++		}
++	}
+ 	e, ok := sb.st.Peer[peer]
+ 	if !ok {
+ 		sb.st.Peer[peer] = st
+--- a/ipn/ipnlocal/local.go
++++ b/ipn/ipnlocal/local.go
+@@ -1219,7 +1219,7 @@
+ // Status returns the latest status of the backend and its
+ // sub-components.
+ func (b *LocalBackend) Status() *ipnstate.Status {
+-	sb := &ipnstate.StatusBuilder{WantPeers: true}
++	sb := &ipnstate.StatusBuilder{WantPeers: true, MaxPeers: 100}
+ 	b.UpdateStatus(sb)
+ 	return sb.Status()
+ }
+--- a/ipn/localapi/localapi.go
++++ b/ipn/localapi/localapi.go
+@@ -855,6 +855,7 @@
+ 	} else {
+ 		st = h.b.StatusWithoutPeers()
+ 	}
++	ipnstate.SlimStatusForJSON(st)
+ 	e := json.NewEncoder(w)
+ 	e.SetIndent("", "\t")
+ 	e.Encode(st)
+--- a/cmd/tailscale/cli/status.go
++++ b/cmd/tailscale/cli/status.go
+@@ -94,6 +94,7 @@
+ 				}
+ 			}
+ 		}
++		ipnstate.SlimStatusForJSON(st)
+ 		j, err := json.MarshalIndent(st, "", "  ")
+ 		if err != nil {
+ 			return err
