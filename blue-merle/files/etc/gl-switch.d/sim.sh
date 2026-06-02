@@ -12,9 +12,8 @@ if [ "$action" = "on" ];then
     echo "on" > /tmp/sim_change_switch
     flock -n /tmp/blue-merle-switch.lock logger -p notice -t blue-merle-toggle "Running Stage 1" ||  logger -p notice -t blue-merle-toggle  "Lockfile busy"
     flock -n /tmp/blue-merle-switch.lock  timeout 90  /usr/bin/blue-merle-switch-stage1
-    /root/qore/qore-switch-country.sh manual
-
 elif [ "$action" = "off" ];then
+    /root/qore/qore-switch-country.sh manual &
     # We check for any previous run and eventually execute the second stage. We could check for the age of this marker and only activate the second stage is the marker is young enough.
     if [ -f /tmp/blue-merle-stage1 ]; then
         flock -n /tmp/blue-merle-switch.lock  ||  logger -p notice -t blue-merle-toggle  "Lockfile busy" &
@@ -23,7 +22,6 @@ elif [ "$action" = "off" ];then
         logger -p notice -t blue-merle-toggle  "No Stage 1; Toggling Off"
     fi
     echo "off" > /tmp/sim_change_switch
-    /root/qore/qore-switch-country.sh manual
 else
     echo "off" > /tmp/sim_change_switch
 fi
