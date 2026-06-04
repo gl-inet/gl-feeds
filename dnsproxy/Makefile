@@ -49,6 +49,12 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_CONF) ./files/etc/dnsproxy.yaml $(1)/etc/dnsproxy/dnsproxy.yaml
 	$(INSTALL_DIR) $(1)/etc/dnsproxy/provider
 	$(INSTALL_DATA) ./files/provider/* $(1)/etc/dnsproxy/provider/
+	$(INSTALL_DIR) $(1)/lib/upgrade/keep.d
+	$(INSTALL_DATA) ./files/dnsproxy.upgrade $(1)/lib/upgrade/keep.d/dnsproxy
+endef
+
+define Package/dnsproxy/conffiles
+/etc/dnsproxy/dnsproxy.yaml
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))
