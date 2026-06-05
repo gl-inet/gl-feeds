@@ -1,0 +1,10 @@
+--- a/src/charset.h
++++ b/src/charset.h
+@@ -27,6 +27,7 @@ int decode_ucs2(char *buffer, int len);
+ 
+ int iso_utf8_2gsm(char* source, int size, char* destination, int max, int *missing, char **notice);
+ int iso2utf8_file(FILE *fp, char *ascii, int userdatalength);
++int iso2utf8(char *ascii, int userdatalength, size_t ascii_size);
+ 
+ int decode_7bit_packed(char *text, char *dest, size_t size_dest);
+ int encode_7bit_packed(char *text, char *dest, size_t size_dest);
