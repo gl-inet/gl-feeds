@@ -109,7 +109,7 @@ void arp_spoof(struct sk_buff *skb)
 static void do_arp_loop(struct work_struct *work)
 {
     __be32 start, end, ifaddr;
-    struct net_device *dev;
+    struct net_device *dev = NULL;
     char probe_mac[ETH_ALEN] = {0, 0, 0, 0, 0, 0};
     char probe_dmac[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
     int i;
