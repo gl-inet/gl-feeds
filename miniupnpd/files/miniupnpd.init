@@ -5,7 +5,11 @@ START=94
 STOP=15
 USE_PROCD=1
 PROG=/usr/sbin/miniupnpd
-[ -x "$(command -v nft)" ] && FW="fw4" || FW="fw3"
+if [ ! -f "/sbin/fw4" ]; then
+	FW="fw3"
+else
+	FW="fw4"
+fi
 
 upnpd_get_port_range() {
 	local var="$1"; shift
