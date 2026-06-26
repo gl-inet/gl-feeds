@@ -13,7 +13,11 @@ tmpconf="/var/etc/miniupnpd.conf"
 external_iface=$(uci -q get upnpd.config.external_iface)
 external_iface6=$(uci -q get upnpd.config.external_iface6)
 external_zone=$(uci -q get upnpd.config.external_zone)
-[ -x "$(command -v nft)" ] && FW="fw4" || FW="fw3"
+if [ ! -f "/sbin/fw4" ]; then
+	FW="fw3"
+else
+	FW="fw4"
+fi
 
 . /lib/functions/network.sh
 
