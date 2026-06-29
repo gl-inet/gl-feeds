@@ -13,6 +13,8 @@
 #include <linux/of_irq.h>
 #include <linux/timer.h>
 #include <linux/of_platform.h>
+#include <linux/platform_device.h>
+#include <linux/err.h>
 
 #define GL_FAN_DRV_NAME "gl-fan_v2.0"
 
@@ -126,9 +128,13 @@ static int gl_fan_probe(struct platform_device *pdev)
 #else
     gl_fan.class = class_create("fan");
 #endif
+    if (IS_ERR(gl_fan.class))
+        return PTR_ERR(gl_fan.class);
+
     ret = class_create_file(gl_fan.class, &class_attr_fan_speed);
     if (ret) {
         dev_err(dev, "fail to creat class file\n");
+        class_destroy(gl_fan.class);
         return ret;
     }
 
@@ -139,11 +145,20 @@ static int gl_fan_probe(struct platform_device *pdev)
     return 0;
 }
 
-static int gl_fan_remove(struct platform_device *pdev)
+static
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+void
+#else
+int
+#endif
+gl_fan_remove(struct platform_device *pdev)
 {
+    class_remove_file(gl_fan.class, &class_attr_fan_speed);
     class_destroy(gl_fan.class);
     dev_info(&pdev->dev, "remove gl_fan\n");
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 11, 0)
     return 0;
+#endif
 }
 
 static const struct of_device_id gl_fan_match[] = {
