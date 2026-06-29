@@ -1,0 +1,17 @@
+diff --git a/src/network.c b/src/network.c
+index 1111111..2222222 100644
+--- a/src/network.c
++++ b/src/network.c
+@@ -1603,11 +1603,7 @@ void check_servers(int no_loop_check)
+ 	if (sockaddr_isequal(&serv->addr, &iface->addr))
+ 	  break;
+       if (iface)
+-	{
+-	  my_syslog(LOG_WARNING, _("ignoring nameserver %s - local interface"), daemon->namebuff);
+-	  serv->flags |= SERV_MARK;
+-	  continue;
+-	}
++	my_syslog(LOG_WARNING, _("nameserver %s is local interface address (possible DNS loop)"), daemon->namebuff);
+       
+       /* Do we need a socket set? */
+       if (!serv->sfd && 
