@@ -1,4 +1,4 @@
-From 3ef33802d1b94785be513353604c233096896711 Mon Sep 17 00:00:00 2001
+From 538b26abf1f325ff1cc4024555ee7334ff4ea270 Mon Sep 17 00:00:00 2001
 From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
 Date: Thu, 25 Jun 2026 09:08:36 +0800
 Subject: [PATCH] feat: compatible with 3.x
@@ -11,10 +11,10 @@ Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
  3 files changed, 138 insertions(+), 2 deletions(-)
 
 diff --git a/eco.c b/eco.c
-index a10c6be..f9f2526 100644
+index b9e411e..9d7737f 100644
 --- a/eco.c
 +++ b/eco.c
-@@ -202,6 +202,25 @@ static struct eco_scheduler *get_eco_scheduler(lua_State *L)
+@@ -202,14 +202,32 @@ static struct eco_scheduler *get_eco_scheduler(lua_State *L)
      return sched;
  }
  
@@ -37,19 +37,18 @@ index a10c6be..f9f2526 100644
 +    return true;
 +}
 +
- static void eco_resume(lua_State *L, lua_State *co, int narg)
+ static void eco_log_traceback(struct eco_scheduler *sched, lua_State *L,
+                 lua_State *co, const char *msg)
  {
-     struct eco_scheduler *sched = get_eco_scheduler(L);
-@@ -233,8 +252,7 @@ static void eco_resume(lua_State *L, lua_State *co, int narg)
-         luaL_traceback(L, co, lua_tostring(co, -1), 0);
-         luaL_traceback(L, L, NULL, 0);
+     luaL_traceback(L, co, msg, 0);
+     luaL_traceback(L, L, NULL, 0);
  
--        if (sched->panic_hook != LUA_NOREF) {
--            lua_rawgeti(L, LUA_REGISTRYINDEX, sched->panic_hook);
-+        if (eco_push_panic_hook(L, sched)) {
-             lua_insert(L, -3);
-             lua_call(L, 2, 0);
-         } else {
+-    if (sched->panic_hook != LUA_NOREF) {
+-        lua_rawgeti(L, LUA_REGISTRYINDEX, sched->panic_hook);
++    if (eco_push_panic_hook(L, sched)) {
+         lua_insert(L, -3);
+         lua_call(L, 2, 0);
+     } else {
 diff --git a/file.lua b/file.lua
 index 32f7974..e66a531 100644
 --- a/file.lua
