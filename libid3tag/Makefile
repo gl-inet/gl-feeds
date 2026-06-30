@@ -14,7 +14,12 @@ PKG_RELEASE:=1
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://codeberg.org/tenacityteam/libid3tag.git
 PKG_SOURCE_VERSION:=$(PKG_VERSION)
+PKG_SOURCE_IS_ZST:=$(shell grep -q 'PKG_SOURCE ?=.*\.tar\.zst' $(INCLUDE_DIR)/download.mk && echo y)
+ifeq ($(PKG_SOURCE_IS_ZST),y)
+PKG_MIRROR_HASH:=389e3f84038ded1f4f99a8fe671916fcd1850c90a29afa3c066fd1d7f3f1009b
+else
 PKG_MIRROR_HASH:=4007a88feaae11925ce96e4c020f0c7332e50d46e9b4f8f7fa77e856e1500959
+endif
 
 PKG_MAINTAINER:=Ted Hess <thess@kitschensync.net>
 
