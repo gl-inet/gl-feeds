@@ -116,7 +116,6 @@ define Package/dnsmasq-full/config
 		default y
 	config PACKAGE_dnsmasq_full_nftset
 		bool "Build with Nftset support."
-		depends on PACKAGE_nftables-json
 		default y
 	config PACKAGE_dnsmasq_full_conntrack
 		bool "Build with Conntrack support."
