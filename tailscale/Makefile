@@ -10,7 +10,8 @@
 #   GOOS= GOARCH= go run ./cmd/featuretags --min --add=osrouter,unixsocketidentity,debug,useroutes,iptables,advertiseroutes,advertiseexitnode,useexitnode,logtail
 # 仍保留 ts_omit_netstack 以控体积；见 patches/003-netstack-omit-invertGSOChecksum.patch。
 # 保留 lazywg（勿 ts_omit_lazywg）：大 tailnet 时仅把近期活跃 peer 装入 wireguard-go，显著降 RSS。
-# patches/006：status JSON 精简 + MaxPeers=100 限制构建时 peer 数 + 仅 ExitNodeOption 输出。
+# patches/006：Status() MaxPeers=100（exit node 白名单豁免）；CLI status --json 再精简；
+#   prefs 对 tailscale up --exit-node=IP 在 peer 被裁剪时仍允许合法 Tailscale IP；勿改 localapi。
 # patches/007：CGNAT /32 路由超过 200 条时合并为 100.64.0.0/10（默认 10000），减少 table 52 条目。
 # 勿 ts_omit_health：裁掉后 GetInPollNetMap() 恒为 false，tailscale status 永远显示 offline。
 # 参考：https://tailscale.com/docs/how-to/set-up-small-tailscale
