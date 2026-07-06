@@ -15,22 +15,15 @@ start_service() {
     local proto=$(uci -q get gl-dns-v2.@dns[0].proto)
     local provider=$(uci -q get gl-dns-v2.@dns[0].provider)
 
-    [ "$mode" = "secure" ] || exit 0
-    [ "$provider" = "manual" ] || exit 0
-    [ "$proto" = "odoh" ] || exit 0
-
-    /etc/init.d/dnscrypt-proxy-vpn start
+    [ "$mode" = "secure" ] || return 0
+    [ "$provider" = "manual" ] || return 0
+    [ "$proto" = "odoh" ] || return 0
 
     procd_open_instance
-    procd_set_param group nonevpn
     procd_set_param command "$PROG" -config "$CONFIGFILE"
     procd_set_param file "$CONFIGFILE"
     procd_set_param stdout 1
     procd_set_param stderr 1
     procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-5}
     procd_close_instance
-}
-
-stop_service() {
-    /etc/init.d/dnscrypt-proxy-vpn stop
 }
