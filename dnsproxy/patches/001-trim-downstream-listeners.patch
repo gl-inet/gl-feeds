@@ -1,0 +1,230 @@
+From 1bfdb73ee6331a0a98214e2abd81c24e2d4b13f9 Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Mon, 6 Jul 2026 12:23:31 +0800
+Subject: [PATCH] dnsproxy: trim unused encrypted downstream listeners
+
+Split encrypted downstream listener setup into build-tagged files.  The
+trimmed build keeps plain UDP/TCP downstream DNS while compiling out unused TLS,
+HTTPS, QUIC, and DNSCrypt downstream listeners.
+
+This only affects downstream listener code.  Upstream protocol support remains
+available for both full and trimmed downstream builds.
+---
+ proxy/server.go                | 47 ++--------------------------
+ proxy/server_encrypted.go      | 56 ++++++++++++++++++++++++++++++++++
+ proxy/server_encrypted_trimmed.go | 35 +++++++++++++++++++++
+ proxy/serverdnscrypt.go        |  2 ++
+ proxy/serverhttps.go           |  2 ++
+ proxy/serverquic.go            |  2 ++
+ 6 files changed, 99 insertions(+), 45 deletions(-)
+ create mode 100644 proxy/server_encrypted.go
+ create mode 100644 proxy/server_encrypted_trimmed.go
+
+diff --git a/proxy/server.go b/proxy/server.go
+index 83717b5..aa908f0 100644
+--- a/proxy/server.go
++++ b/proxy/server.go
+@@ -14,7 +14,6 @@ import (
+ 	"github.com/AdguardTeam/golibs/logutil/slogutil"
+ 	"github.com/AdguardTeam/golibs/netutil"
+ 	"github.com/miekg/dns"
+-	"github.com/quic-go/quic-go"
+ )
+ 
+ // startListeners configures listeners and starts listening each configured
+@@ -30,27 +29,7 @@ func (p *Proxy) startListeners(ctx context.Context) (err error) {
+ 		return err
+ 	}
+ 
+-	err = p.initTLSListeners(ctx)
+-	if err != nil {
+-		return err
+-	}
+-
+-	err = p.initHTTPSListeners(ctx)
+-	if err != nil {
+-		return err
+-	}
+-
+-	err = p.initQUICListeners(ctx)
+-	if err != nil {
+-		return err
+-	}
+-
+-	err = p.initDNSCryptListeners(ctx)
+-	if err != nil {
+-		return err
+-	}
+-
+-	return nil
++	return p.startEncryptedListeners(ctx)
+ }
+ 
+ // serveListeners starts serving the configured listeners.
+@@ -63,29 +42,7 @@ func (p *Proxy) serveListeners() {
+ 		go p.tcpPacketLoop(l, ProtoTCP, p.requestsSema)
+ 	}
+ 
+-	for _, l := range p.tlsListen {
+-		go p.tcpPacketLoop(l, ProtoTLS, p.requestsSema)
+-	}
+-
+-	for _, l := range p.httpsListen {
+-		go func(l net.Listener) { _ = p.httpsServer.Serve(l) }(l)
+-	}
+-
+-	for _, l := range p.h3Listen {
+-		go func(l *quic.EarlyListener) { _ = p.h3Server.ServeListener(l) }(l)
+-	}
+-
+-	for _, l := range p.quicListen {
+-		go p.quicPacketLoop(l, p.requestsSema)
+-	}
+-
+-	for _, l := range p.dnsCryptUDPListen {
+-		go func(l *net.UDPConn) { _ = p.dnsCryptServer.ServeUDP(l) }(l)
+-	}
+-
+-	for _, l := range p.dnsCryptTCPListen {
+-		go func(l net.Listener) { _ = p.dnsCryptServer.ServeTCP(l) }(l)
+-	}
++	p.serveEncryptedListeners()
+ }
+ 
+ // handleDNSRequest processes the context.  The only error it returns is the one
+diff --git a/proxy/server_encrypted.go b/proxy/server_encrypted.go
+new file mode 100644
+index 0000000..7079f52
+--- /dev/null
++++ b/proxy/server_encrypted.go
+@@ -0,0 +1,56 @@
++//go:build !dnsproxy_trim_downstream
++
++package proxy
++
++import (
++	"context"
++	"net"
++
++	"github.com/quic-go/quic-go"
++)
++
++func (p *Proxy) startEncryptedListeners(ctx context.Context) (err error) {
++	err = p.initTLSListeners(ctx)
++	if err != nil {
++		return err
++	}
++
++	err = p.initHTTPSListeners(ctx)
++	if err != nil {
++		return err
++	}
++
++	err = p.initQUICListeners(ctx)
++	if err != nil {
++		return err
++	}
++
++	return p.initDNSCryptListeners(ctx)
++}
++
++func (p *Proxy) serveEncryptedListeners() {
++	for _, l := range p.tlsListen {
++		go p.tcpPacketLoop(l, ProtoTLS, p.requestsSema)
++	}
++
++	for _, l := range p.httpsListen {
++		go func(l net.Listener) { _ = p.httpsServer.Serve(l) }(l)
++	}
++
++	for _, l := range p.h3Listen {
++		go func(l *quic.EarlyListener) { _ = p.h3Server.ServeListener(l) }(l)
++	}
++
++	for _, l := range p.quicListen {
++		go p.quicPacketLoop(l, p.requestsSema)
++	}
++
++	for _, l := range p.dnsCryptUDPListen {
++		go func(l *net.UDPConn) { _ = p.dnsCryptServer.ServeUDP(l) }(l)
++	}
++
++	for _, l := range p.dnsCryptTCPListen {
++		go func(l net.Listener) { _ = p.dnsCryptServer.ServeTCP(l) }(l)
++	}
++}
++
+diff --git a/proxy/server_encrypted_trimmed.go b/proxy/server_encrypted_trimmed.go
+new file mode 100644
+index 0000000..b23e779
+--- /dev/null
++++ b/proxy/server_encrypted_trimmed.go
+@@ -0,0 +1,35 @@
++//go:build dnsproxy_trim_downstream
++
++package proxy
++
++import (
++	"context"
++
++	"github.com/AdguardTeam/golibs/errors"
++)
++
++func (p *Proxy) startEncryptedListeners(_ context.Context) (err error) {
++	if p.TLSListenAddr != nil ||
++		p.HTTPSListenAddr != nil ||
++		p.QUICListenAddr != nil ||
++		p.DNSCryptUDPListenAddr != nil ||
++		p.DNSCryptTCPListenAddr != nil {
++		return errors.Error("encrypted downstream listeners are disabled in dnsproxy trimmed downstream build")
++	}
++
++	return nil
++}
++
++func (p *Proxy) serveEncryptedListeners() {}
++
++func (p *Proxy) respondHTTPS(_ *DNSContext) (err error) {
++	return errors.Error("https downstream is disabled in dnsproxy trimmed downstream build")
++}
++
++func (p *Proxy) respondQUIC(_ *DNSContext) (err error) {
++	return errors.Error("quic downstream is disabled in dnsproxy trimmed downstream build")
++}
++
++func (p *Proxy) respondDNSCrypt(_ *DNSContext) (err error) {
++	return errors.Error("dnscrypt downstream is disabled in dnsproxy trimmed downstream build")
++}
+diff --git a/proxy/serverdnscrypt.go b/proxy/serverdnscrypt.go
+index 046394c..b10072c 100644
+--- a/proxy/serverdnscrypt.go
++++ b/proxy/serverdnscrypt.go
+@@ -1,3 +1,5 @@
++//go:build !dnsproxy_trim_downstream
++
+ package proxy
+ 
+ import (
+diff --git a/proxy/serverhttps.go b/proxy/serverhttps.go
+index 36677cd..f6391f9 100644
+--- a/proxy/serverhttps.go
++++ b/proxy/serverhttps.go
+@@ -1,3 +1,5 @@
++//go:build !dnsproxy_trim_downstream
++
+ package proxy
+ 
+ import (
+diff --git a/proxy/serverquic.go b/proxy/serverquic.go
+index 8bc04e5..5d5e328 100644
+--- a/proxy/serverquic.go
++++ b/proxy/serverquic.go
+@@ -1,3 +1,5 @@
++//go:build !dnsproxy_trim_downstream
++
+ package proxy
+ 
+ import (
+-- 
+2.34.1
+
