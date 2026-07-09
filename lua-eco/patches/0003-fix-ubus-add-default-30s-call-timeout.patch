@@ -1,0 +1,59 @@
+From fda603aa5172a65e1540af827b4e2452ab01aeb0 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Thu, 9 Jul 2026 14:55:12 +0800
+Subject: [PATCH] fix(ubus): add default 30s call timeout
+
+Default ubus call requests to a 30-second timeout when callers do not pass one,
+preventing indefinitely pending requests. Preserve explicit timeout values and
+keep timeout <= 0 as the opt-in indefinite wait path.
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ ubus.lua | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/ubus.lua b/ubus.lua
+index b31f32fb..75839a01 100644
+--- a/ubus.lua
++++ b/ubus.lua
+@@ -12,6 +12,8 @@
+ local ubus = require 'eco.internal.ubus'
+ local eco = require 'eco'
+ 
++local DEFAULT_CALL_TIMEOUT = 30.0
++
+ local M = {
+     --- Return status: success.
+     STATUS_OK = ubus.STATUS_OK,
+@@ -74,7 +76,7 @@ end
+ -- @tparam string object UBus object path (e.g. `'network.interface.lan'`).
+ -- @tparam string method Method name.
+ -- @tparam[opt] table params Parameters table.
+--- @tparam[opt] number timeout Timeout in seconds.
++-- @tparam[opt=30.0] number timeout Timeout in seconds. Pass 0 to wait indefinitely.
+ -- @treturn table Result table.
+ -- @treturn[2] nil On failure.
+ -- @treturn[2] string Error message.
+@@ -152,7 +154,7 @@ end
+ -- @tparam string object UBus object path.
+ -- @tparam string method Method name.
+ -- @tparam[opt] table params Parameters table.
+--- @tparam[opt] number timeout Timeout in seconds.
++-- @tparam[opt=30.0] number timeout Timeout in seconds. Pass 0 to wait indefinitely.
+ -- @treturn table Result table.
+ -- @treturn[2] nil On failure.
+ -- @treturn[2] string Error message (`'timeout'` or a libubus message).
+@@ -178,6 +180,10 @@ function methods:call(object, method, params, timeout)
+         end
+     end
+ 
++    if timeout == nil then
++        timeout = DEFAULT_CALL_TIMEOUT
++    end
++
+     if timeout and timeout > 0 then
+         eco.sleep(timeout)
+     else
+-- 
+2.53.0
+
