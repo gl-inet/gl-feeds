@@ -20,13 +20,16 @@ PKG_CONFIG_DEPENDS:= \
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/cmake.mk
 
+RSTRIP:=:
+STRIP:=:
+
 define Package/lua-eco
   TITLE:=A Lua interpreter with a built-in epoll based event loop
   SECTION:=lang
   CATEGORY:=Languages
   SUBMENU:=Lua
   URL:=https://github.com/zhaojh329/lua-eco
-  DEPENDS:=+liblua5.4
+  DEPENDS:=+liblua5.4 +libunwind
 endef
 
 define Package/lua-eco/description
@@ -88,7 +91,8 @@ endef
 
 CMAKE_OPTIONS += \
   -DECO_UBUS_SUPPORT=O$(if $(CONFIG_PACKAGE_lua-eco-ubus),N,FF) \
-  -DECO_SSL_SUPPORT=O$(if $(CONFIG_PACKAGE_lua-eco-ssl),N,FF)
+  -DECO_SSL_SUPPORT=O$(if $(CONFIG_PACKAGE_lua-eco-ssl),N,FF) \
+  -DECO_CRASH_BACKTRACE=ON
 
 ifneq ($(CONFIG_PACKAGE_lua-eco-ssl),)
   ifneq ($(CONFIG_LUA_ECO_OPENSSL),)
