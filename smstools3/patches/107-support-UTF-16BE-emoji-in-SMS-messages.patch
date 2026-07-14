@@ -1,0 +1,282 @@
+From c21d5d3a46f69fec27fa519f5f138e65e4a427b6 Mon Sep 17 00:00:00 2001
+From: "tianwei.ma" <tianwei.ma@gl-inet.com>
+Date: Tue, 14 Jul 2026 11:24:28 +0800
+Subject: [PATCH] smstools3: support UTF-16BE emoji in SMS messages
+
+Handle UTF-8 four-byte characters, UTF-16 surrogate pairs, and record the received message charset.
+---
+ src/charset.c | 140 +++++++++++++++++++++++++++++++++++++++++---------
+ src/smsd.c    |   2 +
+ 2 files changed, 117 insertions(+), 25 deletions(-)
+
+diff --git a/src/charset.c b/src/charset.c
+index c586ecd..34fe9c9 100755
+--- a/src/charset.c
++++ b/src/charset.c
+@@ -1032,7 +1032,9 @@ int iso_utf8chars(char *s)
+ int iso_utf8_to_ucs2_char(char *utf8, int *len, char *ucs2)
+ {
+   unsigned int c = 0;
++  unsigned int surrogate;
+   int i;
++  unsigned char *s = (unsigned char *)utf8;
+ 
+   i = iso_utf8bytes(utf8);
+   if (len)
+@@ -1041,57 +1043,81 @@ int iso_utf8_to_ucs2_char(char *utf8, int *len, char *ucs2)
+   switch (i)
+   {
+     case 1:
+-      c = (unsigned char)utf8[0];
++      c = s[0];
+       break;
+ 
+     case 2:
+-      c = (utf8[0] & 0x1F) << 6 | (utf8[1] & 0x3F);
++      c = (s[0] & 0x1F) << 6 | (s[1] & 0x3F);
+       break;
+ 
+     case 3:
+-      c = (utf8[0] & 0x0F) << 12 | (utf8[1] & 0x3F) << 6 | (utf8[2] & 0x3F);
++      c = (s[0] & 0x0F) << 12 | (s[1] & 0x3F) << 6 | (s[2] & 0x3F);
++      break;
++
++    case 4:
++      c = (s[0] & 0x07) << 18 | (s[1] & 0x3F) << 12 | (s[2] & 0x3F) << 6 | (s[3] & 0x3F);
+       break;
+ 
+     default:
+       return 0;
+   }
+ 
+-  ucs2[0] = (unsigned char)((c & 0xFF00) >> 8);
+-  ucs2[1] = (unsigned char)(c & 0xFF);
++  if (c <= 0xFFFF && !(c >= 0xD800 && c <= 0xDFFF))
++  {
++    ucs2[0] = (unsigned char)((c & 0xFF00) >> 8);
++    ucs2[1] = (unsigned char)(c & 0xFF);
++
++    return 1;
++  }
+ 
+-  return 1;
++  if (c >= 0x10000 && c <= 0x10FFFF)
++  {
++    c -= 0x10000;
++    surrogate = 0xD800 | (c >> 10);
++    ucs2[0] = (unsigned char)((surrogate & 0xFF00) >> 8);
++    ucs2[1] = (unsigned char)(surrogate & 0xFF);
++    surrogate = 0xDC00 | (c & 0x3FF);
++    ucs2[2] = (unsigned char)((surrogate & 0xFF00) >> 8);
++    ucs2[3] = (unsigned char)(surrogate & 0xFF);
++
++    return 2;
++  }
++
++  return 0;
+ }
+ 
+-// Note: Returns the number of UCS2 characters, not bytes.
++// Note: Returns the number of UTF-16 code units, not bytes.
+ int iso_utf8_to_ucs2_buffer(char *utf8, char *ucs2, size_t ucs2_size)
+ {
+   char *p = utf8;
+   char *end = utf8 +strlen(utf8);
++  char ucs2char[4];
+   int bytes;
++  int chars;
+   size_t dest = 0;
+   int result = 0;
+ 
+   while (p < end)
+   {
+-    if (dest >= ucs2_size -1)
++    if (!(chars = iso_utf8_to_ucs2_char(p, &bytes, ucs2char)))
+       break;
+ 
+-    if (!iso_utf8_to_ucs2_char(p, &bytes, &ucs2[dest]))
++    if (dest + (size_t)chars *2 > ucs2_size)
+       break;
+ 
++    memcpy(&ucs2[dest], ucs2char, (size_t)chars *2);
+     p += bytes;
+-    dest += 2;
+-    result++;
++    dest += (size_t)chars *2;
++    result += chars;
+   }
+ 
+   return result;
+ }
+ 
+-// Returns the number of utf8 bytes.
+-int ucs2_to_utf8_char(char *ucs2, char *utf8)
++// Returns the number of UTF-8 bytes.
++static int unicode_to_utf8_char(unsigned int c, char *utf8)
+ {
+   int result;
+-  unsigned int c = (ucs2[0] << 8) | (unsigned char)ucs2[1];
+ 
+   if (c <= 0x7F)
+   {
+@@ -1105,7 +1131,7 @@ int ucs2_to_utf8_char(char *ucs2, char *utf8)
+     utf8[0] = (unsigned char)(0xC0 | c);
+     result = 2;
+   }
+-  else if (c <= 0xFFFF)
++  else if (c <= 0xFFFF && !(c >= 0xD800 && c <= 0xDFFF))
+   {
+     utf8[2] = (unsigned char)(0x80 | (c & 0x3F));
+     c = (c >> 6);
+@@ -1114,6 +1140,17 @@ int ucs2_to_utf8_char(char *ucs2, char *utf8)
+     utf8[0] = (unsigned char)(0xE0 | c);
+     result = 3;
+   }
++  else if (c >= 0x10000 && c <= 0x10FFFF)
++  {
++    utf8[3] = (unsigned char)(0x80 | (c & 0x3F));
++    c = (c >> 6);
++    utf8[2] = (unsigned char)(0x80 | (c & 0x3F));
++    c = (c >> 6);
++    utf8[1] = (unsigned char)(0x80 | (c & 0x3F));
++    c = (c >> 6);
++    utf8[0] = (unsigned char)(0xF0 | c);
++    result = 4;
++  }
+   else
+     result = 0;
+ 
+@@ -1121,7 +1158,16 @@ int ucs2_to_utf8_char(char *ucs2, char *utf8)
+   return result;
+ }
+ 
+-// Returns number of utf8 characters, not bytes.
++// Returns the number of UTF-8 bytes for one UCS2/UTF-16 code unit.
++// UTF-16 surrogate pairs are handled by ucs2_to_utf8_buffer().
++int ucs2_to_utf8_char(char *ucs2, char *utf8)
++{
++  unsigned int c = ((unsigned char)ucs2[0] << 8) | (unsigned char)ucs2[1];
++
++  return unicode_to_utf8_char(c, utf8);
++}
++
++// Returns number of UTF-8 characters, not bytes.
+ int ucs2_to_utf8_buffer(char *ucs2, size_t ucs2_buffer_len, char *utf8, size_t utf8_size)
+ {
+   int result = 0;
+@@ -1129,19 +1175,48 @@ int ucs2_to_utf8_buffer(char *ucs2, size_t ucs2_buffer_len, char *utf8, size_t u
+   char *end = ucs2 + ucs2_buffer_len;
+   char utf8char[7];
+   size_t len = 0;
++  size_t consumed;
+   int i;
++  unsigned int c;
++  unsigned int low;
+ 
+-  while (p < end)
++  if (!utf8_size)
++    return 0;
++
++  utf8[0] = '\0';
++
++  while ((size_t)(end -p) >= 2)
+   {
+-    if (!(i = ucs2_to_utf8_char(p, utf8char)))
++    c = ((unsigned char)p[0] << 8) | (unsigned char)p[1];
++    consumed = 2;
++
++    // SMS DCS 0x08 is commonly called UCS2, but supplementary Unicode
++    // characters are transported as UTF-16BE surrogate pairs.
++    if (c >= 0xD800 && c <= 0xDBFF)
++    {
++      if ((size_t)(end -p) < 4)
++        break;
++
++      low = ((unsigned char)p[2] << 8) | (unsigned char)p[3];
++      if (low < 0xDC00 || low > 0xDFFF)
++        break;
++
++      c = 0x10000 + ((c -0xD800) << 10) + (low -0xDC00);
++      consumed = 4;
++    }
++    else if (c >= 0xDC00 && c <= 0xDFFF)
++      break;
++
++    if (!(i = unicode_to_utf8_char(c, utf8char)))
+       break;
+ 
+     if (len + i >= utf8_size)
+       break;
+ 
+-    strcpy(&utf8[len], utf8char);
++    memcpy(&utf8[len], utf8char, i);
+     len += i;
+-    p += 2;
++    utf8[len] = '\0';
++    p += consumed;
+     result++;
+   }
+ 
+@@ -1151,13 +1226,24 @@ int ucs2_to_utf8_buffer(char *ucs2, size_t ucs2_buffer_len, char *utf8, size_t u
+ // Returns number of bytes.
+ size_t ucs2utf(char *buf, size_t len, size_t maxlen)
+ {
+-  char *ucs2 = (char *)malloc(len);
++  char *ucs2;
++
++  if (!maxlen)
++    return 0;
++
++  if (!len)
++  {
++    buf[0] = '\0';
++    return 0;
++  }
++
++  ucs2 = (char *)malloc(len);
+ 
+   if (!ucs2)
+     return 0;
+ 
+   memcpy(ucs2, buf, len);
+-  ucs2_to_utf8_buffer(ucs2, len, buf, maxlen +1);
++  ucs2_to_utf8_buffer(ucs2, len, buf, maxlen);
+ 
+   free(ucs2);
+ 
+@@ -1167,12 +1253,16 @@ size_t ucs2utf(char *buf, size_t len, size_t maxlen)
+ // Returns number of bytes.
+ size_t iso_utf8_2ucs(char *buf, size_t maxlen)
+ {
+-  size_t ucs2_size = iso_utf8chars(buf) * 2; // Not NULL terminated.
++  size_t ucs2_size;
+   char *ucs2;
+   size_t bytes;
+ 
+-  if (ucs2_size > maxlen + 1)
+-    ucs2_size = maxlen + 1;
++  if (!maxlen)
++    return 0;
++
++  ucs2_size = strlen(buf) * 2; // Worst case: ISO/ASCII expands to 2 bytes.
++  if (ucs2_size > maxlen)
++    ucs2_size = maxlen;
+ 
+   if (!(ucs2 = (char *)malloc(ucs2_size)))
+     return 0;
+diff --git a/src/smsd.c b/src/smsd.c
+index 9858e1f..5768249 100755
+--- a/src/smsd.c
++++ b/src/smsd.c
+@@ -3606,6 +3606,8 @@ int received2file(char *line1, char *line2, char *filename, int *stored_concaten
+         if (*HDR_Alphabet2 != '-')
+           fprintf(fd, "%s %s\n", get_header_incoming(HDR_Alphabet, HDR_Alphabet2), p);
+ 
++        fprintf(fd, "Charset: %s\n", (alphabet == ALPHABET_UCS2)? "UTF-16BE" : (alphabet == ALPHABET_BINARY)? "binary" : "UTF-8");
++
+         if (udh_data[0])
+           fprintf(fd,"%s %s\n", HDR_UDHDATA, udh_data);
+         if (udh_type[0] && *HDR_UDHType2 != '-')
+-- 
+2.34.1
+
