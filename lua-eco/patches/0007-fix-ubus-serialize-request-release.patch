@@ -1,0 +1,155 @@
+From 4d5c3c87d27f2e75351ea39a2ce89ed77d8071ad Mon Sep 17 00:00:00 2001
+From: ziye.chen <ziye.chen@gl-inet.com>
+Date: Wed, 15 Jul 2026 16:00:00 +0800
+Subject: [PATCH] fix(ubus): serialize async request release
+
+An async request was freed from two independent ownership paths: the libubus
+completion callback freed successful requests, while the waiting coroutine
+freed timed-out requests through abort_request(). A completion/timeout race
+could therefore leave the coroutine holding a stale request pointer and crash
+inside free().
+
+Keep completed requests alive until the waiting coroutine resumes. The
+coroutine now owns the final release and chooses exactly one of free_request()
+or abort_request(). Add a shared-connection stress case that mixes successful
+calls with timeouts to exercise the request lifecycle under contention.
+
+Signed-off-by: ziye.chen <ziye.chen@gl-inet.com>
+---
+ tests/ubus-test.lua | 67 +++++++++++++++++++++++++++++++++++++++++++++
+ ubus.c              | 12 ++++++++++--
+ ubus.lua            |  2 ++
+ 3 files changed, 79 insertions(+), 2 deletions(-)
+
+diff --git a/ubus.c b/ubus.c
+index b4d7b7e..94b819f 100644
+--- a/ubus.c
++++ b/ubus.c
+@@ -406,6 +406,15 @@
+     return 0;
+ }
+ 
++static int lua_ubus_free_request(lua_State *L)
++{
++    struct ubus_request *req = (struct ubus_request *)lua_checkludata(L, 2);
++
++    free(req);
++
++    return 0;
++}
++
+ static int lua_ubus_complete_deferred_request(lua_State *L)
+ {
+     struct lua_ubus_context *ctx = luaL_checkudata(L, 1, UBUS_CTX_MT);
+@@ -449,8 +458,6 @@
+     lua_pushinteger(co, ret);
+ 
+     lua_call(co, 3, 0);
+-
+-    free(req);
+ }
+ 
+ static int lua_ubus_call(lua_State *L)
+@@ -1105,6 +1112,7 @@
+     {"handle_event", lua_ubus_handle_event},
+     {"reconnect", lua_ubus_reconnect},
+     {"abort_request", lua_ubus_abort_request},
++    {"free_request", lua_ubus_free_request},
+     {"complete_deferred_request", lua_ubus_complete_deferred_request},
+     {"call", lua_ubus_call},
+     {"send", lua_ubus_send},
+diff --git a/ubus.lua b/ubus.lua
+index 75839a0..19783b3 100644
+--- a/ubus.lua
++++ b/ubus.lua
+@@ -197,6 +197,8 @@
+         return nil, 'timeout'
+     end
+ 
++    ctx:free_request(req)
++
+     if status ~= ubus.STATUS_OK then
+         return nil, ubus.strerror(status)
+     end
+ 
+     if #datas == 0 then
+diff --git a/tests/ubus-test.lua b/tests/ubus-test.lua
+index f8ad17c..f4fa98e 100755
+--- a/tests/ubus-test.lua
++++ b/tests/ubus-test.lua
+@@ -487,6 +487,73 @@ test.run_case_sync('ubus stress concurrent call throughput', function()
+     end)
+ end)
+ 
++test.run_case_sync('ubus shared connection mixed completion and timeout stress', function()
++    eco.run(function()
++        local workers = 8
++        local loops = 80
++        local done = 0
++        local successes = 0
++        local timeouts = 0
++
++        local srv<close>, serr = connect_retry(2.0)
++        assert(srv, serr)
++
++        local object = uniq('mixed_timeout')
++        local _, aerr = srv:add(object, {
++            echo = {
++                function(req, msg, c)
++                    if msg.slow then
++                        eco.sleep(0.01)
++                    end
++
++                    c:reply(req, { v = msg.v })
++                end,
++                { v = ubus.INT32, slow = ubus.BOOLEAN }
++            }
++        })
++        assert(aerr == nil)
++
++        local cli<close>, cerr = connect_retry(2.0)
++        assert(cli, cerr)
++
++        for w = 1, workers do
++            eco.run(function()
++                for i = 1, loops do
++                    local slow = (i + w) % 2 == 0
++                    local v = w * 100000 + i
++                    local timeout = slow and 0.001 or 1.0
++                    local res, rerr = cli:call(object, 'echo', {
++                        v = v,
++                        slow = slow
++                    }, timeout)
++
++                    if slow then
++                        assert(res == nil and rerr == 'timeout')
++                        timeouts = timeouts + 1
++                    else
++                        assert(res and rerr == nil)
++                        assert(res.v == v)
++                        successes = successes + 1
++                    end
++                end
++
++                done = done + 1
++            end)
++        end
++
++        local wok, werr = wait_until(20.0, function()
++            return done == workers
++        end)
++        assert(wok, werr)
++
++        assert(successes == workers * loops / 2)
++        assert(timeouts == workers * loops / 2)
++
++        -- Let deferred server handlers finish after their callers time out.
++        eco.sleep(0.1)
++    end)
++end)
++
+ test.run_case_sync('ubus memory leak regression plateau', function()
+     local function burst(rounds, per_round)
+         for r = 1, rounds do
+-- 
+2.53.0
