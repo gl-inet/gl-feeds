@@ -1,0 +1,237 @@
+From dc8dd70e56bcc58d80def3cb0be8013f2e81b168 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Wed, 15 Jul 2026 20:47:19 +0800
+Subject: [PATCH] fix(http): restore body_to_file callback support
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ examples/http/download_callback.lua | 17 ++++++
+ http/client.lua                     | 27 +++++++--
+ tests/http-client-close-test.lua    | 90 ++++++++++++++++++++++++++++-
+ 3 files changed, 126 insertions(+), 8 deletions(-)
+ create mode 100755 examples/http/download_callback.lua
+
+diff --git a/examples/http/download_callback.lua b/examples/http/download_callback.lua
+new file mode 100755
+index 00000000..07851cdf
+--- /dev/null
++++ b/examples/http/download_callback.lua
+@@ -0,0 +1,17 @@
++#!/usr/bin/env eco
++
++local http = require 'eco.http.client'
++
++local resp, err = http.get('http://127.0.0.1:8080/test', {
++    body_to_file = function(data)
++        io.write(data)
++    end
++})
++
++if not resp then
++    print(err)
++    return
++end
++
++print('code:', resp.code)
++print('status:', resp.status)
+diff --git a/http/client.lua b/http/client.lua
+index 6015d89c..e92ec691 100644
+--- a/http/client.lua
++++ b/http/client.lua
+@@ -138,6 +138,14 @@ local function recv_http_headers(sock, timeout)
+     return headers
+ end
+ 
++local function write_body_chunk(body_to_file, data)
++    if type(body_to_file) == 'function' then
++        body_to_file(data)
++    else
++        body_to_file:write(data)
++    end
++end
++
+ local function receive_body_until_closed(resp, sock, timeout, body_to_file)
+     local body = {}
+ 
+@@ -152,7 +160,7 @@ local function receive_body_until_closed(resp, sock, timeout, body_to_file)
+         end
+ 
+         if body_to_file then
+-            body_to_file:write(data)
++            write_body_chunk(body_to_file, data)
+         else
+             body[#body+1] = data
+         end
+@@ -177,7 +185,7 @@ local function receive_body(resp, sock, timeout, length, body_to_file)
+         length = length - #data
+ 
+         if body_to_file then
+-            body_to_file:write(data)
++            write_body_chunk(body_to_file, data)
+         else
+             body[#body+1] = data
+         end
+@@ -237,7 +245,7 @@ local function receive_chunked_body(resp, sock, timeout, body_to_file)
+         end
+ 
+         if body_to_file then
+-            body_to_file:write(data)
++            write_body_chunk(body_to_file, data)
+         else
+             body[#body + 1] = data
+         end
+@@ -284,13 +292,19 @@ local function do_http_request(self, method, path, headers, body, opts)
+     end
+ 
+     local body_to_file = opts.body_to_file
++    local close_body_to_file = false
++
++    if body_to_file ~= nil then
++        assert(type(body_to_file) == 'string' or type(body_to_file) == 'function')
++    end
+ 
+-    if body_to_file then
++    if type(body_to_file) == 'string' then
+         local f, err = io.open(body_to_file, 'w')
+         if not f then
+             return nil, 'create "' .. body_to_file .. '" fail: ' .. err
+         end
+         body_to_file = f
++        close_body_to_file = true
+     end
+ 
+     if headers['transfer-encoding'] == 'chunked' then
+@@ -306,7 +320,7 @@ local function do_http_request(self, method, path, headers, body, opts)
+         ok, err = receive_body_until_closed(resp, sock, timeout, body_to_file)
+     end
+ 
+-    if body_to_file then
++    if close_body_to_file then
+         body_to_file:close()
+     end
+ 
+@@ -527,7 +541,8 @@ end
+ --
+ -- - `timeout` (number) request timeout in seconds (default 30).
+ -- - `headers` (table) extra request headers.
+--- - `body_to_file` (string) write response body to the given file path.
++-- - `body_to_file` (string|function) write response body to a file path, or
++--   call a function with each downloaded data chunk.
+ -- - `ipv6` (boolean) resolve AAAA records.
+ -- - `mark` (number) SO_MARK for sockets.
+ -- - `device` (string) SO_BINDTODEVICE for sockets.
+diff --git a/tests/http-client-close-test.lua b/tests/http-client-close-test.lua
+index fde8e47b..1f2150ba 100755
+--- a/tests/http-client-close-test.lua
++++ b/tests/http-client-close-test.lua
+@@ -32,7 +32,7 @@ local function with_http_client(fake_socket, fn)
+     package.loaded['eco.file'] = {}
+     package.loaded['eco.http.client'] = nil
+ 
+-    local ok, http_or_err = pcall(require, 'eco.http.client')
++    local ok, http_or_err = pcall(dofile, 'http/client.lua')
+     if not ok then
+         restore_modules(saved)
+         error(http_or_err)
+@@ -70,6 +70,10 @@ local function make_socket(reads)
+         return item[1]
+     end
+ 
++    function sock:readfull(mode)
++        return self:read(mode)
++    end
++
+     function sock:close()
+         self.closed = true
+     end
+@@ -145,4 +149,86 @@ do
+     end)
+ end
+ 
+-print('http close-delimited client tests passed')
++do
++    local sock = make_socket({
++        { 'HTTP/1.1 200 OK' },
++        { 'Content-Length: 11' },
++        { '' },
++        { 'hello' },
++        { ' world' }
++    })
++
++    with_http_client(make_socket_module(sock), function(http)
++        local chunks = {}
++        local resp, err = http.request('GET', 'http://127.0.0.1/fixed', nil, {
++            timeout = 1.0,
++            body_to_file = function(data)
++                chunks[#chunks + 1] = data
++            end
++        })
++
++        assert(resp, err)
++        assert(resp.body == nil)
++        assert(table.concat(chunks) == 'hello world')
++        assert(sock.closed == true)
++    end)
++end
++
++do
++    local sock = make_socket({
++        { 'HTTP/1.1 200 OK' },
++        { 'Transfer-Encoding: chunked' },
++        { '' },
++        { '5' },
++        { 'hello' },
++        { '' },
++        { '6' },
++        { ' world' },
++        { '' },
++        { '0' },
++        { '' }
++    })
++
++    with_http_client(make_socket_module(sock), function(http)
++        local chunks = {}
++        local resp, err = http.request('GET', 'http://127.0.0.1/chunked', nil, {
++            timeout = 1.0,
++            body_to_file = function(data)
++                chunks[#chunks + 1] = data
++            end
++        })
++
++        assert(resp, err)
++        assert(resp.body == nil)
++        assert(#chunks == 2)
++        assert(table.concat(chunks) == 'hello world')
++        assert(sock.closed == true)
++    end)
++end
++
++do
++    local sock = make_socket({
++        { 'HTTP/1.1 200 OK' },
++        { '' },
++        { 'hello' },
++        { ' world' },
++        { false, 'closed' }
++    })
++
++    with_http_client(make_socket_module(sock), function(http)
++        local chunks = {}
++        local resp, err = http.request('GET', 'http://127.0.0.1/close-callback', nil, {
++            timeout = 1.0,
++            body_to_file = function(data)
++                chunks[#chunks + 1] = data
++            end
++        })
++
++        assert(resp, err)
++        assert(resp.body == nil)
++        assert(table.concat(chunks) == 'hello world')
++        assert(sock.closed == true)
++    end)
++end
++
++print('http close-delimited/body_to_file client tests passed')
+-- 
+2.53.0
+
