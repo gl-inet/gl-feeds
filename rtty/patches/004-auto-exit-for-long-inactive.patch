@@ -20,8 +20,8 @@
      struct rtty *rtty = container_of(w, struct rtty, tmr);
      ev_tstamp now = ev_now(loop);
  
-+    if (now - rtty->user_active > 10 * 60) {
-+        log_err("long long inactive for 10 minutes, now exit.\n");
++    if (now - rtty->user_active > 30 * 60) {
++        log_err("long long inactive for 30 minutes, now exit.\n");
 +        rtty_exit(rtty);
 +        return;
 +    }
