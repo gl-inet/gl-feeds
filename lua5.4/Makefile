@@ -28,6 +28,9 @@ HOST_PATCH_DIR := ./patches-host
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 
+RSTRIP:=:
+STRIP:=:
+
 define Package/lua5.4/Default
   SUBMENU:=Lua
   SECTION:=lang
@@ -84,7 +87,7 @@ define Build/Prepare
 	mv $(PKG_BUILD_DIR)/doc/luac.1 $(PKG_BUILD_DIR)/doc/luac5.4.1
 endef
 
-TARGET_CFLAGS += -DLUA_USE_LINUX $(FPIC) -std=gnu99
+TARGET_CFLAGS += -DLUA_USE_LINUX $(FPIC) -std=gnu99 -g3
 
 define Build/Compile
 	$(MAKE) $(PKG_JOBS) -C $(PKG_BUILD_DIR) \

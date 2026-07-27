@@ -1,0 +1,28 @@
+From 1d09cfc228543dcb94acadc5828c97de4b6e1f3b Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Mon, 29 Jun 2026 14:19:12 +0800
+Subject: [PATCH] fix(rtnl): Fix build rtnl fail on old openwrt
+
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ nl/rtnl.c | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/nl/rtnl.c b/nl/rtnl.c
+index 93ccf3c..9540084 100644
+--- a/nl/rtnl.c
++++ b/nl/rtnl.c
+@@ -529,10 +529,6 @@ int luaopen_eco_rtnl(lua_State *L)
+     lua_add_constant(L, "RTA_PAD", RTA_PAD);
+     lua_add_constant(L, "RTA_UID", RTA_UID);
+     lua_add_constant(L, "RTA_TTL_PROPAGATE", RTA_TTL_PROPAGATE);
+-    lua_add_constant(L, "RTA_IP_PROTO", RTA_IP_PROTO);
+-    lua_add_constant(L, "RTA_SPORT", RTA_SPORT);
+-    lua_add_constant(L, "RTA_DPORT", RTA_DPORT);
+-    lua_add_constant(L, "RTA_NH_ID", RTA_NH_ID);
+ 
+     lua_add_constant(L, "RTNLGRP_LINK", RTNLGRP_LINK);
+     lua_add_constant(L, "RTNLGRP_NOTIFY", RTNLGRP_NOTIFY);
+-- 
+2.53.0
+
