@@ -8,12 +8,16 @@
 # gl-sdk4-tailscale 需要 useroutes/iptables/advertiseroutes 等，完整 extra-small 会业务不通。
 # 生成 omit 列表（v1.92.5）；含 logtail（无需改 gl-sdk4 tailscale.init，校时后即可上传）：
 #   GOOS= GOARCH= go run ./cmd/featuretags --min --add=osrouter,unixsocketidentity,debug,useroutes,iptables,advertiseroutes,advertiseexitnode,useexitnode,logtail
-# 仍保留 ts_omit_netstack 以控体积；见 patches/003-netstack-omit-invertGSOChecksum.patch。
+# patches/003：仅在 ts_omit_netstack 时避免 invertGSOChecksum panic；现已保留 netstack，补丁仍无害。
 # 保留 lazywg（勿 ts_omit_lazywg）：大 tailnet 时仅把近期活跃 peer 装入 wireguard-go，显著降 RSS。
 # patches/006：Status() MaxPeers=100（exit node 白名单豁免）；CLI status --json 再精简；
 #   prefs 对 tailscale up --exit-node=IP 在 peer 被裁剪时仍允许合法 Tailscale IP；勿改 localapi。
 # patches/007：CGNAT /32 路由超过 200 条时合并为 100.64.0.0/10（默认 10000），减少 table 52 条目。
 # 勿 ts_omit_health：裁掉后 GetInPollNetMap() 恒为 false，tailscale status 永远显示 offline。
+# 勿 ts_omit_dns / ts_omit_netstack：gl-sdk4 用 --accept-dns=false + dnsmasq
+#   server=/ts.net/100.100.100.100；MagicDNS 应答依赖 HasDNS + netstack 拦截 TUN 上的
+#   100.100.100.100:53（userspaceEngine 在 Linux 上不会处理 quad-100 DNS）。
+# patches/008：启用 netstack 且保留 ts_omit_clientmetrics 时，补 NewCounterFunc stub。
 # 参考：https://tailscale.com/docs/how-to/set-up-small-tailscale
 #
 
@@ -47,8 +51,8 @@ GO_PKG:=\
 GO_PKG_LDFLAGS:=-s -w -X 'tailscale.com/version.longStamp=$(PKG_VERSION)-$(PKG_RELEASE) (OpenWrt)'
 GO_PKG_LDFLAGS_X:=tailscale.com/version.shortStamp=$(PKG_VERSION)
 
-# v1.92.5: router profile + logtail（单行；无 ts_omit_logtail）
-GO_TS_ROUTER_OMIT:=ts_omit_ace,ts_omit_acme,ts_omit_appconnectors,ts_omit_aws,ts_omit_bakedroots,ts_omit_bird,ts_omit_cachenetmap,ts_omit_captiveportal,ts_omit_capture,ts_omit_cliconndiag,ts_omit_clientmetrics,ts_omit_clientupdate,ts_omit_cloud,ts_omit_completion,ts_omit_dbus,ts_omit_debugeventbus,ts_omit_debugportmapper,ts_omit_desktop_sessions,ts_omit_dns,ts_omit_doctor,ts_omit_drive,ts_omit_gro,ts_omit_hujsonconf,ts_omit_identityfederation,ts_omit_kube,ts_omit_linkspeed,ts_omit_linuxdnsfight,ts_omit_listenrawdisco,ts_omit_netlog,ts_omit_netstack,ts_omit_networkmanager,ts_omit_oauthkey,ts_omit_outboundproxy,ts_omit_portlist,ts_omit_portmapper,ts_omit_posture,ts_omit_relayserver,ts_omit_resolved,ts_omit_sdnotify,ts_omit_serve,ts_omit_ssh,ts_omit_synology,ts_omit_syspolicy,ts_omit_systray,ts_omit_taildrop,ts_omit_tailnetlock,ts_omit_tap,ts_omit_tpm,ts_omit_useproxy,ts_omit_usermetrics,ts_omit_wakeonlan,ts_omit_webclient
+# v1.92.5: router profile + logtail；保留 dns+netstack（无 ts_omit_dns / ts_omit_netstack）
+GO_TS_ROUTER_OMIT:=ts_omit_ace,ts_omit_acme,ts_omit_appconnectors,ts_omit_aws,ts_omit_bakedroots,ts_omit_bird,ts_omit_cachenetmap,ts_omit_captiveportal,ts_omit_capture,ts_omit_cliconndiag,ts_omit_clientmetrics,ts_omit_clientupdate,ts_omit_cloud,ts_omit_completion,ts_omit_dbus,ts_omit_debugeventbus,ts_omit_debugportmapper,ts_omit_desktop_sessions,ts_omit_doctor,ts_omit_drive,ts_omit_gro,ts_omit_hujsonconf,ts_omit_identityfederation,ts_omit_kube,ts_omit_linkspeed,ts_omit_linuxdnsfight,ts_omit_listenrawdisco,ts_omit_netlog,ts_omit_networkmanager,ts_omit_oauthkey,ts_omit_outboundproxy,ts_omit_portlist,ts_omit_portmapper,ts_omit_posture,ts_omit_relayserver,ts_omit_resolved,ts_omit_sdnotify,ts_omit_serve,ts_omit_ssh,ts_omit_synology,ts_omit_syspolicy,ts_omit_systray,ts_omit_taildrop,ts_omit_tailnetlock,ts_omit_tap,ts_omit_tpm,ts_omit_useproxy,ts_omit_usermetrics,ts_omit_wakeonlan,ts_omit_webclient
 
 GO_PKG_TAGS:=ts_include_cli,$(GO_TS_ROUTER_OMIT)
 

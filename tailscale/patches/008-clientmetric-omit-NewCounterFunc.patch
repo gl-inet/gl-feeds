@@ -1,0 +1,11 @@
+Index: tailscale-1.92.5/util/clientmetric/omit.go
+===================================================================
+--- tailscale-1.92.5.orig/util/clientmetric/omit.go	2026-01-07 02:15:04.000000000 +0800
++++ tailscale-1.92.5/util/clientmetric/omit.go	2026-07-30 17:14:21.129205304 +0800
+@@ -20,5 +20,6 @@
+ var zeroMetric Metric
+ 
+ func NewCounter(string) *Metric          { return &zeroMetric }
++func NewCounterFunc(string, func() int64) *Metric { return &zeroMetric }
+ func NewGauge(string) *Metric            { return &zeroMetric }
+ func NewAggregateCounter(string) *Metric { return &zeroMetric }
