@@ -175,6 +175,7 @@ define Package/dnsmasq/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/dnsmasq.init $(1)/etc/init.d/dnsmasq
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/dhcp
+	$(INSTALL_DATA) ./files/99-dnsmasq-eagain $(1)/etc/hotplug.d/dhcp/99-dnsmasq-eagain
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/neigh
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/ntp
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/tftp

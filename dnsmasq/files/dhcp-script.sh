@@ -55,6 +55,11 @@ case "$1" in
 		json_add_string "" "TFTP_PATH=$4"
 		hotplugobj="tftp"
 	;;
+	eagain)
+		# 发包 EAGAIN：触发 dhcp 热插拔以重启 dnsmasq
+		json_add_string "" "ACTION=eagain"
+		hotplugobj="dhcp"
+	;;
 esac
 
 json_close_array env

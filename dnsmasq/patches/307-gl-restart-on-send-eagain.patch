@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: GL.iNet <dev@gl-inet.com>
+Subject: [PATCH] gl: EAGAIN 经 dhcp-script 触发热插拔重启 dnsmasq
+
+发包持续 EAGAIN 时，经已有 helper 管道调用 dhcp-script(eagain)，
+由脚本 ubus 触发 hotplug.dhcp，再由热插拔脚本重启 dnsmasq。
+
+diff -ruN a/src/dnsmasq.h b/src/dnsmasq.h
+--- a/src/dnsmasq.h	2025-12-07 21:44:40.000000000 +0800
++++ b/src/dnsmasq.h	2026-07-31 15:20:26.427824199 +0800
+@@ -836,6 +836,7 @@
+ #define ACTION_ARP           6
+ #define ACTION_ARP_DEL       7
+ #define ACTION_RELAY_SNOOP   8
++#define ACTION_EAGAIN        9
+ 
+ #define LEASE_NEW            1  /* newly created */
+ #define LEASE_CHANGED        2  /* modified */
+@@ -1765,6 +1766,7 @@
+ #endif
+ void queue_arp(int action, unsigned char *mac, int maclen,
+ 	       int family, union all_addr *addr);
++void queue_eagain(void);
+ int helper_buf_empty(void);
+ #ifdef HAVE_DHCP6
+ void queue_relay_snoop(struct in6_addr *client, int if_index, struct in6_addr *prefix, int prefix_len);
+diff -ruN a/src/forward.c b/src/forward.c
+--- a/src/forward.c	2025-12-07 21:44:40.000000000 +0800
++++ b/src/forward.c	2026-07-31 15:20:26.431824191 +0800
+@@ -98,8 +98,16 @@
+   if (errno != 0)
+     {
+ #ifdef HAVE_LINUX_NETWORK
+-      /* If interface is still in DAD, EINVAL results - ignore that. */
+-      if (errno != EINVAL)
++      /* If interface is still in DAD, EINVAL results - ignore that.
++	 EAGAIN：复用 dhcp-script/helper，触发 hotplug.dhcp 重启。 */
++      if (errno == EAGAIN || errno == EWOULDBLOCK)
++	{
++	  my_syslog(LOG_ERR, _("failed to send packet: %s"), strerror(errno));
++#ifdef HAVE_SCRIPT
++	  queue_eagain();
++#endif
++	}
++      else if (errno != EINVAL)
+ 	my_syslog(LOG_ERR, _("failed to send packet: %s"), strerror(errno));
+ #endif
+       return 0;
+diff -ruN a/src/helper.c b/src/helper.c
+--- a/src/helper.c	2025-12-07 21:44:40.000000000 +0800
++++ b/src/helper.c	2026-07-31 15:20:26.427824199 +0800
+@@ -238,6 +238,8 @@
+ 	   is6 = 1;
+ 	   action_str = "relay-snoop";
+ 	 }
++       else if (data.action == ACTION_EAGAIN)
++	 action_str = "eagain";
+        else
+ 	 continue;
+       	
+@@ -371,6 +373,10 @@
+ 		  lua_call(lua, 2, 0);	/* pass 2 values, expect 0 */
+ 		}
+ 	    }
++	  else if (data.action == ACTION_EAGAIN)
++	    {
++	      /* eagain：仅走 dhcp-script，不调用 lua lease */
++	    }
+ 	  else
+ 	    {
+ 	      lua_getglobal(lua, "lease");     /* function to call */
+@@ -581,7 +587,8 @@
+ 	  close(pipeout[1]);
+ 	}
+       
+-      if (data.action != ACTION_TFTP && data.action != ACTION_ARP && data.action != ACTION_RELAY_SNOOP)
++      if (data.action != ACTION_TFTP && data.action != ACTION_ARP &&
++	  data.action != ACTION_RELAY_SNOOP && data.action != ACTION_EAGAIN)
+ 	{
+ #ifdef HAVE_DHCP6
+ 	  my_setenv("DNSMASQ_IAID", is6 ? daemon->dhcp_buff3 : NULL, &err);
+@@ -919,6 +926,18 @@
+   bytes_in_buf = sizeof(struct script_data);
+ }
+ 
++/* 发包 EAGAIN：经 helper 调用 dhcp-script，再触发 hotplug.dhcp */
++void queue_eagain(void)
++{
++  if (daemon->helperfd == -1)
++    return;
++
++  buff_alloc(sizeof(struct script_data));
++  memset(buf, 0, sizeof(struct script_data));
++  buf->action = ACTION_EAGAIN;
++  bytes_in_buf = sizeof(struct script_data);
++}
++
+ int helper_buf_empty(void)
+ {
+   return bytes_in_buf == 0;

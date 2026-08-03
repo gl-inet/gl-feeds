@@ -1,0 +1,10 @@
+#!/bin/sh
+[ "$ACTION" = "eagain" ] || exit 0
+
+model=$(cat /proc/gl-hw-info/model 2>/dev/null)
+case "$model" in
+	mg1300)
+		logger -t dnsmasq-eagain "EAGAIN,restart dnsmasq"
+		/etc/init.d/dnsmasq restart
+		;;
+esac
