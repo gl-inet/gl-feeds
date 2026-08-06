@@ -15,7 +15,7 @@ PKG_LICENSE:=GPL-2.0-or-later MPL-2.0
 PKG_LICENSE_FILES:=debian/copyright
 
 PKG_SOURCE:=$(PKG_NAME)_$(PKG_VERSION).tar.xz
-PKG_SOURCE_URL:=@DEBIAN/pool/main/c/ca-certificates
+PKG_SOURCE_URL:=http://ftp.debian.org/debian/pool/main/c/ca-certificates
 PKG_HASH:=7ab6301f7f34eef90a4d278647c260bc0762e0e14561f4649854cf4b0d4bea21
 PKG_INSTALL:=1
 
@@ -31,7 +31,7 @@ define Package/ca-certificates
   CATEGORY:=Base system
   TITLE:=System CA certificates
   PKGARCH:=all
-  PROVIDES:=@ca-certs
+  PROVIDES:=ca-certs
 endef
 
 define Package/ca-bundle
@@ -39,7 +39,7 @@ define Package/ca-bundle
   CATEGORY:=Base system
   TITLE:=System CA certificates as a bundle
   PKGARCH:=all
-  PROVIDES:=@ca-certs @ca-certificates-any
+  PROVIDES:=ca-certs ca-certificates-any
 endef
 
 define Build/Install
