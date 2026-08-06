@@ -1,0 +1,29 @@
+--- a/ssmtp.c
++++ b/ssmtp.c
+@@ -799,19 +799,20 @@ bool_t read_config()
+ 	while(fgets(buf, sizeof(buf), fp)) {
+ 		char *begin=buf;
+ 		char *rightside;
+-		/* Make comments invisible */
+-		if((p = strchr(buf, '#'))) {
+-			*p = '\0';
+-		}
++		/* A comment starts only when '#' is the first non-space
++		 * character.  '#' inside a value (notably AuthPass) is data. */
++		while(isspace((unsigned char)*begin)) begin++;
++		if(*begin == '#' || *begin == '\0') continue;
+ 
+ 		/* Ignore malformed lines and comments */
+-		if(strchr(buf, '=') == NULL) continue;
++		if(strchr(begin, '=') == NULL) continue;
+ 
+ 		/* Parse out keywords */
+ 		p=firsttok(&begin, "= \t\n");
+ 		if(p){
+ 			rightside=begin;
+-			q = firsttok(&begin, "= \t\n");
++			/* '=' is a separator only between the key and value. */
++			q = firsttok(&begin, " \t\n");
+ 		}
+ 		if(p && q) {
+ 			if(strcasecmp(p, "Root") == 0) {
