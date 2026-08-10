@@ -383,6 +383,9 @@ boot()
 
 start_service()
 {
+	[ -f /etc/config/oui-httpd ] && \
+  	[ "$(uci -q get oui-httpd.main.inited)" != "1" ] && return 0
+
 	hk_generate_as_needed
 	file_verify /etc/dropbear/authorized_keys config
 
