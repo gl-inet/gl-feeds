@@ -42,6 +42,14 @@ define Package/ca-bundle
   PROVIDES:=ca-certs ca-certificates-any
 endef
 
+CA_CERTIFICATES_SIMPLE_CERTS:= \
+	Amazon_Root_CA_1.crt \
+	GTS_Root_R4.crt \
+	Go_Daddy_Root_Certificate_Authority_-_G2.crt \
+	ISRG_Root_X1.crt \
+	ISRG_Root_X2.crt \
+	USERTrust_RSA_Certification_Authority.crt
+
 define Build/Install
 	mkdir -p \
 		$(PKG_INSTALL_DIR)/usr/sbin \
@@ -52,6 +60,7 @@ endef
 define Package/ca-certificates/install
 	$(INSTALL_DIR) $(1)/etc/ssl/certs
 	$(INSTALL_DATA) $(PKG_INSTALL_DIR)/usr/share/ca-certificates/*/*.crt $(1)/etc/ssl/certs/
+	cat $(addprefix $(PKG_INSTALL_DIR)/usr/share/ca-certificates/*/,$(CA_CERTIFICATES_SIMPLE_CERTS)) >$(1)/etc/ssl/certs/ca-certificates-simple.crt
 
 	for CERTFILE in `ls -1 $(1)/etc/ssl/certs`; do \
 		HASH=`openssl x509 -hash -noout -in $(1)/etc/ssl/certs/$$$$CERTFILE` ; \
