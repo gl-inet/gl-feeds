@@ -620,7 +620,7 @@ dhcp_add() {
 			if [ "$LIP" != "" ] && [ "$tmp" != "" ];then
 				local subnet=`uci -q get passthrough.passthrough.ipaddr`
 				local netmask=`uci -q get passthrough.passthrough.netmask`
-				ipcalc "$subnet/$netmask" 0 0
+				ipcalc "$subnet" "$netmask" 0 0
 				START=$IP
 				END=$IP
 				local mac=`uci -q get passthrough.passthrough.mac | awk '{print toupper($0)}'`
