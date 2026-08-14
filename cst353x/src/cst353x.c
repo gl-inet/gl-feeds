@@ -2,7 +2,6 @@
 /*
  * Driver for I2C connected Hynitron CST353X Touchscreen
  *
- * Copyright (C) 2024 Oleh Kuzhylnyi <kuzhylol@gmail.com>
  */
 #include <linux/delay.h>
 #include <linux/err.h>
