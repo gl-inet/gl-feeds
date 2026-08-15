@@ -1,0 +1,81 @@
+From: GL.iNet Engineering <support@gl-inet.com>
+Date: Tue, 11 Aug 2026 16:30:00 +0800
+Subject: [PATCH] feat(nl80211): expose 2.4 GHz HT operation chandef
+
+Parse the HT Operation information element for 2.4 GHz scan entries and
+expose the announced bandwidth, secondary-channel offset, and center
+frequency. This lets same-PHY repeater code preserve HT40+ versus HT40-
+instead of inferring the extension direction from the primary channel.
+
+---
+ nl/nl80211.lua | 34 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/nl/nl80211.lua b/nl/nl80211.lua
+index a5f9d7c..b6e0f1a 100644
+--- a/nl/nl80211.lua
++++ b/nl/nl80211.lua
+@@ -86,6 +86,7 @@ local M = {
+     -- Element IDs (IEEE Std 802.11-2020, 9.4.2.1, Table 9-92)
+     WLAN_EID_SSID = 0,
+     WLAN_EID_RSN = 48,
++    WLAN_EID_HT_OPERATION = 61,
+     WLAN_EID_MESH_ID = 114,
+     WLAN_EID_VENDOR_SPECIFIC = 221,
+ }
+@@ -121,6 +122,9 @@ local M = {
+ -- @field beacon_interval int|nil Beacon interval.
+ -- @field rsn table|nil RSN information (parsed).
+ -- @field wpa table|nil WPA information (parsed).
++-- @field bandwidth int|nil Announced 2.4 GHz HT bandwidth (20 or 40 MHz).
++-- @field sec_channel_offset int|nil Secondary-channel offset (-1, 0, or 1).
++-- @field center_freq1 int|nil Announced 2.4 GHz HT center frequency (MHz).
+ -- @field status string|nil Link status: authenticated/associated/ibss_joined.
+ -- @field elems table|nil Raw parsed information elements (when keep_elems is true).
+ 
+@@ -783,6 +787,34 @@ local function parse_vendor_specific_ie(info, data)
+     end
+ end
+ 
++local function parse_ht_operation_ie(info, data)
++    if info.band ~= 2.4 or #data < 2 then
++        return
++    end
++
++    local operation = str_byte(data, 2)
++    local offset = operation & 0x03
++    local allows_40mhz = (operation & 0x04) ~= 0
++
++    if not allows_40mhz or (offset ~= 1 and offset ~= 3) then
++        info.bandwidth = 20
++        info.sec_channel_offset = 0
++        info.center_freq1 = info.freq
++        return
++    end
++
++    local sec = offset == 1 and 1 or -1
++    local secondary_channel = info.channel + 4 * sec
++
++    if secondary_channel < 1 or secondary_channel > 13 then
++        return
++    end
++
++    info.bandwidth = 40
++    info.sec_channel_offset = sec
++    info.center_freq1 = info.freq + 10 * sec
++end
++
+ local function parse_bss_ie(info, data, keep_elems)
+     local elems = {}
+ 
+@@ -798,6 +830,8 @@ local function parse_bss_ie(info, data, keep_elems)
+ 
+         if typ == M.WLAN_EID_SSID or typ == M.WLAN_EID_MESH_ID then
+             info.ssid = elem_data
++        elseif typ == M.WLAN_EID_HT_OPERATION then
++            parse_ht_operation_ie(info, elem_data)
+         elseif typ == M.WLAN_EID_RSN then
+             info.rsn = parse_rsn(elem_data, 'CCMP', '8021x')
+         elseif typ == M.WLAN_EID_VENDOR_SPECIFIC then
+-- 
+2.34.1
