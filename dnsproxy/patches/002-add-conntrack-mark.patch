@@ -19,7 +19,7 @@ DNSCrypt certificate fetch and exchange paths, and fastest-address selection.
  internal/cmd/config.go                     |   4 +
  internal/cmd/proxy.go                      |   1 +
  proxy/config.go                            |   4 +
- proxy/conntrack_linux.go                   | 123 +++++++
+ proxy/conntrack_linux.go                   | 119 ++++++
  proxy/dns64.go                             |   4 +-
  proxy/dnscontext.go                        |   3 +
  proxy/exchange.go                          |  13 +-
@@ -32,7 +32,7 @@ DNSCrypt certificate fetch and exchange paths, and fastest-address selection.
  upstream/parallel.go                       | 107 ++++++
  upstream/plain.go                          |  58 ++-
  upstream/upstream.go                       |  16 +
- 23 files changed, 1252 insertions(+), 309 deletions(-)
+ 23 files changed, 1248 insertions(+), 309 deletions(-)
  create mode 100644 internal/bootstrap/bootstrap_mark_linux.go
  create mode 100644 internal/bootstrap/bootstrap_mark_stub.go
  create mode 100644 proxy/conntrack_linux.go
@@ -514,10 +514,10 @@ index 4a56005..c0152c9 100644
  // PendingRequestsConfig is the configuration for tracking identical requests.
 diff --git a/proxy/conntrack_linux.go b/proxy/conntrack_linux.go
 new file mode 100644
-index 0000000..10c5364
+index 0000000..0f803ca
 --- /dev/null
 +++ b/proxy/conntrack_linux.go
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,119 @@
 +//go:build linux
 +
 +package proxy
@@ -542,12 +542,8 @@ index 0000000..10c5364
 +// initConntrack initializes the conntrack connection
 +func initConntrack() error {
 +	nfctOnce.Do(func() {
-+		// create a logger for debugging
-+		logger := log.New(log.Writer(), "conntrack: ", log.LstdFlags)
 +		var err error
-+		nfct, err = ct.Open(&ct.Config{
-+			Logger: logger,
-+		})
++		nfct, err = ct.Open(&ct.Config{})
 +		if err != nil {
 +			nfctError = fmt.Errorf("failed to open conntrack: %v", err)
 +		}
