@@ -15,6 +15,7 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 
 #define BOOT_I2C_ADDR 0x34
 
@@ -196,7 +197,12 @@ static void work_callback(struct work_struct *work)
     }
 }
 
-static int cst353x_probe(struct i2c_client *client, const struct i2c_device_id *id)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int cst353x_probe(struct i2c_client *client)
+#else
+static int cst353x_probe(struct i2c_client *client,
+                         const struct i2c_device_id *id)
+#endif
 {
     struct cst353x_priv *priv;
     struct device *dev = &client->dev;
