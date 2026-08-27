@@ -1,0 +1,183 @@
+From: GL.iNet Engineering <support@gl-inet.com>
+Date: Mon, 10 Aug 2026 10:00:00 +0800
+Subject: [PATCH] fix(nl80211): handle malformed RSN information elements
+
+Reject RSN elements that do not contain a complete version, log bounded
+BSS context for malformed elements, and isolate unexpected parser failures
+to a single BSS entry.
+
+---
+ nl/nl80211.lua | 68 +++++++++++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 60 insertions(+), 8 deletions(-)
+
+diff --git a/nl/nl80211.lua b/nl/nl80211.lua
+index 9b8f6d0..a5f9d7c 100644
+--- a/nl/nl80211.lua
++++ b/nl/nl80211.lua
+@@ -25,6 +25,7 @@
+ 
+ local nl80211 = require 'eco.internal.nl80211'
+ local hex = require 'eco.encoding.hex'
++local log = require 'eco.log'
+ local socket = require 'eco.socket'
+ local file = require 'eco.file'
+ local genl = require 'eco.genl'
+@@ -676,7 +677,33 @@ local auth_suite_names = {
+     [18] = 'OWE'
+ }
+ 
+-local function parse_cipher(data)
++local function format_ie_hex(data)
++    local limit = 64
++    local suffix = ''
++
++    if #data > limit then
++        data = data:sub(1, limit)
++        suffix = '...'
++    end
++
++    return hex.encode(data) .. suffix
++end
++
++local function format_bss_context(info)
++    return string.format('bssid=%s freq=%s channel=%s band=%s ssid=%q',
++        tostring(info.bssid or 'unknown'), tostring(info.freq or 'unknown'),
++        tostring(info.channel or 'unknown'), tostring(info.band or 'unknown'),
++        tostring(info.ssid or ''))
++end
++
++local function log_malformed_ie(info, source, reason, data)
++    info.malformed_ie = true
++    log.log(log.WARNING, string.format(
++        'nl80211: malformed %s IE: %s len=%d reason=%s raw=%s',
++        source, format_bss_context(info), #data, reason, format_ie_hex(data)))
++end
++
++local function parse_cipher(data)
+     local oui = data:sub(1, 3)
+     local id = str_byte(data, 4)
+ 
+@@ -692,7 +722,12 @@ local function parse_cipher(data)
+     end
+ end
+ 
+-local function parse_rsn(data, defcipher, defauth)
++local function parse_rsn(data, defcipher, defauth, invalid)
++    if #data < 2 then
++        invalid('missing-version')
++        return nil
++    end
++
+     local res = {
+         version = str_byte(data, 1) | str_byte(data, 2) << 8,
+         group_cipher = defcipher,
+@@ -705,6 +740,6 @@ local function parse_rsn(data, defcipher, defauth)
+ 
+     data = data:sub(3)
+     if #data < 4 then
++        invalid('missing-group-cipher')
+-        pair_ciphers[defcipher] = true
+-        return res
++        return nil
+     end
+@@ -713,12 +749,12 @@ local function parse_rsn(data, defcipher, defauth)
+ 
+     data = data:sub(5)
+     if #data < 2 then
++        invalid('missing-pairwise-count')
+-        pair_ciphers[defcipher] = true
+-        return res
++        return nil
+     end
+ 
+     local count = str_byte(data, 1) | str_byte(data, 2) << 8
+     if 2 + count * 4 > #data then
++        invalid('truncated-pairwise-list')
+-        pair_ciphers[defcipher] = true
+-        return res
++        return nil
+     end
+@@ -735,12 +773,12 @@ local function parse_rsn(data, defcipher, defauth)
+     end
+ 
+     if #data < 2 then
++        invalid('missing-akm-count')
+-        auth_suites[defauth] = true
+-        return res
++        return nil
+     end
+ 
+     count = str_byte(data, 1) | str_byte(data, 2) << 8
+     if 2 + count * 4 > #data then
++        invalid('truncated-akm-list')
+-        auth_suites[defauth] = true
+-        return res
++        return nil
+     end
+@@ -770,7 +810,10 @@ local function parse_vendor_specific_ie(info, data)
+ 
+     if oui == OUI_MICROSOFT then
+         if id == 1 then
+-            info.wpa = parse_rsn(data:sub(5), 'TKIP', 'PSK')
++            local wpa_data = data:sub(5)
++            info.wpa = parse_rsn(wpa_data, 'TKIP', 'PSK', function(reason)
++                log_malformed_ie(info, 'WPA', reason, wpa_data)
++            end)
+         end
+     end
+ end
+@@ -785,6 +828,8 @@ local function parse_bss_ie(info, data, keep_elems)
+         local elem_len = str_byte(data, 2)
+ 
+         if #data < 2 + elem_len then
++            log_malformed_ie(info, string.format('EID-%d', typ),
++                string.format('truncated-declared-%d', elem_len), data)
+             break
+         end
+ 
+@@ -794,7 +839,12 @@ local function parse_bss_ie(info, data, keep_elems)
+         if typ == M.WLAN_EID_SSID or typ == M.WLAN_EID_MESH_ID then
+             info.ssid = elem_data
+         elseif typ == M.WLAN_EID_RSN then
+-            info.rsn = parse_rsn(elem_data, 'CCMP', '8021x')
++            local rsn = parse_rsn(elem_data, 'CCMP', '8021x', function(reason)
++                log_malformed_ie(info, 'RSN', reason, elem_data)
++            end)
++            if rsn then
++                info.rsn = rsn
++            end
+         elseif typ == M.WLAN_EID_VENDOR_SPECIFIC then
+             parse_vendor_specific_ie(info, elem_data)
+         end
+@@ -852,7 +901,15 @@ local function parse_bss(nest, keep_elems)
+     end
+ 
+     if attrs[nl80211.BSS_INFORMATION_ELEMENTS] then
+-        parse_bss_ie(info, nl.attr_get_payload(attrs[nl80211.BSS_INFORMATION_ELEMENTS]), keep_elems)
++        local ok, err = pcall(parse_bss_ie, info,
++            nl.attr_get_payload(attrs[nl80211.BSS_INFORMATION_ELEMENTS]), keep_elems)
++        if not ok then
++            log.err(string.format('nl80211: failed to parse BSS IE: %s error=%s',
++                format_bss_context(info), tostring(err)))
++            return nil
++        elseif info.malformed_ie then
++            return nil
++        end
+     end
+ 
+     if attrs[nl80211.BSS_STATUS] then
+@@ -925,9 +981,11 @@ local function nl80211_scan(sock, msg, action, cmd, params)
+ 
+         local attrs = reply:parse_attr(genl.GENLMSGHDR_SIZE)
+         if attrs[nl80211.ATTR_BSS] then
+-            local res = parse_bss(attrs[nl80211.ATTR_BSS], params.keep_elems)
+-            if res then
+-                bss[#bss + 1] = res
++            local ok, res = pcall(parse_bss, attrs[nl80211.ATTR_BSS], params.keep_elems)
++            if not ok then
++                log.err('nl80211: skip malformed BSS:', tostring(res))
++            elseif res then
++                bss[#bss + 1] = res
+             end
+         end
+     end)
