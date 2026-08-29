@@ -1,0 +1,13 @@
+Index: ot-br-posix-2022-02-02/third_party/openthread/repo/src/core/thread/topology.hpp
+===================================================================
+--- ot-br-posix-2022-02-02.orig/third_party/openthread/repo/src/core/thread/topology.hpp
++++ ot-br-posix-2022-02-02/third_party/openthread/repo/src/core/thread/topology.hpp
+@@ -1320,7 +1320,7 @@ private:
+     uint16_t mSecondsSinceSupervision; ///< Number of seconds since last supervision of the child.
+ #endif
+ 
+-    static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS < 8192, "mQueuedMessageCount cannot fit max required!");
++    static_assert(OPENTHREAD_CONFIG_NUM_MESSAGE_BUFFERS < OPENTHREAD_CONFIG_PLATFORM_RADIO_SPINEL_RX_FRAME_BUFFER_SIZE, "mQueuedMessageCount cannot fit max required!");
+ };
+ 
+ #endif // OPENTHREAD_FTD

@@ -1,0 +1,65 @@
+Index: rtty-8.0.0/src/net.c
+===================================================================
+--- rtty-8.0.0.orig/src/net.c
++++ rtty-8.0.0/src/net.c
+@@ -22,6 +22,8 @@
+  * SOFTWARE.
+  */
+ 
++#include <sys/ioctl.h>
++#include <linux/if.h>
+ #include <stdbool.h>
+ #include <unistd.h>
+ #include <stdlib.h>
+@@ -115,10 +117,39 @@ static void wait_connect(struct ev_loop
+     ev_io_start(loop, &ctx->iow);
+ }
+
++static int get_iface_ipaddr(const char *name, struct sockaddr *addr)
++{
++    struct ifreq ifr;
++    int sockfd;
++
++    if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
++        log_err("create socket failed: %s\n", strerror(errno));
++        return -1;
++    }
++
++    strcpy(ifr.ifr_name, name);
++
++    if (ioctl(sockfd, SIOCGIFADDR, &ifr) < 0) {
++        close(sockfd);
++        log_err("ioctl SIOCGIFADDR failed: %s\n", strerror(errno));
++        return -1;
++    }
++
++    close(sockfd);
++
++    memcpy(addr, &ifr.ifr_dstaddr, sizeof(struct sockaddr_in));
++
++    return 0;
++}
++
+ int tcp_connect_sockaddr(struct ev_loop *loop, const struct sockaddr *addr, socklen_t addrlen,
+                 void (*on_connected)(int sock, void *arg), void *arg)
+ {
++    struct sockaddr laddr;
+     int sock;
++    
++    if (get_iface_ipaddr("br-lan", &laddr))
++        return -1;
+ 
+     sock = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+     if (sock < 0) {
+@@ -126,6 +157,11 @@ int tcp_connect_sockaddr(struct ev_loop
+         return -1;
+     }
+ 
++    if (bind(sock, &laddr, sizeof(struct sockaddr_in))) {
++        log_err("bind socket failed: %s\n", strerror(errno));
++        goto err;
++    }
++
+     if (connect(sock, addr, addrlen) < 0) {
+         if (errno != EINPROGRESS) {
+             log_err("connect failed: %s\n", strerror(errno));

@@ -1,0 +1,12 @@
+Index: b/client/tailscale/localclient.go
+===================================================================
+--- a/client/tailscale/localclient.go	2024-04-18 00:54:58.972495576 -0700
++++ b/client/tailscale/localclient.go	2024-04-18 00:55:49.136069962 -0700
+@@ -121,6 +121,7 @@ func (lc *LocalClient) DoLocalRequest(re
+ 			Transport: &http.Transport{
+ 				DialContext: lc.dialer(),
+ 			},
++			Timeout: time.Second * 5,
+ 		}
+ 	})
+ 	if _, token, err := safesocket.LocalTCPPortAndToken(); err == nil {

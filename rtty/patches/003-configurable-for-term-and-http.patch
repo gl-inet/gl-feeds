@@ -1,0 +1,165 @@
+Index: rtty-8.0.1/src/main.c
+===================================================================
+--- rtty-8.0.1.orig/src/main.c
++++ rtty-8.0.1/src/main.c
+@@ -27,6 +27,7 @@
+ #include <stdlib.h>
+ #include <getopt.h>
+ #include <glob.h>
++#include <uci.h>
+ 
+ #include "log/log.h"
+ #include "rtty.h"
+@@ -35,6 +36,12 @@ enum {
+     LONG_OPT_HELP = 1
+ };
+ 
++static struct rtty rtty = {
++    .host = "localhost",
++    .port = 5912,
++    .sock = -1
++};
++
+ #ifdef SSL_SUPPORT
+ static void load_default_ca_cert(struct ssl_context *ctx)
+ {
+@@ -104,6 +111,49 @@ static void usage(const char *prog)
+     exit(1);
+ }
+ 
++static void load_config()
++{
++    struct uci_context *ctx;
++    struct uci_element *e;
++    struct uci_ptr ptr = {
++        .package = "rtty",
++        .section = "general"
++    };
++
++    rtty.no_term = true;
++    rtty.no_http = true;
++
++    ctx = uci_alloc_context();
++
++    if (uci_lookup_ptr(ctx, &ptr, NULL, false) != UCI_OK)
++        goto err;
++
++    uci_foreach_element(&ptr.s->options, e) {
++        struct uci_option *o = uci_to_option(e);
++        if (o->type != UCI_TYPE_STRING)
++            continue;
++
++        if (!strcmp(o->e.name, "ssh_en"))
++            rtty.no_term = atoi(o->v.string) == 0;
++        else if (!strcmp(o->e.name, "web_en"))
++            rtty.no_http = atoi(o->v.string) == 0;
++    }
++
++err:
++    uci_free_context(ctx);
++
++    log_info("config: term %s\n", rtty.no_term ? "Disabled" : "Enabled");
++    log_info("config: http %s\n", rtty.no_http ? "Disabled" : "Enabled");
++}
++
++static void signal_handler(int signum)
++{
++    if (signum != SIGUSR1)
++        return;
++
++    load_config();
++}
++
+ int main(int argc, char **argv)
+ {
+     char shortopts[32] = "I:h:p:d:aDt:f:RS:vV";
+@@ -111,18 +161,14 @@ int main(int argc, char **argv)
+     struct ev_signal signal_watcher;
+     bool background = false;
+     bool verbose = false;
+-    struct rtty rtty = {
+-        .host = "localhost",
+-        .port = 5912,
+-        .loop = loop,
+-        .sock = -1
+-    };
+ #ifdef SSL_SUPPORT
+     bool has_cacert = false;
+ #endif
+     int option_index;
+     int c;
+ 
++    rtty.loop = loop;
++
+     log_level(LOG_DEBUG);
+ 
+ #ifdef SSL_SUPPORT
+@@ -217,6 +263,7 @@ int main(int argc, char **argv)
+     }
+ 
+     signal(SIGPIPE, SIG_IGN);
++    signal(SIGUSR1, signal_handler);
+ 
+     if (background && daemon(0, 0))
+         log_err("Can't run in the background: %s\n", strerror(errno));
+@@ -241,6 +288,8 @@ int main(int argc, char **argv)
+         load_default_ca_cert(rtty.ssl_ctx);
+ #endif
+ 
++    load_config();
++
+     if (rtty_start(&rtty) < 0)
+         return -1;
+ 
+Index: rtty-8.0.1/src/rtty.c
+===================================================================
+--- rtty-8.0.1.orig/src/rtty.c
++++ rtty-8.0.1/src/rtty.c
+@@ -435,6 +435,10 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_LOGIN:
++            if (rtty->no_term) {
++                buffer_pull(rb, NULL, msglen);
++                break;
++            }
+         case MSG_TYPE_LOGOUT:
+         case MSG_TYPE_TERMDATA:
+         case MSG_TYPE_WINSIZE:
+@@ -452,6 +456,10 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_HTTP:
++            if (rtty->no_http) {
++                buffer_pull(rb, NULL, msglen);
++                break;
++            }
+             http_request(rtty, msglen);
+             break;
+ 
+Index: rtty-8.0.1/src/CMakeLists.txt
+===================================================================
+--- rtty-8.0.1.orig/src/CMakeLists.txt
++++ rtty-8.0.1/src/CMakeLists.txt
+@@ -14,7 +14,7 @@ add_executable(rtty ${SRCS})
+ target_compile_definitions(rtty PRIVATE _GNU_SOURCE)
+ target_compile_options(rtty PRIVATE -O -Wall -Werror --std=gnu99)
+ target_include_directories(rtty PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/buffer ${LIBEV_INCLUDE_DIR})
+-target_link_libraries(rtty PRIVATE ${LIBEV_LIBRARY} util crypt m)
++target_link_libraries(rtty PRIVATE ${LIBEV_LIBRARY} util crypt m uci)
+ 
+ add_subdirectory(ssl)
+ 
+Index: rtty-8.0.1/src/rtty.h
+===================================================================
+--- rtty-8.0.1.orig/src/rtty.h
++++ rtty-8.0.1/src/rtty.h
+@@ -108,6 +108,8 @@ struct rtty {
+     int ntty;   /* tty number */
+     struct list_head ttys;
+     struct list_head http_conns;
++    bool no_term;
++    bool no_http;
+ };
+ 
+ int rtty_start(struct rtty *rtty);

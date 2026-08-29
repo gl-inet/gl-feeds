@@ -1,0 +1,746 @@
+From 687b62a6bcdbf299ae5ac07632a67302eff42529 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <zhaojh329@gmail.com>
+Date: Fri, 24 May 2024 16:04:17 +0800
+Subject: [PATCH] fix: close socket when returned from function.
+
+Signed-off-by: Jianhui Zhao <zhaojh329@gmail.com>
+---
+ genl.lua    |  24 +++-
+ ip.lua      | 106 +++++++++++-----
+ nl80211.lua | 360 +++++++++++++++++++++++++++++++++++-----------------
+ 3 files changed, 334 insertions(+), 156 deletions(-)
+
+diff --git a/genl.lua b/genl.lua
+index f10f1c6..f985e87 100644
+--- a/genl.lua
++++ b/genl.lua
+@@ -16,12 +16,7 @@ local function parse_grps(nest, groups)
+     end
+ end
+ 
+-local function get_family_by(params)
+-    local sock, err = nl.open(nl.NETLINK_GENERIC)
+-    if not sock then
+-        return nil, err
+-    end
+-
++local function __get_family_by(sock, params)
+     local msg = nl.nlmsg(genl.GENL_ID_CTRL, nl.NLM_F_REQUEST)
+ 
+     msg:put(genl.genlmsghdr({ cmd = genl.CTRL_CMD_GETFAMILY }))
+@@ -71,6 +66,23 @@ local function get_family_by(params)
+     return info
+ end
+ 
++local function get_family_by(params)
++    local sock, err = nl.open(nl.NETLINK_GENERIC)
++    if not sock then
++        return nil, err
++    end
++
++    local res, err = __get_family_by(sock, params)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ function M.get_family_byid(id)
+     if type(id) ~= 'number' then
+         error('invalid id')
+diff --git a/ip.lua b/ip.lua
+index 8dbde8c..a57bd3f 100644
+--- a/ip.lua
++++ b/ip.lua
+@@ -9,12 +9,7 @@ local nl = require 'eco.nl'
+ 
+ local M = {}
+ 
+-local function rtnl_send(msg)
+-    local sock, err = nl.open(nl.NETLINK_ROUTE)
+-    if not sock then
+-        return nil, err
+-    end
+-
++local function __rtnl_send(sock, msg)
+     local ok, err = sock:send(msg)
+     if not ok then
+         return nil, err
+@@ -42,6 +37,23 @@ local function rtnl_send(msg)
+     return nil, 'no ack'
+ end
+ 
++local function rtnl_send(msg)
++    local sock, err = nl.open(nl.NETLINK_ROUTE)
++    if not sock then
++        return nil, err
++    end
++
++    local ok, err = __rtnl_send(sock, msg)
++
++    sock:close()
++
++    if ok then
++        return true
++    end
++
++    return nil, err
++end
++
+ local link = {}
+ 
+ --[[
+@@ -176,20 +188,10 @@ function link.set(dev, attrs)
+     return rtnl_send(msg)
+ end
+ 
+-function link.get(dev)
+-    local dev_index = socket.if_nametoindex(dev)
+-    if not dev_index then
+-        return nil, 'no such device'
+-    end
+-
+-    local sock, err = nl.open(nl.NETLINK_ROUTE)
+-    if not sock then
+-        return nil, err
+-    end
+-
++local function link_get(sock, ifindex)
+     local msg = nl.nlmsg(rtnl.RTM_GETLINK, nl.NLM_F_REQUEST)
+ 
+-    msg:put(rtnl.ifinfomsg({ family = socket.AF_UNSPEC, index = dev_index }))
++    msg:put(rtnl.ifinfomsg({ family = socket.AF_UNSPEC, index = ifindex }))
+ 
+     local ok, err = sock:send(msg)
+     if not ok then
+@@ -295,6 +297,28 @@ function link.get(dev)
+     return res
+ end
+ 
++function link.get(dev)
++    local ifindex = socket.if_nametoindex(dev)
++    if not ifindex then
++        return nil, 'no such device'
++    end
++
++    local sock, err = nl.open(nl.NETLINK_ROUTE)
++    if not sock then
++        return nil, err
++    end
++
++    local res, err = link_get(sock, ifindex)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ M.link = link
+ 
+ local address = {}
+@@ -405,21 +429,7 @@ function address.del(dev, addr)
+     return do_address('del', dev, addr)
+ end
+ 
+-function address.get(dev)
+-    local dev_index
+-
+-    if dev then
+-        dev_index = socket.if_nametoindex(dev)
+-        if not dev_index then
+-            return nil, 'no such device'
+-        end
+-    end
+-
+-    local sock, err = nl.open(nl.NETLINK_ROUTE)
+-    if not sock then
+-        return nil, err
+-    end
+-
++local function address_get(sock, ifindex)
+     local msg = nl.nlmsg(rtnl.RTM_GETADDR, nl.NLM_F_REQUEST | nl.NLM_F_DUMP)
+ 
+     msg:put(rtnl.ifaddrmsg({ family = socket.AF_UNSPEC }))
+@@ -449,7 +459,7 @@ function address.get(dev)
+                 local info = rtnl.parse_ifaddrmsg(msg)
+                 local family = info.family
+ 
+-                if not dev_index or dev_index == info.index then
++                if not ifindex or ifindex == info.index then
+                     res.ifname = socket.if_indextoname(info.index)
+                     res.scope = rtscope_to_name[info.scope]
+                     res.family = family
+@@ -483,7 +493,7 @@ function address.get(dev)
+                     return nil, 'RTNETLINK answers: ' .. sys.strerror(-err)
+                 end
+             elseif nlh.type == nl.NLMSG_DONE then
+-                if dev_index and #reses < 1 then
++                if ifindex and #reses < 1 then
+                     return nil, 'not found'
+                 end
+                 return reses
+@@ -492,6 +502,32 @@ function address.get(dev)
+     end
+ end
+ 
++function address.get(dev)
++    local ifindex
++
++    if dev then
++        ifindex = socket.if_nametoindex(dev)
++        if not ifindex then
++            return nil, 'no such device'
++        end
++    end
++
++    local sock, err = nl.open(nl.NETLINK_ROUTE)
++    if not sock then
++        return nil, err
++    end
++
++    local res, err = address_get(sock, ifindex)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ M.address = address
+ 
+ return M
+diff --git a/nl80211.lua b/nl80211.lua
+index 9566dd2..d756dfe 100644
+--- a/nl80211.lua
++++ b/nl80211.lua
+@@ -250,7 +250,15 @@ function M.add_interface(phy, ifname, attrs)
+ 
+     put_interface_attrs(msg, attrs)
+ 
+-    return send_nl80211_msg(sock, msg)
++    local ok, err = send_nl80211_msg(sock, msg)
++
++    sock:close()
++
++    if ok then
++        return true
++    end
++
++    return nil, err
+ end
+ 
+ function M.set_interface(ifname, attrs)
+@@ -272,7 +280,15 @@ function M.set_interface(ifname, attrs)
+ 
+     put_interface_attrs(msg, attrs)
+ 
+-    return send_nl80211_msg(sock, msg)
++    local ok, err = send_nl80211_msg(sock, msg)
++
++    sock:close()
++
++    if ok then
++        return true
++    end
++
++    return nil, err
+ end
+ 
+ function M.del_interface(ifname)
+@@ -292,24 +308,18 @@ function M.del_interface(ifname)
+ 
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, if_index)
+ 
+-    return send_nl80211_msg(sock, msg)
+-end
++    local ok, err = send_nl80211_msg(sock, msg)
+ 
+-function M.get_interface(ifname)
+-    if type(ifname) ~= 'string' then
+-        error('invalid ifname')
+-    end
++    sock:close()
+ 
+-    local ifidx = socket.if_nametoindex(ifname)
+-    if not ifidx then
+-        return nil, 'no dev'
++    if ok then
++        return true
+     end
+ 
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_INTERFACE)
+-    if not sock then
+-        return nil, msg
+-    end
++    return nil, err
++end
+ 
++local function get_interface(sock, msg, ifidx)
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, ifidx)
+ 
+     local ok, err = sock:send(msg)
+@@ -335,12 +345,33 @@ function M.get_interface(ifname)
+     return parse_interface(msg)
+ end
+ 
+-function M.get_interfaces(phy)
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_INTERFACE, nl.NLM_F_DUMP)
++function M.get_interface(ifname)
++    if type(ifname) ~= 'string' then
++        error('invalid ifname')
++    end
++
++    local ifidx = socket.if_nametoindex(ifname)
++    if not ifidx then
++        return nil, 'no dev'
++    end
++
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_INTERFACE)
+     if not sock then
+         return nil, msg
+     end
+ 
++    local res, err = get_interface(sock, msg, ifidx)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
++local function get_interfaces(sock, msg, phy)
+     if phy and type(phy) ~= 'number' then
+         error('invalid phy index')
+     end
+@@ -382,6 +413,23 @@ function M.get_interfaces(phy)
+     end
+ end
+ 
++function M.get_interfaces(phy)
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_INTERFACE, nl.NLM_F_DUMP)
++    if not sock then
++        return nil, msg
++    end
++
++    local res, err = get_interfaces(sock, msg, phy)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ local cipher_names = {
+     [0] = 'NONE',
+     [1] = 'WEP-40',
+@@ -574,25 +622,7 @@ local function parse_bss(nest)
+     return info
+ end
+ 
+-function M.scan(action, params)
+-    local flags = 0
+-    local cmd
+-
+-    if action == 'trigger' then
+-        flags = nl.NLM_F_ACK
+-        cmd = nl80211.CMD_TRIGGER_SCAN
+-    elseif action == 'dump' then
+-        flags = nl.NLM_F_DUMP
+-        cmd = nl80211.CMD_GET_SCAN
+-    elseif action == 'abort' then
+-        flags = nl.NLM_F_ACK
+-        cmd = nl80211.CMD_ABORT_SCAN
+-    else
+-        error('invalid scan action')
+-    end
+-
+-    params = params or {}
+-
++local function nl80211_scan(sock, msg, action, cmd, params)
+     if type(params.ifname) ~= 'string' then
+         error('invalid ifname')
+     end
+@@ -602,11 +632,6 @@ function M.scan(action, params)
+         return nil, 'no such device'
+     end
+ 
+-    local sock, msg = prepare_send_cmd(cmd, flags)
+-    if not sock then
+-        return nil, msg
+-    end
+-
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, ifidx)
+ 
+     if action == 'trigger' then
+@@ -694,20 +719,45 @@ function M.scan(action, params)
+     end
+ end
+ 
+---[[
+-    The callback function "cb" must return a boolean value to stop waiting event.
+-    Return true or return false following a error message.
+-    The callback will get three params: cmd, attrs, data.
+---]]
+-function M.wait_event(grp_name, timeout, cb, data)
+-    local grp = genl.get_group_id('nl80211', grp_name)
+-    if not grp then
+-        return nil, 'not support'
++function M.scan(action, params)
++    local flags = 0
++    local cmd
++
++    if action == 'trigger' then
++        flags = nl.NLM_F_ACK
++        cmd = nl80211.CMD_TRIGGER_SCAN
++    elseif action == 'dump' then
++        flags = nl.NLM_F_DUMP
++        cmd = nl80211.CMD_GET_SCAN
++    elseif action == 'abort' then
++        flags = nl.NLM_F_ACK
++        cmd = nl80211.CMD_ABORT_SCAN
++    else
++        error('invalid scan action')
+     end
+ 
+-    local sock, err = nl.open(nl.NETLINK_GENERIC)
++    params = params or {}
++
++    local sock, msg = prepare_send_cmd(cmd, flags)
+     if not sock then
+-        return nil, err
++        return nil, msg
++    end
++
++    local res, err = nl80211_scan(sock, msg, action, cmd, params)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
++local function wait_event(sock, grp_name, timeout, cb, data)
++    local grp = genl.get_group_id('nl80211', grp_name)
++    if not grp then
++        return nil, 'not support'
+     end
+ 
+     local ok, err = sock:bind(0)
+@@ -715,7 +765,7 @@ function M.wait_event(grp_name, timeout, cb, data)
+         return nil, err
+     end
+ 
+-    local ok, err = sock:add_membership(grp)
++    ok, err = sock:add_membership(grp)
+     if not ok then
+         return nil, err
+     end
+@@ -748,21 +798,29 @@ function M.wait_event(grp_name, timeout, cb, data)
+     end
+ end
+ 
+-function M.get_noise(ifname)
+-    if type(ifname) ~= 'string' then
+-        error('invalid ifname')
++--[[
++    The callback function "cb" must return a boolean value to stop waiting event.
++    Return true or return false following a error message.
++    The callback will get three params: cmd, attrs, data.
++--]]
++function M.wait_event(grp_name, timeout, cb, data)
++    local sock, err = nl.open(nl.NETLINK_GENERIC)
++    if not sock then
++        return nil, err
+     end
+ 
+-    local ifidx = socket.if_nametoindex(ifname)
+-    if not ifidx then
+-        return nil, 'no dev'
+-    end
++    local ok, err = wait_event(sock, grp_name, timeout, cb, data)
+ 
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_SURVEY, nl.NLM_F_DUMP)
+-    if not sock then
+-        return nil, msg
++    sock:close()
++
++    if ok then
++        return true
+     end
+ 
++    return nil, err
++end
++
++local function get_noise(sock, msg, ifidx)
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, ifidx)
+ 
+     local ok, err = sock:send(msg)
+@@ -806,6 +864,32 @@ function M.get_noise(ifname)
+     end
+ end
+ 
++function M.get_noise(ifname)
++    if type(ifname) ~= 'string' then
++        error('invalid ifname')
++    end
++
++    local ifidx = socket.if_nametoindex(ifname)
++    if not ifidx then
++        return nil, 'no dev'
++    end
++
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_SURVEY, nl.NLM_F_DUMP)
++    if not sock then
++        return nil, msg
++    end
++
++    local res, err = get_noise(sock, msg, ifidx)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ local function parse_bitrate(attrs)
+     local r = {}
+     local rate = 0
+@@ -974,25 +1058,12 @@ local function parse_station(attrs, sinfo)
+     return info
+ end
+ 
+-function M.get_station(ifname, mac)
+-    if type(ifname) ~= 'string' then
+-        error('invalid ifname')
+-    end
+-
+-    if type(mac) ~= 'string' then
+-        error('invalid mac')
+-    end
+-
++local function get_station(sock, msg, ifname, mac)
+     local ifidx = socket.if_nametoindex(ifname)
+     if not ifidx then
+         return nil, 'no dev'
+     end
+ 
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_STATION)
+-    if not sock then
+-        return nil, msg
+-    end
+-
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, ifidx)
+     msg:put_attr(nl80211.ATTR_MAC, hex.decode(mac:gsub(':', '')))
+ 
+@@ -1028,21 +1099,37 @@ function M.get_station(ifname, mac)
+     return res
+ end
+ 
+-function M.get_stations(ifname)
++function M.get_station(ifname, mac)
+     if type(ifname) ~= 'string' then
+         error('invalid ifname')
+     end
+ 
+-    local ifidx = socket.if_nametoindex(ifname)
+-    if not ifidx then
+-        return nil, 'no dev'
++    if type(mac) ~= 'string' then
++        error('invalid mac')
+     end
+ 
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_STATION, nl.NLM_F_DUMP)
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_STATION)
+     if not sock then
+         return nil, msg
+     end
+ 
++    local res, err = get_station(sock, msg, ifname, mac)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
++local function get_stations(sock, msg, ifname)
++    local ifidx = socket.if_nametoindex(ifname)
++    if not ifidx then
++        return nil, 'no dev'
++    end
++
+     msg:put_attr_u32(nl80211.ATTR_IFINDEX, ifidx)
+ 
+     local ok, err = sock:send(msg)
+@@ -1088,25 +1175,28 @@ function M.get_stations(ifname)
+     end
+ end
+ 
+-function M.get_protocol_features(phy)
+-    local phyid
+-
+-    if type(phy) == 'string' then
+-        phyid = M.phy_lookup(phy)
+-        if not phyid then
+-            return nil, string.format('"%s" not exists', phy)
+-        end
+-    elseif type(phy) == 'number' then
+-        phyid = phy
+-    else
+-        error('invalid phy')
++function M.get_stations(ifname)
++    if type(ifname) ~= 'string' then
++        error('invalid ifname')
+     end
+ 
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_PROTOCOL_FEATURES)
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_STATION, nl.NLM_F_DUMP)
+     if not sock then
+         return nil, msg
+     end
+ 
++    local res, err = get_stations(sock, msg, ifname)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
++local function get_protocol_features(sock, msg, phyid)
+     msg:put_attr_u32(nl80211.ATTR_WIPHY, phyid)
+ 
+     local ok, err = sock:send(msg)
+@@ -1136,9 +1226,37 @@ function M.get_protocol_features(phy)
+         features = nl.attr_get_u32(attrs[nl80211.ATTR_PROTOCOL_FEATURES])
+     end
+ 
++    return features
++end
++
++function M.get_protocol_features(phy)
++    local phyid
++
++    if type(phy) == 'string' then
++        phyid = M.phy_lookup(phy)
++        if not phyid then
++            return nil, string.format('"%s" not exists', phy)
++        end
++    elseif type(phy) == 'number' then
++        phyid = phy
++    else
++        error('invalid phy')
++    end
++
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_PROTOCOL_FEATURES)
++    if not sock then
++        return nil, msg
++    end
++
++    local res, err = get_protocol_features(sock, msg, phyid)
++
+     sock:close()
+ 
+-    return features
++    if res then
++        return res
++    end
++
++    return nil, err
+ end
+ 
+ local function parse_freqlist(attrs, freqlist)
+@@ -1220,25 +1338,7 @@ local function parse_freqlist(attrs, freqlist)
+     end
+ end
+ 
+-function M.get_freqlist(phy)
+-    local phyid
+-
+-    if type(phy) == 'string' then
+-        phyid = M.phy_lookup(phy)
+-        if not phyid then
+-            return nil, string.format('"%s" not exists', phy)
+-        end
+-    elseif type(phy) == 'number' then
+-        phyid = phy
+-    else
+-        error('invalid phy')
+-    end
+-
+-    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_WIPHY, nl.NLM_F_DUMP)
+-    if not sock then
+-        return nil, msg
+-    end
+-
++local function get_freqlist(sock, msg, phyid)
+     msg:put_attr_u32(nl80211.ATTR_WIPHY, phyid)
+     msg:put_attr_flag(nl80211.ATTR_SPLIT_WIPHY_DUMP)
+ 
+@@ -1279,4 +1379,34 @@ function M.get_freqlist(phy)
+     end
+ end
+ 
++function M.get_freqlist(phy)
++    local phyid
++
++    if type(phy) == 'string' then
++        phyid = M.phy_lookup(phy)
++        if not phyid then
++            return nil, string.format('"%s" not exists', phy)
++        end
++    elseif type(phy) == 'number' then
++        phyid = phy
++    else
++        error('invalid phy')
++    end
++
++    local sock, msg = prepare_send_cmd(nl80211.CMD_GET_WIPHY, nl.NLM_F_DUMP)
++    if not sock then
++        return nil, msg
++    end
++
++    local res, err = get_freqlist(sock, msg, phyid)
++
++    sock:close()
++
++    if res then
++        return res
++    end
++
++    return nil, err
++end
++
+ return setmetatable(M, { __index = nl80211 })
+-- 
+2.34.1
+

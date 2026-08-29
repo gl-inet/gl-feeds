@@ -1,0 +1,128 @@
+Index: ot-br-posix-2023-5-17-r4.3.0/src/agent/main.cpp
+===================================================================
+--- ot-br-posix-2023-5-17-r4.3.0.orig/src/agent/main.cpp
++++ ot-br-posix-2023-5-17-r4.3.0/src/agent/main.cpp
+@@ -77,6 +77,7 @@ enum
+     OTBR_OPT_AUTO_ATTACH,
+     OTBR_OPT_REST_LISTEN_ADDR,
+     OTBR_OPT_REST_LISTEN_PORT,
++    OTBR_OPT_RADIO_EUI64,
+ };
+ 
+ static jmp_buf            sResetJump;
+@@ -94,6 +95,7 @@ static const struct option kOptions[] =
+     {"auto-attach", optional_argument, nullptr, OTBR_OPT_AUTO_ATTACH},
+     {"rest-listen-address", required_argument, nullptr, OTBR_OPT_REST_LISTEN_ADDR},
+     {"rest-listen-port", required_argument, nullptr, OTBR_OPT_REST_LISTEN_PORT},
++    {"radio-eui64", no_argument, nullptr, OTBR_OPT_RADIO_EUI64},
+     {0, 0, 0, 0}};
+ 
+ static bool ParseInteger(const char *aStr, long &aOutResult)
+@@ -187,6 +189,58 @@ static void PrintRadioVersionAndExit(con
+     exit(EXIT_SUCCESS);
+ }
+ 
++static void PrintRadioEUI64AndExit(const std::vector<const char *> &aRadioUrls)
++{
++    otbr::Ncp::ControllerOpenThread ncpOpenThread{/* aInterfaceName */ "", aRadioUrls, /* aBackboneInterfaceName */ "",
++                                                  /* aDryRun */ true, /* aEnableAutoAttach */ false};
++
++    ncpOpenThread.Init();
++
++    char sEUI64[32] = {0};
++    otExtAddress eui64Address;
++    otLinkGetFactoryAssignedIeeeEui64(ncpOpenThread.GetInstance(), &eui64Address);
++    sprintf(sEUI64, "%02x%02x%02x%02x%02x%02x%02x%02x", eui64Address.m8[0], eui64Address.m8[1], eui64Address.m8[2],
++        eui64Address.m8[3], eui64Address.m8[4], eui64Address.m8[5], eui64Address.m8[6], eui64Address.m8[7]);
++    printf("%s\n", sEUI64);
++
++    ncpOpenThread.Deinit();
++
++    exit(EXIT_SUCCESS);
++}
++
++static void signal_critical(int sig, siginfo_t *info, void *ucontext)
++{
++    (void)info;
++    (void)ucontext;
++    fprintf(stderr, " *** FATAL ERROR: Caught signal %d (%s):\n", sig, strsignal(sig));
++    uloop_end();
++    exit(EXIT_FAILURE);
++}
++
++static void HandleSignalRegister(void)
++{
++    struct sigaction sigact;
++    sigact.sa_sigaction = &signal_critical;
++    sigact.sa_flags     = SA_RESTART | SA_SIGINFO | SA_NOCLDWAIT;
++
++    sigaction(SIGSEGV, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGBUS, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGILL, &sigact, (struct sigaction *)NULL);
++    sigaction(SIGABRT, &sigact, (struct sigaction *)NULL);
++}
++
++static void HandleRadioReset(void)
++{
++    char radioResetCmd[32] = "/usr/bin/gl-ot-rcp-reset";
++
++    struct stat st;
++    if (stat(radioResetCmd, &st) == 0)
++    {
++        system("/usr/bin/gl-ot-rcp-reset");
++        printf("RCP reset done.\n");
++    }
++}
++
+ static int realmain(int argc, char *argv[])
+ {
+     otbrLogLevel              logLevel = GetDefaultLogLevel();
+@@ -196,12 +250,15 @@ static int realmain(int argc, char *argv
+     bool                      verbose           = false;
+     bool                      printRadioVersion = false;
+     bool                      enableAutoAttach  = true;
++    bool                      printRadioEUI64   = false;
+     const char               *restListenAddress = "";
+     int                       restListenPort    = kPortNumber;
+     std::vector<const char *> radioUrls;
+     std::vector<const char *> backboneInterfaceNames;
+     long                      parseResult;
+ 
++    HandleSignalRegister();
++
+     std::set_new_handler(OnAllocateFailed);
+ 
+     while ((opt = getopt_long(argc, argv, "B:d:hI:Vv", kOptions, nullptr)) != -1)
+@@ -261,6 +318,10 @@ static int realmain(int argc, char *argv
+             restListenPort = parseResult;
+             break;
+ 
++        case OTBR_OPT_RADIO_EUI64:
++            printRadioEUI64 = true;
++            break;
++
+         default:
+             PrintHelp(argv[0]);
+             ExitNow(ret = EXIT_FAILURE);
+@@ -268,6 +329,8 @@ static int realmain(int argc, char *argv
+         }
+     }
+ 
++    HandleRadioReset();
++
+     otbrLogInit(kSyslogIdent, logLevel, verbose);
+     otbrLogNotice("Running %s", OTBR_PACKAGE_VERSION);
+     otbrLogNotice("Thread version: %s", otbr::Ncp::ControllerOpenThread::GetThreadVersion());
+@@ -290,6 +353,12 @@ static int realmain(int argc, char *argv
+         assert(false);
+     }
+ 
++    if (printRadioEUI64)
++    {
++        PrintRadioEUI64AndExit(radioUrls);
++        assert(false);
++    }
++
+     {
+         otbr::Application app(interfaceName, backboneInterfaceNames, radioUrls, enableAutoAttach, restListenAddress,
+                               restListenPort);

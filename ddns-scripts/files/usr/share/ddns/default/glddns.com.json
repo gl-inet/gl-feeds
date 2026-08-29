@@ -1,0 +1,11 @@
+{
+        "name": "glddns.com",
+        "ipv4": {
+                "url": "http://[USERNAME]:[PASSWORD]@ddns.glddns.com/nic/update?hostname=[PARAMENC]&myip=[IP]",
+                "answer": "OK"
+        },
+        "ipv6": {
+                "url": "http://[USERNAME]:[PASSWORD]@ddns.glddns.com/nic/update?hostname=[PARAMENC]&myip=[IP]",
+                "answer": "OK"
+        }
+}
