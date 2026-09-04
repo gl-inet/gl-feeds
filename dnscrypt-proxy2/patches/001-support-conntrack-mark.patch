@@ -1,0 +1,899 @@
+diff --git a/dnscrypt-proxy/config.go b/dnscrypt-proxy/config.go
+index b88c1eb14e..06bbb25e6e 100644
+--- a/dnscrypt-proxy/config.go
++++ b/dnscrypt-proxy/config.go
+@@ -39,6 +39,7 @@ type Config struct {
+ 	UserName                 string         `toml:"user_name"`
+ 	ForceTCP                 bool           `toml:"force_tcp"`
+ 	HTTP3                    bool           `toml:"http3"`
++	EnableConntrack          bool           `toml:"enable_conntrack"`
+ 	Timeout                  int            `toml:"timeout"`
+ 	KeepAlive                int            `toml:"keepalive"`
+ 	Proxy                    string         `toml:"proxy"`
+@@ -375,6 +376,7 @@ func ConfigLoad(proxy *Proxy, flags *ConfigFlags) error {
+ 	proxy.logMaxBackups = config.LogMaxBackups
+ 
+ 	proxy.userName = config.UserName
++	proxy.enableConntrack = config.EnableConntrack
+ 
+ 	proxy.child = *flags.Child
+ 	proxy.xTransport = NewXTransport()
+diff --git a/dnscrypt-proxy/conntrack_context.go b/dnscrypt-proxy/conntrack_context.go
+new file mode 100644
+index 0000000000..e6e8291a2d
+--- /dev/null
++++ b/dnscrypt-proxy/conntrack_context.go
+@@ -0,0 +1,14 @@
++package main
++
++import "context"
++
++type conntrackMarkContextKey struct{}
++
++func withConntrackMark(ctx context.Context, mark uint32) context.Context {
++	return context.WithValue(ctx, conntrackMarkContextKey{}, mark)
++}
++
++func conntrackMarkFromContext(ctx context.Context) (uint32, bool) {
++	mark, ok := ctx.Value(conntrackMarkContextKey{}).(uint32)
++	return mark, ok
++}
+diff --git a/dnscrypt-proxy/conntrack_linux.go b/dnscrypt-proxy/conntrack_linux.go
+new file mode 100644
+index 0000000000..ec27263c5f
+--- /dev/null
++++ b/dnscrypt-proxy/conntrack_linux.go
+@@ -0,0 +1,264 @@
++//go:build linux
++
++package main
++
++import (
++	"context"
++	"encoding/binary"
++	"errors"
++	"fmt"
++	"net"
++	"syscall"
++	"time"
++
++	"golang.org/x/sys/unix"
++)
++
++const (
++	nfNetlinkV0       = 0
++	nfSubsysCTNetlink = 1
++	ipctnlMsgCTNew    = 0
++	ipctnlMsgCTGet    = 1
++
++	nlaFNested       = 1 << 15
++	nlaFNetByteorder = 1 << 14
++	nlaTypeMask      = ^uint16(nlaFNested | nlaFNetByteorder)
++
++	ctaTupleOrig  = 1
++	ctaMark       = 8
++	ctaTupleIP    = 1
++	ctaTupleProto = 2
++	ctaIPV4Src    = 1
++	ctaIPV4Dst    = 2
++	ctaIPV6Src    = 3
++	ctaIPV6Dst    = 4
++	ctaProtoNum   = 1
++	ctaProtoSrc   = 2
++	ctaProtoDst   = 3
++)
++
++var errConntrackNotFound = errors.New("connection not found in conntrack table")
++
++func conntrackDialer(ctx context.Context, timeout, keepAlive time.Duration) *net.Dialer {
++	dialer := &net.Dialer{
++		Timeout:   timeout,
++		KeepAlive: keepAlive,
++		DualStack: true,
++	}
++	mark, ok := conntrackMarkFromContext(ctx)
++	if !ok {
++		return dialer
++	}
++	dialer.Control = func(_, _ string, c syscall.RawConn) error {
++		return setConntrackMarkRaw(c, mark)
++	}
++	return dialer
++}
++
++func listenUDPWithConntrackMark(ctx context.Context, network string) (*net.UDPConn, error) {
++	mark, ok := conntrackMarkFromContext(ctx)
++	listenConfig := net.ListenConfig{}
++	if ok {
++		listenConfig.Control = func(_, _ string, c syscall.RawConn) error {
++			return setConntrackMarkRaw(c, mark)
++		}
++	}
++	conn, err := listenConfig.ListenPacket(ctx, network, ":0")
++	if err != nil {
++		return nil, err
++	}
++	udpConn, ok := conn.(*net.UDPConn)
++	if !ok {
++		_ = conn.Close()
++		return nil, fmt.Errorf("unexpected packet connection type %T", conn)
++	}
++	return udpConn, nil
++}
++
++func setConntrackMarkRaw(c syscall.RawConn, mark uint32) error {
++	var sockErr error
++	if err := c.Control(func(fd uintptr) {
++		sockErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, int(mark))
++	}); err != nil {
++		return err
++	}
++	return sockErr
++}
++
++func (proxy *Proxy) clientConntrackMark(clientProto string, clientPc net.Conn, clientAddr *net.Addr) (uint32, error) {
++	if !proxy.enableConntrack {
++		return 0, nil
++	}
++	switch clientProto {
++	case "tcp":
++		localAddr, lok := clientPc.LocalAddr().(*net.TCPAddr)
++		remoteAddr, rok := clientPc.RemoteAddr().(*net.TCPAddr)
++		if !lok || !rok {
++			return 0, fmt.Errorf("unexpected TCP address types: local=%T remote=%T", clientPc.LocalAddr(), clientPc.RemoteAddr())
++		}
++		return getConntrackMark(localAddr.IP, remoteAddr.IP, uint16(localAddr.Port), uint16(remoteAddr.Port), syscall.IPPROTO_TCP)
++	case "udp":
++		udpConn, ok := clientPc.(*net.UDPConn)
++		if !ok {
++			return 0, fmt.Errorf("unexpected UDP connection type %T", clientPc)
++		}
++		localAddr, lok := udpConn.LocalAddr().(*net.UDPAddr)
++		remoteAddr, rok := (*clientAddr).(*net.UDPAddr)
++		if !lok || !rok {
++			return 0, fmt.Errorf("unexpected UDP address types: local=%T remote=%T", udpConn.LocalAddr(), *clientAddr)
++		}
++		return getConntrackMark(localAddr.IP, remoteAddr.IP, uint16(localAddr.Port), uint16(remoteAddr.Port), syscall.IPPROTO_UDP)
++	default:
++		return 0, nil
++	}
++}
++
++func getConntrackMark(src, dst net.IP, srcPort, dstPort uint16, proto uint8) (uint32, error) {
++	mark, err := queryConntrackMark(src, dst, srcPort, dstPort, proto)
++	if err == nil {
++		return mark, nil
++	}
++	reverseMark, reverseErr := queryConntrackMark(dst, src, dstPort, srcPort, proto)
++	if reverseErr == nil {
++		return reverseMark, nil
++	}
++	return 0, err
++}
++
++func queryConntrackMark(src, dst net.IP, srcPort, dstPort uint16, proto uint8) (uint32, error) {
++	family, attrs, err := conntrackTupleAttrs(src, dst, srcPort, dstPort, proto)
++	if err != nil {
++		return 0, err
++	}
++	req := conntrackNetlinkRequest(family, attrs)
++	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC, unix.NETLINK_NETFILTER)
++	if err != nil {
++		return 0, err
++	}
++	defer unix.Close(fd)
++	if err := unix.Bind(fd, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
++		return 0, err
++	}
++	if err := unix.Sendto(fd, req, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
++		return 0, err
++	}
++
++	buf := make([]byte, 65536)
++	for {
++		n, _, err := unix.Recvfrom(fd, buf, 0)
++		if err != nil {
++			return 0, err
++		}
++		msgs, err := syscall.ParseNetlinkMessage(buf[:n])
++		if err != nil {
++			return 0, err
++		}
++		for _, msg := range msgs {
++			switch msg.Header.Type {
++			case syscall.NLMSG_ERROR:
++				if len(msg.Data) < 4 {
++					return 0, errors.New("short netlink error message")
++				}
++				errno := int32(binary.NativeEndian.Uint32(msg.Data[:4]))
++				if errno == 0 {
++					continue
++				}
++				if errno == -int32(unix.ENOENT) {
++					return 0, errConntrackNotFound
++				}
++				return 0, unix.Errno(-errno)
++			case syscall.NLMSG_DONE:
++				return 0, errConntrackNotFound
++			default:
++				if msg.Header.Type != conntrackNetlinkMsgType(ipctnlMsgCTNew) &&
++					msg.Header.Type != conntrackNetlinkMsgType(ipctnlMsgCTGet) {
++					continue
++				}
++				return parseConntrackMark(msg.Data), nil
++			}
++		}
++	}
++}
++
++func conntrackNetlinkRequest(family int, attrs []byte) []byte {
++	msgLen := syscall.NLMSG_HDRLEN + 4 + len(attrs)
++	req := make([]byte, msgLen)
++	binary.NativeEndian.PutUint32(req[0:4], uint32(msgLen))
++	binary.NativeEndian.PutUint16(req[4:6], conntrackNetlinkMsgType(ipctnlMsgCTGet))
++	binary.NativeEndian.PutUint16(req[6:8], uint16(unix.NLM_F_REQUEST))
++	binary.NativeEndian.PutUint32(req[8:12], 1)
++	req[syscall.NLMSG_HDRLEN] = byte(family)
++	req[syscall.NLMSG_HDRLEN+1] = nfNetlinkV0
++	copy(req[syscall.NLMSG_HDRLEN+4:], attrs)
++	return req
++}
++
++func conntrackNetlinkMsgType(msgType int) uint16 {
++	return uint16((nfSubsysCTNetlink << 8) | msgType)
++}
++
++func conntrackTupleAttrs(src, dst net.IP, srcPort, dstPort uint16, proto uint8) (int, []byte, error) {
++	family := unix.AF_INET6
++	var ipAttrs []byte
++	if src4, dst4 := src.To4(), dst.To4(); src4 != nil && dst4 != nil {
++		family = unix.AF_INET
++		ipAttrs = appendNetlinkAttr(ipAttrs, ctaIPV4Src, src4)
++		ipAttrs = appendNetlinkAttr(ipAttrs, ctaIPV4Dst, dst4)
++	} else {
++		src16, dst16 := src.To16(), dst.To16()
++		if src16 == nil || dst16 == nil {
++			return 0, nil, fmt.Errorf("invalid conntrack tuple: %s -> %s", src, dst)
++		}
++		ipAttrs = appendNetlinkAttr(ipAttrs, ctaIPV6Src, src16)
++		ipAttrs = appendNetlinkAttr(ipAttrs, ctaIPV6Dst, dst16)
++	}
++
++	var protoAttrs []byte
++	protoAttrs = appendNetlinkAttr(protoAttrs, ctaProtoNum, []byte{proto})
++	var portBuf [2]byte
++	binary.BigEndian.PutUint16(portBuf[:], srcPort)
++	protoAttrs = appendNetlinkAttr(protoAttrs, ctaProtoSrc, portBuf[:])
++	binary.BigEndian.PutUint16(portBuf[:], dstPort)
++	protoAttrs = appendNetlinkAttr(protoAttrs, ctaProtoDst, portBuf[:])
++
++	var tuple []byte
++	tuple = appendNetlinkAttr(tuple, ctaTupleIP|nlaFNested, ipAttrs)
++	tuple = appendNetlinkAttr(tuple, ctaTupleProto|nlaFNested, protoAttrs)
++	var attrs []byte
++	attrs = appendNetlinkAttr(attrs, ctaTupleOrig|nlaFNested, tuple)
++	return family, attrs, nil
++}
++
++func appendNetlinkAttr(dst []byte, attrType uint16, data []byte) []byte {
++	attrLen := 4 + len(data)
++	alignedLen := alignNetlinkAttr(attrLen)
++	start := len(dst)
++	dst = append(dst, make([]byte, alignedLen)...)
++	binary.NativeEndian.PutUint16(dst[start:start+2], uint16(attrLen))
++	binary.NativeEndian.PutUint16(dst[start+2:start+4], attrType)
++	copy(dst[start+4:start+4+len(data)], data)
++	return dst
++}
++
++func parseConntrackMark(data []byte) uint32 {
++	if len(data) <= 4 {
++		return 0
++	}
++	attrs := data[4:]
++	for len(attrs) >= 4 {
++		attrLen := int(binary.NativeEndian.Uint16(attrs[0:2]))
++		if attrLen < 4 || attrLen > len(attrs) {
++			return 0
++		}
++		attrType := binary.NativeEndian.Uint16(attrs[2:4]) & nlaTypeMask
++		if attrType == ctaMark && attrLen >= 8 {
++			return binary.BigEndian.Uint32(attrs[4:8])
++		}
++		attrs = attrs[alignNetlinkAttr(attrLen):]
++	}
++	return 0
++}
++
++func alignNetlinkAttr(length int) int {
++	return (length + 3) & ^3
++}
+diff --git a/dnscrypt-proxy/conntrack_stub.go b/dnscrypt-proxy/conntrack_stub.go
+new file mode 100644
+index 0000000000..9e3ea18e80
+--- /dev/null
++++ b/dnscrypt-proxy/conntrack_stub.go
+@@ -0,0 +1,25 @@
++//go:build !linux
++
++package main
++
++import (
++	"context"
++	"net"
++	"time"
++)
++
++func conntrackDialer(_ context.Context, timeout, keepAlive time.Duration) *net.Dialer {
++	return &net.Dialer{
++		Timeout:   timeout,
++		KeepAlive: keepAlive,
++		DualStack: true,
++	}
++}
++
++func listenUDPWithConntrackMark(_ context.Context, network string) (*net.UDPConn, error) {
++	return net.ListenUDP(network, nil)
++}
++
++func (proxy *Proxy) clientConntrackMark(_ string, _ net.Conn, _ *net.Addr) (uint32, error) {
++	return 0, nil
++}
+diff --git a/dnscrypt-proxy/proxy.go b/dnscrypt-proxy/proxy.go
+index c1b1e24866..c42c775d6b 100644
+--- a/dnscrypt-proxy/proxy.go
++++ b/dnscrypt-proxy/proxy.go
+@@ -88,6 +88,7 @@ type Proxy struct {
+ 	cloakTTL                      uint32
+ 	cloakedPTR                    bool
+ 	cache                         bool
++	enableConntrack               bool
+ 	pluginBlockIPv6               bool
+ 	ephemeralKeys                 bool
+ 	pluginBlockUnqualified        bool
+@@ -504,6 +505,7 @@ func (proxy *Proxy) prepareForRelay(ip net.IP, port int, encryptedQuery *[]byte)
+ }
+ 
+ func (proxy *Proxy) exchangeWithUDPServer(
++	ctx context.Context,
+ 	serverInfo *ServerInfo,
+ 	sharedKey *[32]byte,
+ 	encryptedQuery []byte,
+@@ -517,7 +519,7 @@ func (proxy *Proxy) exchangeWithUDPServer(
+ 	var pc net.Conn
+ 	proxyDialer := proxy.xTransport.proxyDialer
+ 	if proxyDialer == nil {
+-		pc, err = net.DialUDP("udp", nil, upstreamAddr)
++		pc, err = conntrackDialer(ctx, serverInfo.Timeout, serverInfo.Timeout).DialContext(ctx, "udp", upstreamAddr.String())
+ 	} else {
+ 		pc, err = (*proxyDialer).Dial("udp", upstreamAddr.String())
+ 	}
+@@ -547,6 +549,7 @@ func (proxy *Proxy) exchangeWithUDPServer(
+ }
+ 
+ func (proxy *Proxy) exchangeWithTCPServer(
++	ctx context.Context,
+ 	serverInfo *ServerInfo,
+ 	sharedKey *[32]byte,
+ 	encryptedQuery []byte,
+@@ -560,7 +563,7 @@ func (proxy *Proxy) exchangeWithTCPServer(
+ 	var pc net.Conn
+ 	proxyDialer := proxy.xTransport.proxyDialer
+ 	if proxyDialer == nil {
+-		pc, err = net.DialTCP("tcp", nil, upstreamAddr)
++		pc, err = conntrackDialer(ctx, serverInfo.Timeout, serverInfo.Timeout).DialContext(ctx, "tcp", upstreamAddr.String())
+ 	} else {
+ 		pc, err = (*proxyDialer).Dial("tcp", upstreamAddr.String())
+ 	}
+@@ -656,6 +659,18 @@ func (proxy *Proxy) processIncomingQuery(
+ 		serverInfo = nil
+ 	}
+ 	if len(response) == 0 && serverInfo != nil {
++		ctx := context.Background()
++		if proxy.enableConntrack && (clientProto == "udp" || clientProto == "tcp") {
++			mark, markErr := proxy.clientConntrackMark(clientProto, clientPc, clientAddr)
++			if markErr != nil {
++				dlog.Warnf("strict conntrack mode: failed to get connection mark, blocking upstream query: %v", markErr)
++				pluginsState.returnCode = PluginsReturnCodeNetworkError
++				pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
++				serverInfo.noticeFailure(proxy)
++				return response
++			}
++			ctx = withConntrackMark(ctx, mark)
++		}
+ 		var ttl *uint32
+ 		pluginsState.serverName = serverName
+ 		if serverInfo.Proto == stamps.StampProtoTypeDNSCrypt {
+@@ -672,7 +687,7 @@ func (proxy *Proxy) processIncomingQuery(
+ 			}
+ 			serverInfo.noticeBegin(proxy)
+ 			if serverProto == "udp" {
+-				response, err = proxy.exchangeWithUDPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
++				response, err = proxy.exchangeWithUDPServer(ctx, serverInfo, sharedKey, encryptedQuery, clientNonce)
+ 				retryOverTCP := false
+ 				if err == nil && len(response) >= MinDNSPacketSize && response[2]&0x02 == 0x02 {
+ 					retryOverTCP = true
+@@ -688,10 +703,10 @@ func (proxy *Proxy) processIncomingQuery(
+ 						pluginsState.ApplyLoggingPlugins(&proxy.pluginsGlobals)
+ 						return response
+ 					}
+-					response, err = proxy.exchangeWithTCPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
++					response, err = proxy.exchangeWithTCPServer(ctx, serverInfo, sharedKey, encryptedQuery, clientNonce)
+ 				}
+ 			} else {
+-				response, err = proxy.exchangeWithTCPServer(serverInfo, sharedKey, encryptedQuery, clientNonce)
++				response, err = proxy.exchangeWithTCPServer(ctx, serverInfo, sharedKey, encryptedQuery, clientNonce)
+ 			}
+ 			if err != nil {
+ 				if stale, ok := pluginsState.sessionData["stale"]; ok {
+@@ -713,7 +728,7 @@ func (proxy *Proxy) processIncomingQuery(
+ 			tid := TransactionID(query)
+ 			SetTransactionID(query, 0)
+ 			serverInfo.noticeBegin(proxy)
+-			serverResponse, _, tls, _, err := proxy.xTransport.DoHQuery(serverInfo.useGet, serverInfo.URL, query, proxy.timeout)
++			serverResponse, _, tls, _, err := proxy.xTransport.DoHQuery(ctx, serverInfo.useGet, serverInfo.URL, query, proxy.timeout)
+ 			SetTransactionID(query, tid)
+ 
+ 			if err != nil || tls == nil || !tls.HandshakeComplete {
+@@ -749,7 +764,7 @@ func (proxy *Proxy) processIncomingQuery(
+ 				if serverInfo.Relay != nil && serverInfo.Relay.ODoH != nil {
+ 					targetURL = serverInfo.Relay.ODoH.URL
+ 				}
+-				responseBody, responseCode, _, _, err := proxy.xTransport.ObliviousDoHQuery(serverInfo.useGet, targetURL, odohQuery.odohMessage, proxy.timeout)
++				responseBody, responseCode, _, _, err := proxy.xTransport.ObliviousDoHQuery(ctx, serverInfo.useGet, targetURL, odohQuery.odohMessage, proxy.timeout)
+ 				if err == nil && len(responseBody) > 0 && responseCode == 200 {
+ 					response, err = odohQuery.decryptResponse(responseBody)
+ 					if err != nil {
+@@ -763,7 +778,7 @@ func (proxy *Proxy) processIncomingQuery(
+ 					dlog.Infof("Forcing key update for [%v]", serverInfo.Name)
+ 					for _, registeredServer := range proxy.serversInfo.registeredServers {
+ 						if registeredServer.name == serverInfo.Name {
+-							if err = proxy.serversInfo.refreshServer(proxy, registeredServer.name, registeredServer.stamp); err != nil {
++							if err = proxy.serversInfo.refreshServerWithContext(ctx, proxy, registeredServer.name, registeredServer.stamp); err != nil {
+ 								// Failed to refresh the proxy server information.
+ 								dlog.Noticef("Key update failed for [%v]", serverName)
+ 								serverInfo.noticeFailure(proxy)
+diff --git a/dnscrypt-proxy/serversInfo.go b/dnscrypt-proxy/serversInfo.go
+index fa6d99fa82..8e3c9c4f4d 100644
+--- a/dnscrypt-proxy/serversInfo.go
++++ b/dnscrypt-proxy/serversInfo.go
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import (
++	"context"
+ 	crypto_rand "crypto/rand"
+ 	"crypto/sha256"
+ 	"encoding/hex"
+@@ -182,6 +183,10 @@ func (serversInfo *ServersInfo) registerRelay(name string, stamp stamps.ServerSt
+ }
+ 
+ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp stamps.ServerStamp) error {
++	return serversInfo.refreshServerWithContext(context.Background(), proxy, name, stamp)
++}
++
++func (serversInfo *ServersInfo) refreshServerWithContext(ctx context.Context, proxy *Proxy, name string, stamp stamps.ServerStamp) error {
+ 	serversInfo.RLock()
+ 	isNew := true
+ 	for _, oldServer := range serversInfo.inner {
+@@ -191,7 +196,7 @@ func (serversInfo *ServersInfo) refreshServer(proxy *Proxy, name string, stamp s
+ 		}
+ 	}
+ 	serversInfo.RUnlock()
+-	newServer, err := fetchServerInfo(proxy, name, stamp, isNew)
++	newServer, err := fetchServerInfo(ctx, proxy, name, stamp, isNew)
+ 	if err != nil {
+ 		return err
+ 	}
+@@ -318,13 +323,13 @@ func (serversInfo *ServersInfo) getOne() *ServerInfo {
+ 	return serverInfo
+ }
+ 
+-func fetchServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
++func fetchServerInfo(ctx context.Context, proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+ 	if stamp.Proto == stamps.StampProtoTypeDNSCrypt {
+ 		return fetchDNSCryptServerInfo(proxy, name, stamp, isNew)
+ 	} else if stamp.Proto == stamps.StampProtoTypeDoH {
+-		return fetchDoHServerInfo(proxy, name, stamp, isNew)
++		return fetchDoHServerInfo(ctx, proxy, name, stamp, isNew)
+ 	} else if stamp.Proto == stamps.StampProtoTypeODoHTarget {
+-		return fetchODoHTargetInfo(proxy, name, stamp, isNew)
++		return fetchODoHTargetInfo(ctx, proxy, name, stamp, isNew)
+ 	}
+ 	return ServerInfo{}, fmt.Errorf("Unsupported protocol for [%s]: [%s]", name, stamp.Proto.String())
+ }
+@@ -648,7 +653,7 @@ func dohNXTestPacket(msgID uint16) []byte {
+ 	return body
+ }
+ 
+-func fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
++func fetchDoHServerInfo(ctx context.Context, proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+ 	// If an IP has been provided, use it forever.
+ 	// Or else, if the fallback server and the DoH server are operated
+ 	// by the same entity, it could provide a unique IPv6 for each client
+@@ -667,15 +672,15 @@ func fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isN
+ 	}
+ 	body := dohTestPacket(0xcafe)
+ 	useGet := false
+-	if _, _, _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout); err != nil {
++	if _, _, _, _, err := proxy.xTransport.DoHQuery(ctx, useGet, url, body, proxy.timeout); err != nil {
+ 		useGet = true
+-		if _, _, _, _, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout); err != nil {
++		if _, _, _, _, err := proxy.xTransport.DoHQuery(ctx, useGet, url, body, proxy.timeout); err != nil {
+ 			return ServerInfo{}, err
+ 		}
+ 		dlog.Debugf("Server [%s] doesn't appear to support POST; falling back to GET requests", name)
+ 	}
+ 	body = dohNXTestPacket(0xcafe)
+-	serverResponse, _, tls, rtt, err := proxy.xTransport.DoHQuery(useGet, url, body, proxy.timeout)
++	serverResponse, _, tls, rtt, err := proxy.xTransport.DoHQuery(ctx, useGet, url, body, proxy.timeout)
+ 	if err != nil {
+ 		dlog.Infof("[%s] [%s]: %v", name, url, err)
+ 		return ServerInfo{}, err
+@@ -748,8 +753,8 @@ func fetchDoHServerInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isN
+ 	}, nil
+ }
+ 
+-func fetchTargetConfigsFromWellKnown(proxy *Proxy, url *url.URL) ([]ODoHTargetConfig, error) {
+-	bin, statusCode, _, _, err := proxy.xTransport.Get(url, "application/binary", 0)
++func fetchTargetConfigsFromWellKnown(ctx context.Context, proxy *Proxy, url *url.URL) ([]ODoHTargetConfig, error) {
++	bin, statusCode, _, _, err := proxy.xTransport.Get(ctx, url, "application/binary", 0)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -759,9 +764,9 @@ func fetchTargetConfigsFromWellKnown(proxy *Proxy, url *url.URL) ([]ODoHTargetCo
+ 	return parseODoHTargetConfigs(bin)
+ }
+ 
+-func _fetchODoHTargetInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
++func _fetchODoHTargetInfo(ctx context.Context, proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+ 	configURL := &url.URL{Scheme: "https", Host: stamp.ProviderName, Path: "/.well-known/odohconfigs"}
+-	odohTargetConfigs, err := fetchTargetConfigsFromWellKnown(proxy, configURL)
++	odohTargetConfigs, err := fetchTargetConfigsFromWellKnown(ctx, proxy, configURL)
+ 	if err != nil {
+ 		dlog.Debug(configURL)
+ 		return ServerInfo{}, fmt.Errorf("[%s] didn't return an ODoH configuration - [%v]", name, err)
+@@ -813,9 +818,9 @@ func _fetchODoHTargetInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, i
+ 		}
+ 
+ 		useGet := false
+-		if _, _, _, _, err := proxy.xTransport.ObliviousDoHQuery(useGet, url, odohQuery.odohMessage, proxy.timeout); err != nil {
++		if _, _, _, _, err := proxy.xTransport.ObliviousDoHQuery(ctx, useGet, url, odohQuery.odohMessage, proxy.timeout); err != nil {
+ 			useGet = true
+-			if _, _, _, _, err := proxy.xTransport.ObliviousDoHQuery(useGet, url, odohQuery.odohMessage, proxy.timeout); err != nil {
++			if _, _, _, _, err := proxy.xTransport.ObliviousDoHQuery(ctx, useGet, url, odohQuery.odohMessage, proxy.timeout); err != nil {
+ 				continue
+ 			}
+ 			dlog.Debugf("Server [%s] doesn't appear to support POST; falling back to GET requests", name)
+@@ -828,6 +833,7 @@ func _fetchODoHTargetInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, i
+ 		}
+ 
+ 		responseBody, responseCode, tls, rtt, err := proxy.xTransport.ObliviousDoHQuery(
++			ctx,
+ 			useGet,
+ 			url,
+ 			odohQuery.odohMessage,
+@@ -922,11 +928,11 @@ func _fetchODoHTargetInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, i
+ 	return ServerInfo{}, fmt.Errorf("No valid network configuration for [%v]", name)
+ }
+ 
+-func fetchODoHTargetInfo(proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
++func fetchODoHTargetInfo(ctx context.Context, proxy *Proxy, name string, stamp stamps.ServerStamp, isNew bool) (ServerInfo, error) {
+ 	var err error
+ 	var serverInfo ServerInfo
+ 	for i := 0; i < 3; i += 1 {
+-		serverInfo, err = _fetchODoHTargetInfo(proxy, name, stamp, isNew)
++		serverInfo, err = _fetchODoHTargetInfo(ctx, proxy, name, stamp, isNew)
+ 		if err == nil {
+ 			break
+ 		}
+diff --git a/dnscrypt-proxy/sources.go b/dnscrypt-proxy/sources.go
+index 30bd3cb49b..d6b480d156 100644
+--- a/dnscrypt-proxy/sources.go
++++ b/dnscrypt-proxy/sources.go
+@@ -2,6 +2,7 @@
+ 
+ import (
+ 	"bytes"
++	"context"
+ 	"fmt"
+ 	"math/rand"
+ 	"net/url"
+@@ -131,7 +132,7 @@ func (source *Source) parseURLs(urls []string) {
+ }
+ 
+ func fetchFromURL(xTransport *XTransport, u *url.URL) ([]byte, error) {
+-	bin, _, _, _, err := xTransport.Get(u, "", DefaultTimeout)
++	bin, _, _, _, err := xTransport.Get(context.Background(), u, "", DefaultTimeout)
+ 	return bin, err
+ }
+ 
+diff --git a/dnscrypt-proxy/xtransport.go b/dnscrypt-proxy/xtransport.go
+index e0efd78067..905f5f260a 100644
+--- a/dnscrypt-proxy/xtransport.go
++++ b/dnscrypt-proxy/xtransport.go
+@@ -43,9 +43,14 @@ type CachedIPItem struct {
+ 	expiration *time.Time
+ }
+ 
++type CachedIPKey struct {
++	host string
++	mark uint32
++}
++
+ type CachedIPs struct {
+ 	sync.RWMutex
+-	cache map[string]*CachedIPItem
++	cache map[CachedIPKey]*CachedIPItem
+ }
+ 
+ type AltSupport struct {
+@@ -81,7 +86,7 @@ func NewXTransport() *XTransport {
+ 		panic("DefaultBootstrapResolver does not parse")
+ 	}
+ 	xTransport := XTransport{
+-		cachedIPs:                CachedIPs{cache: make(map[string]*CachedIPItem)},
++		cachedIPs:                CachedIPs{cache: make(map[CachedIPKey]*CachedIPItem)},
+ 		altSupport:               AltSupport{cache: make(map[string]uint16)},
+ 		keepAlive:                DefaultKeepAlive,
+ 		timeout:                  DefaultTimeout,
+@@ -104,6 +109,15 @@ func ParseIP(ipStr string) net.IP {
+ // If ttl < 0, never expire
+ // Otherwise, ttl is set to max(ttl, MinResolverIPTTL)
+ func (xTransport *XTransport) saveCachedIP(host string, ip net.IP, ttl time.Duration) {
++	xTransport.saveCachedIPWithMark(host, 0, ip, ttl)
++}
++
++func (xTransport *XTransport) saveCachedIPForContext(ctx context.Context, host string, ip net.IP, ttl time.Duration) {
++	mark, _ := conntrackMarkFromContext(ctx)
++	xTransport.saveCachedIPWithMark(host, mark, ip, ttl)
++}
++
++func (xTransport *XTransport) saveCachedIPWithMark(host string, mark uint32, ip net.IP, ttl time.Duration) {
+ 	item := &CachedIPItem{ip: ip, expiration: nil}
+ 	if ttl >= 0 {
+ 		if ttl < MinResolverIPTTL {
+@@ -113,14 +127,22 @@ func (xTransport *XTransport) saveCachedIP(host string, ip net.IP, ttl time.Dura
+ 		item.expiration = &expiration
+ 	}
+ 	xTransport.cachedIPs.Lock()
+-	xTransport.cachedIPs.cache[host] = item
++	xTransport.cachedIPs.cache[CachedIPKey{host: host, mark: mark}] = item
+ 	xTransport.cachedIPs.Unlock()
+ }
+ 
+ func (xTransport *XTransport) loadCachedIP(host string) (ip net.IP, expired bool) {
++	return xTransport.loadCachedIPForContext(context.Background(), host)
++}
++
++func (xTransport *XTransport) loadCachedIPForContext(ctx context.Context, host string) (ip net.IP, expired bool) {
+ 	ip, expired = nil, false
++	mark, _ := conntrackMarkFromContext(ctx)
+ 	xTransport.cachedIPs.RLock()
+-	item, ok := xTransport.cachedIPs.cache[host]
++	item, ok := xTransport.cachedIPs.cache[CachedIPKey{host: host, mark: mark}]
++	if !ok && mark != 0 {
++		item, ok = xTransport.cachedIPs.cache[CachedIPKey{host: host, mark: 0}]
++	}
+ 	xTransport.cachedIPs.RUnlock()
+ 	if !ok {
+ 		return
+@@ -152,7 +174,7 @@ func (xTransport *XTransport) rebuildTransport() {
+ 			ipOnly := host
+ 			// resolveAndUpdateCache() is always called in `Fetch()` before the `Dial()`
+ 			// method is used, so that a cached entry must be present at this point.
+-			cachedIP, _ := xTransport.loadCachedIP(host)
++			cachedIP, _ := xTransport.loadCachedIPForContext(ctx, host)
+ 			if cachedIP != nil {
+ 				if ipv4 := cachedIP.To4(); ipv4 != nil {
+ 					ipOnly = ipv4.String()
+@@ -164,7 +186,7 @@ func (xTransport *XTransport) rebuildTransport() {
+ 			}
+ 			addrStr = ipOnly + ":" + strconv.Itoa(port)
+ 			if xTransport.proxyDialer == nil {
+-				dialer := &net.Dialer{Timeout: timeout, KeepAlive: timeout, DualStack: true}
++				dialer := conntrackDialer(ctx, timeout, timeout)
+ 				return dialer.DialContext(ctx, network, addrStr)
+ 			}
+ 			return (*xTransport.proxyDialer).Dial(network, addrStr)
+@@ -261,7 +283,7 @@ func (xTransport *XTransport) rebuildTransport() {
+ 			dlog.Debugf("Dialing for H3: [%v]", addrStr)
+ 			host, port := ExtractHostAndPort(addrStr, stamps.DefaultPort)
+ 			ipOnly := host
+-			cachedIP, _ := xTransport.loadCachedIP(host)
++			cachedIP, _ := xTransport.loadCachedIPForContext(ctx, host)
+ 			network := "udp4"
+ 			if cachedIP != nil {
+ 				if ipv4 := cachedIP.To4(); ipv4 != nil {
+@@ -285,7 +307,7 @@ func (xTransport *XTransport) rebuildTransport() {
+ 			if err != nil {
+ 				return nil, err
+ 			}
+-			udpConn, err := net.ListenUDP(network, nil)
++			udpConn, err := listenUDPWithConntrackMark(ctx, network)
+ 			if err != nil {
+ 				return nil, err
+ 			}
+@@ -326,16 +348,17 @@ func (xTransport *XTransport) resolveUsingSystem(host string) (ip net.IP, ttl ti
+ }
+ 
+ func (xTransport *XTransport) resolveUsingResolver(
++	ctx context.Context,
+ 	proto, host string,
+ 	resolver string,
+ ) (ip net.IP, ttl time.Duration, err error) {
+-	dnsClient := dns.Client{Net: proto}
++	dnsClient := dns.Client{Net: proto, Dialer: conntrackDialer(ctx, 2*time.Second, 0)}
+ 	if xTransport.useIPv4 {
+ 		msg := dns.Msg{}
+ 		msg.SetQuestion(dns.Fqdn(host), dns.TypeA)
+ 		msg.SetEdns0(uint16(MaxDNSPacketSize), true)
+ 		var in *dns.Msg
+-		if in, _, err = dnsClient.Exchange(&msg, resolver); err == nil {
++		if in, _, err = dnsClient.ExchangeContext(ctx, &msg, resolver); err == nil {
+ 			answers := make([]dns.RR, 0)
+ 			for _, answer := range in.Answer {
+ 				if answer.Header().Rrtype == dns.TypeA {
+@@ -355,7 +378,7 @@ func (xTransport *XTransport) resolveUsingResolver(
+ 		msg.SetQuestion(dns.Fqdn(host), dns.TypeAAAA)
+ 		msg.SetEdns0(uint16(MaxDNSPacketSize), true)
+ 		var in *dns.Msg
+-		if in, _, err = dnsClient.Exchange(&msg, resolver); err == nil {
++		if in, _, err = dnsClient.ExchangeContext(ctx, &msg, resolver); err == nil {
+ 			answers := make([]dns.RR, 0)
+ 			for _, answer := range in.Answer {
+ 				if answer.Header().Rrtype == dns.TypeAAAA {
+@@ -374,12 +397,13 @@ func (xTransport *XTransport) resolveUsingResolver(
+ }
+ 
+ func (xTransport *XTransport) resolveUsingResolvers(
++	ctx context.Context,
+ 	proto, host string,
+ 	resolvers []string,
+ ) (ip net.IP, ttl time.Duration, err error) {
+ 	err = errors.New("Empty resolvers")
+ 	for i, resolver := range resolvers {
+-		ip, ttl, err = xTransport.resolveUsingResolver(proto, host, resolver)
++		ip, ttl, err = xTransport.resolveUsingResolver(ctx, proto, host, resolver)
+ 		if err == nil {
+ 			if i > 0 {
+ 				dlog.Infof("Resolution succeeded with resolver %s[%s]", proto, resolver)
+@@ -393,14 +417,14 @@ func (xTransport *XTransport) resolveUsingResolvers(
+ }
+ 
+ // If a name is not present in the cache, resolve the name and update the cache
+-func (xTransport *XTransport) resolveAndUpdateCache(host string) error {
++func (xTransport *XTransport) resolveAndUpdateCache(ctx context.Context, host string) error {
+ 	if xTransport.proxyDialer != nil || xTransport.httpProxyFunction != nil {
+ 		return nil
+ 	}
+ 	if ParseIP(host) != nil {
+ 		return nil
+ 	}
+-	cachedIP, expired := xTransport.loadCachedIP(host)
++	cachedIP, expired := xTransport.loadCachedIPForContext(ctx, host)
+ 	if cachedIP != nil && !expired {
+ 		return nil
+ 	}
+@@ -414,7 +438,7 @@ func (xTransport *XTransport) resolveAndUpdateCache(host string) error {
+ 	if xTransport.ignoreSystemDNS {
+ 		if xTransport.internalResolverReady {
+ 			for _, proto := range protos {
+-				foundIP, ttl, err = xTransport.resolveUsingResolvers(proto, host, xTransport.internalResolvers)
++				foundIP, ttl, err = xTransport.resolveUsingResolvers(ctx, proto, host, xTransport.internalResolvers)
+ 				if err == nil {
+ 					break
+ 				}
+@@ -439,7 +463,7 @@ func (xTransport *XTransport) resolveAndUpdateCache(host string) error {
+ 					proto,
+ 				)
+ 			}
+-			foundIP, ttl, err = xTransport.resolveUsingResolvers(proto, host, xTransport.bootstrapResolvers)
++			foundIP, ttl, err = xTransport.resolveUsingResolvers(ctx, proto, host, xTransport.bootstrapResolvers)
+ 			if err == nil {
+ 				break
+ 			}
+@@ -470,12 +494,13 @@ func (xTransport *XTransport) resolveAndUpdateCache(host string) error {
+ 			dlog.Errorf("no IP address found for [%s]", host)
+ 		}
+ 	}
+-	xTransport.saveCachedIP(host, foundIP, ttl)
++	xTransport.saveCachedIPForContext(ctx, host, foundIP, ttl)
+ 	dlog.Debugf("[%s] IP address [%s] added to the cache, valid for %v", host, foundIP, ttl)
+ 	return nil
+ }
+ 
+ func (xTransport *XTransport) Fetch(
++	ctx context.Context,
+ 	method string,
+ 	url *url.URL,
+ 	accept string,
+@@ -483,6 +508,9 @@ func (xTransport *XTransport) Fetch(
+ 	body *[]byte,
+ 	timeout time.Duration,
+ ) ([]byte, int, *tls.ConnectionState, time.Duration, error) {
++	if ctx == nil {
++		ctx = context.Background()
++	}
+ 	if timeout <= 0 {
+ 		timeout = xTransport.timeout
+ 	}
+@@ -523,7 +551,7 @@ func (xTransport *XTransport) Fetch(
+ 	if xTransport.proxyDialer == nil && strings.HasSuffix(host, ".onion") {
+ 		return nil, 0, nil, 0, errors.New("Onion service is not reachable without Tor")
+ 	}
+-	if err := xTransport.resolveAndUpdateCache(host); err != nil {
++	if err := xTransport.resolveAndUpdateCache(ctx, host); err != nil {
+ 		dlog.Errorf(
+ 			"Unable to resolve [%v] - Make sure that the system resolver works, or that `bootstrap_resolvers` has been set to resolvers that can be reached",
+ 			host,
+@@ -536,6 +564,7 @@ func (xTransport *XTransport) Fetch(
+ 		Header: header,
+ 		Close:  false,
+ 	}
++	req = req.WithContext(ctx)
+ 	if body != nil {
+ 		req.ContentLength = int64(len(*body))
+ 		req.Body = io.NopCloser(bytes.NewReader(*body))
+@@ -605,24 +634,27 @@ func (xTransport *XTransport) Fetch(
+ }
+ 
+ func (xTransport *XTransport) Get(
++	ctx context.Context,
+ 	url *url.URL,
+ 	accept string,
+ 	timeout time.Duration,
+ ) ([]byte, int, *tls.ConnectionState, time.Duration, error) {
+-	return xTransport.Fetch("GET", url, accept, "", nil, timeout)
++	return xTransport.Fetch(ctx, "GET", url, accept, "", nil, timeout)
+ }
+ 
+ func (xTransport *XTransport) Post(
++	ctx context.Context,
+ 	url *url.URL,
+ 	accept string,
+ 	contentType string,
+ 	body *[]byte,
+ 	timeout time.Duration,
+ ) ([]byte, int, *tls.ConnectionState, time.Duration, error) {
+-	return xTransport.Fetch("POST", url, accept, contentType, body, timeout)
++	return xTransport.Fetch(ctx, "POST", url, accept, contentType, body, timeout)
+ }
+ 
+ func (xTransport *XTransport) dohLikeQuery(
++	ctx context.Context,
+ 	dataType string,
+ 	useGet bool,
+ 	url *url.URL,
+@@ -635,25 +667,27 @@ func (xTransport *XTransport) dohLikeQuery(
+ 		qs.Add("dns", encBody)
+ 		url2 := *url
+ 		url2.RawQuery = qs.Encode()
+-		return xTransport.Get(&url2, dataType, timeout)
++		return xTransport.Get(ctx, &url2, dataType, timeout)
+ 	}
+-	return xTransport.Post(url, dataType, dataType, &body, timeout)
++	return xTransport.Post(ctx, url, dataType, dataType, &body, timeout)
+ }
+ 
+ func (xTransport *XTransport) DoHQuery(
++	ctx context.Context,
+ 	useGet bool,
+ 	url *url.URL,
+ 	body []byte,
+ 	timeout time.Duration,
+ ) ([]byte, int, *tls.ConnectionState, time.Duration, error) {
+-	return xTransport.dohLikeQuery("application/dns-message", useGet, url, body, timeout)
++	return xTransport.dohLikeQuery(ctx, "application/dns-message", useGet, url, body, timeout)
+ }
+ 
+ func (xTransport *XTransport) ObliviousDoHQuery(
++	ctx context.Context,
+ 	useGet bool,
+ 	url *url.URL,
+ 	body []byte,
+ 	timeout time.Duration,
+ ) ([]byte, int, *tls.ConnectionState, time.Duration, error) {
+-	return xTransport.dohLikeQuery("application/oblivious-dns-message", useGet, url, body, timeout)
++	return xTransport.dohLikeQuery(ctx, "application/oblivious-dns-message", useGet, url, body, timeout)
+ }

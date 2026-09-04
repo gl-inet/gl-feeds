@@ -1,0 +1,42 @@
+Subject: [PATCH] dnsproxy: demote canceled upstream exchanges
+
+Parallel bootstrap resolution returns the first successful result and cancels
+the remaining lookups.  Treating this expected context cancellation as a
+timeout promotes it to ERROR and floods the system log.
+
+Keep cancellations at DEBUG while retaining ERROR logging for deadlines and
+real network timeouts.  Verbose logging can still expose canceled exchanges
+when troubleshooting.
+---
+ upstream/upstream.go               | 1 -
+ upstream/upstream_internal_test.go | 7 +++++++
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/upstream/upstream.go b/upstream/upstream.go
+--- a/upstream/upstream.go
++++ b/upstream/upstream.go
+@@ -381,7 +381,6 @@ func isTimeout(err error) (ok bool) {
+ 	var netErr net.Error
+ 	switch {
+ 	case
+-		errors.Is(err, context.Canceled),
+ 		errors.Is(err, context.DeadlineExceeded),
+ 		errors.Is(err, os.ErrDeadlineExceeded):
+ 		return true
+diff --git a/upstream/upstream_internal_test.go b/upstream/upstream_internal_test.go
+--- a/upstream/upstream_internal_test.go
++++ b/upstream/upstream_internal_test.go
+@@ -35,6 +35,13 @@ import (
+ // testLogger is common logger for tests.
+ var testLogger = slogutil.NewDiscardLogger()
+ 
++func TestIsTimeout(t *testing.T) {
++	t.Parallel()
++
++	assert.False(t, isTimeout(context.Canceled))
++	assert.True(t, isTimeout(context.DeadlineExceeded))
++}
++
+ // TODO(ameshkov): Make tests here not depend on external servers.
+ 
+ // TODO(d.kolyshev): Remove this after quic-go has migrated to slog.

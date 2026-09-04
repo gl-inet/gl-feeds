@@ -1,0 +1,79 @@
+From c655b5c6ef28a8f4955d5717fa5c59c1671f87b2 Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Sun, 22 Mar 2026 23:04:09 +0800
+Subject: [PATCH] dnscrypt: add Client.Dialer for custom connection marks
+ (SO_MARK) on Exchange and fetchCert paths
+
+---
+ client.go | 41 +++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 39 insertions(+), 2 deletions(-)
+
+diff --git a/client.go b/client.go
+index a829979..44f2ba2 100644
+--- a/client.go
++++ b/client.go
+@@ -27,6 +27,11 @@ type Client struct {
+ 	// UDPSize is the maximum size of a DNS response (or query) this client can
+ 	// send or receive. If not set, we use dns.MinMsgSize by default.
+ 	UDPSize int
++
++	// Dialer is a custom dialer function for creating network connections.
++	// If not set, net.Dial will be used by default.
++	// This allows setting connection marks and other socket options.
++	Dialer func(network, address string) (net.Conn, error)
+ }
+ 
+ // ResolverInfo contains DNSCrypt resolver information necessary for decryption/encryption
+@@ -99,7 +104,12 @@ func (c *Client) Exchange(m *dns.Msg, resolverInfo *ResolverInfo) (resp *dns.Msg
+ 		network = "tcp"
+ 	}
+ 
+-	conn, err := net.Dial(network, resolverInfo.ServerAddress)
++	var conn net.Conn
++	if c.Dialer != nil {
++		conn, err = c.Dialer(network, resolverInfo.ServerAddress)
++	} else {
++		conn, err = net.Dial(network, resolverInfo.ServerAddress)
++	}
+ 	if err != nil {
+ 		return nil, fmt.Errorf("dialing: %w", err)
+ 	}
+@@ -238,7 +248,34 @@ func (c *Client) fetchCert(stamp dnsstamps.ServerStamp) (cert *Cert, err error)
+ 	query.SetQuestion(providerName, dns.TypeTXT)
+ 	// use 1252 as a UDPSize for this client to make sure the buffer is not too small
+ 	client := dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
+-	r, _, err := client.Exchange(query, stamp.ServerAddrStr)
++
++	// Use custom dialer if available.
++	var r *dns.Msg
++	if c.Dialer != nil {
++		// Use custom dialer to obtain a connection with proper socket options
++		// (for example, SO_MARK).
++		conn, dialErr := c.Dialer(c.Net, stamp.ServerAddrStr)
++		if dialErr != nil {
++			return nil, dialErr
++		}
++		defer func() { err = errors.WithDeferred(err, conn.Close()) }()
++
++		// Apply deadline to avoid indefinite blocking.
++		if c.Timeout > 0 {
++			_ = conn.SetDeadline(time.Now().Add(c.Timeout))
++		}
++
++		// Wrap the connection and leverage dns.Client to handle framing.
++		dc := &dns.Client{Net: c.Net, UDPSize: uint16(1252), Timeout: c.Timeout}
++		dconn := &dns.Conn{Conn: conn}
++		if c.Net == "udp" {
++			dconn.UDPSize = uint16(1252)
++		}
++
++		r, _, err = dc.ExchangeWithConn(query, dconn)
++	} else {
++		r, _, err = client.Exchange(query, stamp.ServerAddrStr)
++	}
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-- 
+2.34.1
+
