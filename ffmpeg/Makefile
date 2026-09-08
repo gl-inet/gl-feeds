@@ -383,6 +383,11 @@ endef
 REAL_CPU_TYPE:=$(call qstrip,$(firstword $(subst +, ,$(CONFIG_CPU_TYPE))))
 # Fixup cpu types recogized by ffmpeg configure
 REAL_CPU_TYPE:=$(subst octeonplus,octeon+,$(REAL_CPU_TYPE))
+ifeq ($(CONFIG_TARGET_qmb415),y)
+ifeq ($(REAL_CPU_TYPE),kryo300)
+REAL_CPU_TYPE:=generic
+endif
+endif
 
 FFMPEG_CONFIGURE:= \
 	CFLAGS="$(TARGET_CFLAGS) $(TARGET_CPPFLAGS) $(FPIC) -Wno-error=incompatible-pointer-types" \
