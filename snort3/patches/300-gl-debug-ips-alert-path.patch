@@ -1,0 +1,334 @@
+diff --git a/src/detection/fp_detect.cc b/src/detection/fp_detect.cc
+index 22160b5..8f37de0 100644
+--- a/src/detection/fp_detect.cc
++++ b/src/detection/fp_detect.cc
+@@ -39,6 +39,9 @@
+ 
+ #include "fp_detect.h"
+ 
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
+ #include <vector>
+ 
+ #include "events/event.h"
+@@ -105,6 +108,55 @@ static THREAD_LOCAL uint32_t tr_len = 0;
+ static void fp_immediate(Packet*);
+ static void fp_immediate(MpseGroup*, Packet*, const uint8_t*, unsigned);
+ 
++static bool gl_debug_sid(const OptTreeNode* otn)
++{
++    return otn and otn->sigInfo.gid == 1 and
++        otn->sigInfo.sid >= 9000000 and otn->sigInfo.sid <= 9000100;
++}
++
++static bool gl_debug_payload_contains(const Packet* p, const char* needle)
++{
++    if ( !p or !p->data or !p->dsize or !needle )
++        return false;
++
++    const size_t needle_len = std::strlen(needle);
++    if ( !needle_len or p->dsize < needle_len )
++        return false;
++
++    for ( uint16_t i = 0; i + needle_len <= p->dsize; ++i )
++    {
++        if ( std::memcmp(p->data + i, needle, needle_len) == 0 )
++            return true;
++    }
++
++    return false;
++}
++
++static void gl_debug_packet(const char* stage, const Packet* p, const OptTreeNode* otn = nullptr,
++    int action = -1, int filter_event = 0)
++{
++    const unsigned gid = otn ? otn->sigInfo.gid : 0;
++    const unsigned sid = otn ? otn->sigInfo.sid : 0;
++    const uint64_t pkt_num = (p and p->context) ? p->context->packet_number : 0;
++    const int inline_mode = (p and p->context and p->context->conf) ?
++        p->context->conf->ips_inline_mode() : -1;
++    const int stream_insert = (p and p->context and p->context->conf and
++        p->context->conf->fast_pattern_config) ?
++        p->context->conf->fast_pattern_config->get_stream_insert() : -1;
++    const char* active_action = (p and p->active) ? p->active->get_action_string() : "none";
++
++    std::fprintf(stderr,
++        "[GL-SNORT-DBG] %s pkt=%llu gid=%u sid=%u action=%d filter=%d "
++        "inline=%d stream_insert=%d flags=0x%llx type=%u dsize=%u sp=%u dp=%u "
++        "flow=%p gadget=%p active=%s\n",
++        stage, (unsigned long long)pkt_num, gid, sid, action, filter_event, inline_mode,
++        stream_insert, p ? (unsigned long long)p->packet_flags : 0,
++        p ? (unsigned)p->type() : 0, p ? p->dsize : 0, p ? p->ptrs.sp : 0,
++        p ? p->ptrs.dp : 0, p ? (void*)p->flow : nullptr,
++        (p and p->flow) ? (void*)p->flow->gadget : nullptr, active_action);
++    std::fflush(stderr);
++}
++
+ void populate_trace_data()
+ {
+     if ( tr_len > 0 )
+@@ -216,12 +268,17 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
+             &cleared, &cleared, p->pkth->ts.tv_sec, get_network_policy()->policy_id);
+     }
+ 
++    if ( gl_debug_sid(otn) )
++        gl_debug_packet("fpLogEvent:matched", p, otn, action, filterEvent);
++
+     if ( (filterEvent < 0) || (filterEvent > 0 && !override) )
+     {
+         /*
+         **  If InlineMode is on, then we still want to drop packets
+         **  that are drop rules.  We just don't want to see the alert.
+         */
++        if ( gl_debug_sid(otn) )
++            gl_debug_packet("fpLogEvent:event_filtered_no_log", p, otn, action, filterEvent);
+         IpsAction * act = get_ips_policy()->action[action];
+         ActInfo ai(otn, false);
+         act->exec(p, ai);
+@@ -249,6 +306,8 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
+     if ( (p->packet_flags & PKT_PASS_RULE) &&
+         (sc->get_eval_index(rtn->action) > sc->get_eval_index(IpsAction::get_type("pass"))) )
+     {
++        if ( gl_debug_sid(otn) )
++            gl_debug_packet("fpLogEvent:pass_rule_skip", p, otn, action, filterEvent);
+         fpLogOther(p, rtn, otn, rtn->action);
+         return 1;
+     }
+@@ -258,6 +317,9 @@ int fpLogEvent(const RuleTreeNode* rtn, const OptTreeNode* otn, Packet* p)
+     IpsAction* act = get_ips_policy()->action[action];
+     ActInfo ai(otn);
+ 
++    if ( gl_debug_sid(otn) )
++        gl_debug_packet("fpLogEvent:exec_action", p, otn, action, filterEvent);
++
+     act->exec(p, ai);
+     SetTags(p, otn, eseq);
+     fpLogOther(p, rtn, otn, action);
+@@ -1239,7 +1301,11 @@ static inline bool skip_raw_tcp(const Packet* p)
+         return false;
+ 
+     if ( !p->context->conf->fast_pattern_config->get_stream_insert() )
++    {
++        if ( gl_debug_payload_contains(p, "BlackSun") )
++            gl_debug_packet("skip_raw_tcp:BlackSun_raw_tcp_skipped", p);
+         return true;
++    }
+ 
+     return false;
+ }
+diff --git a/src/framework/ips_action.cc b/src/framework/ips_action.cc
+index d24e682..a84d8e5 100644
+--- a/src/framework/ips_action.cc
++++ b/src/framework/ips_action.cc
+@@ -22,12 +22,18 @@
+ 
+ #include "ips_action.h"
+ 
++#include <cstdint>
++#include <cstdio>
++
+ #include "actions/actions_module.h"
+ #include "detection/detect.h"
++#include "detection/ips_context.h"
+ #include "detection/treenodes.h"
+ #include "managers/action_manager.h"
+ #include "managers/plugin_manager.h"
++#include "packet_io/active.h"
+ #include "parser/parser.h"
++#include "protocols/packet.h"
+ #include "utils/stats.h"
+ 
+ #include "act_info.h"
+@@ -37,6 +42,29 @@ using namespace snort;
+ namespace snort
+ {
+ 
++static bool gl_debug_sid(const OptTreeNode* otn)
++{
++    return otn and otn->sigInfo.gid == 1 and
++        otn->sigInfo.sid >= 9000000 and otn->sigInfo.sid <= 9000100;
++}
++
++static void gl_debug_alert_path(const char* stage, Packet* p, const OptTreeNode* otn, bool log_enabled)
++{
++    if ( !gl_debug_sid(otn) )
++        return;
++
++    const uint64_t pkt_num = (p and p->context) ? p->context->packet_number : 0;
++    const char* active_action = (p and p->active) ? p->active->get_action_string() : "none";
++
++    std::fprintf(stderr,
++        "[GL-SNORT-DBG] %s pkt=%llu gid=%u sid=%u log=%d dsize=%u "
++        "sp=%u dp=%u active=%s\n",
++        stage, (unsigned long long)pkt_num, otn->sigInfo.gid, otn->sigInfo.sid,
++        log_enabled ? 1 : 0, p ? p->dsize : 0, p ? p->ptrs.sp : 0,
++        p ? p->ptrs.dp : 0, active_action);
++    std::fflush(stderr);
++}
++
+ std::string IpsAction::get_string(IpsAction::Type action)
+ { return ActionManager::get_action_string(action); }
+ 
+@@ -80,12 +108,23 @@ void IpsAction::log(Packet* p, const ActInfo& ai)
+ 
+ void IpsAction::alert(Packet* p, const ActInfo& ai)
+ {
+-    if (!ai.otn or !log_it(ai))
++    if (!ai.otn)
+         return;
+ 
++    if (!log_it(ai))
++    {
++        gl_debug_alert_path("IpsAction::alert:log_disabled", p, ai.otn, false);
++        return;
++    }
++
++    gl_debug_alert_path("IpsAction::alert:enter", p, ai.otn, true);
++
+     RuleTreeNode* rtn = getRtnFromOtn(ai.otn);
+     if (!rtn)
++    {
++        gl_debug_alert_path("IpsAction::alert:no_rtn", p, ai.otn, true);
+         return;
++    }
+ 
+     /* Call OptTreeNode specific output functions */
+     if (ai.otn->outputFuncs)
+@@ -96,6 +135,7 @@ void IpsAction::alert(Packet* p, const ActInfo& ai)
+     }
+     CallAlertFuncs(p, ai.otn, rtn->listhead);
+     CallLogFuncs(p, ai.otn, rtn->listhead);
++    gl_debug_alert_path("IpsAction::alert:done", p, ai.otn, true);
+ }
+ 
+ void register_action_pegs(const char* s, const PegInfo* p)
+@@ -106,4 +146,3 @@ void register_action_pegs(const char* s, const PegInfo* p)
+ }
+ 
+ } // snort
+-
+diff --git a/src/detection/detect.cc b/src/detection/detect.cc
+index ddd397a..1fff3e6 100644
+--- a/src/detection/detect.cc
++++ b/src/detection/detect.cc
+@@ -30,6 +30,10 @@
+ 
+ #include "detect.h"
+ 
++#include <cstdint>
++#include <cstdio>
++
+ #include "events/event.h"
++#include "ips_context.h"
+ #include "latency/packet_latency.h"
+ #include "main/snort_config.h"
+@@ -53,6 +56,29 @@ using namespace snort;
+ 
+ THREAD_LOCAL ProfileStats eventqPerfStats;
+ 
++static bool gl_debug_sid(const OptTreeNode* otn)
++{
++    return otn and otn->sigInfo.gid == 1 and
++        otn->sigInfo.sid >= 9000000 and otn->sigInfo.sid <= 9000100;
++}
++
++static void gl_debug_detect_output(const char* stage, Packet* p, const OptTreeNode* otn, const char* act)
++{
++    if ( !gl_debug_sid(otn) )
++        return;
++
++    const uint64_t pkt_num = (p and p->context) ? p->context->packet_number : 0;
++    const char* active_action = (p and p->active) ? p->active->get_action_string() : "none";
++
++    std::fprintf(stderr,
++        "[GL-SNORT-DBG] %s pkt=%llu gid=%u sid=%u act=%s dsize=%u "
++        "sp=%u dp=%u active=%s msg=\"%s\"\n",
++        stage, (unsigned long long)pkt_num, otn->sigInfo.gid, otn->sigInfo.sid,
++        act ? act : "", p ? p->dsize : 0, p ? p->ptrs.sp : 0, p ? p->ptrs.dp : 0,
++        active_action, otn->sigInfo.message.c_str());
++    std::fflush(stderr);
++}
++
+ bool snort_ignore(Packet*) { return true; }
+ 
+ bool snort_log(Packet* p)
+@@ -77,6 +103,8 @@ void CallLogFuncs(Packet* p, const OptTreeNode* otn, ListHead* head)
+     const char* act = (head and head->ruleListNode) ? head->ruleListNode->name : "";
+     Event event(p->pkth->ts.tv_sec, p->pkth->ts.tv_usec, otn->sigInfo, otn->buffer_setters, act);
+ 
++    gl_debug_detect_output("CallLogFuncs:enter", p, otn, act);
++
+     DetectionEngine::set_check_tags(p, false);
+     pc.log_pkts++;
+ 
+@@ -101,6 +129,7 @@ void CallLogFuncs(Packet* p, const OptTreeNode* otn, ListHead* head)
+ 
+     OutputSet* idx = head ? head->LogList : nullptr;
+     EventManager::call_loggers(idx, p, otn->sigInfo.message.c_str(), &event);
++    gl_debug_detect_output("CallLogFuncs:after_call_loggers", p, otn, act);
+ 
+     if (data)
+     {
+@@ -115,6 +144,8 @@ void CallAlertFuncs(Packet* p, const OptTreeNode* otn, ListHead* head)
+     const char* act = (head and head->ruleListNode) ? head->ruleListNode->name : "";
+     Event event(p->pkth->ts.tv_sec, p->pkth->ts.tv_usec, otn->sigInfo, otn->buffer_setters, act);
+ 
++    gl_debug_detect_output("CallAlertFuncs:enter", p, otn, act);
++
+     pc.total_alert_pkts++;
+ 
+     if ( otn->sigInfo.gid != GID_REPUTATION )
+@@ -125,6 +156,7 @@ void CallAlertFuncs(Packet* p, const OptTreeNode* otn, ListHead* head)
+ 
+     OutputSet* idx = head ? head->AlertList : nullptr;
+     EventManager::call_alerters(idx, p, otn->sigInfo.message.c_str(), event);
++    gl_debug_detect_output("CallAlertFuncs:after_call_alerters", p, otn, act);
+ }
+ 
+ /*
+@@ -153,4 +185,3 @@ void check_tags(Packet* p)
+         }
+     }
+ }
+-
+diff --git a/src/loggers/alert_json.cc b/src/loggers/alert_json.cc
+index 89893dd..3f98f58 100644
+--- a/src/loggers/alert_json.cc
++++ b/src/loggers/alert_json.cc
+@@ -30,6 +30,9 @@
+ #include "config.h"
+ #endif
+ 
++#include <cstdint>
++#include <cstdio>
++
+ #include "detection/detection_engine.h"
+ #include "events/event.h"
+ #include "flow/flow_key.h"
+@@ -837,6 +840,20 @@ void JsonLogger::close()
+ 
+ void JsonLogger::alert(Packet* p, const char* msg, const Event& event)
+ {
++    if ( event.get_gid() == 1 and event.get_sid() >= 9000000 and event.get_sid() <= 9000100 )
++    {
++        const uint64_t pkt_num = (p and p->context) ? p->context->packet_number : 0;
++        const char* active_action = (p and p->active) ? p->active->get_action_string() : "none";
++
++        std::fprintf(stderr,
++            "[GL-SNORT-DBG] alert_json:write pkt=%llu gid=%u sid=%u dsize=%u "
++            "sp=%u dp=%u active=%s msg=\"%s\"\n",
++            (unsigned long long)pkt_num, event.get_gid(), event.get_sid(),
++            p ? p->dsize : 0, p ? p->ptrs.sp : 0, p ? p->ptrs.dp : 0,
++            active_action, msg ? msg : "");
++        std::fflush(stderr);
++    }
++
+     Args a = { p, msg, event, false };
+     TextLog_Putc(json_log, '{');
+ 
+@@ -894,4 +911,3 @@ const BaseApi* alert_json[] =
+     &json_api.base,
+     nullptr
+ };
+-
