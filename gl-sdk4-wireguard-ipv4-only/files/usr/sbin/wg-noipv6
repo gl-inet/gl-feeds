@@ -1,0 +1,256 @@
+#!/bin/sh
+# shellcheck shell=ash
+# wg-noipv6 -- IPv4-only enforcement CLI.
+
+set -u
+LC_ALL=C
+export LC_ALL
+
+. /usr/lib/wg-noipv6/functions.sh
+
+usage() {
+	cat <<USAGE
+Usage: wg-noipv6 [sync|apply <dev>|clear <dev>|clear-all|status|cron-tick]
+
+  sync          (default) reconcile every WG server section against the
+                global IPv6 state shown on /#/ipv6.
+  apply <dev>   force-apply IPv4-only state for kernel device <dev>.
+  clear <dev>   remove IPv4-only state for kernel device <dev>.
+  clear-all     remove every drop-in installed by this package.
+  status        print PASS/FAIL audit per WG server section.
+  cron-tick     periodic safety-net for the /#/ipv6 toggle. Silent
+                unless the global IPv6 state changed since last tick.
+USAGE
+}
+
+_need_dev() {
+	wg_iface_is_valid "${1:-}" || {
+		echo "wg-noipv6: invalid device name: ${1:-<empty>}" >&2
+		exit 1
+	}
+}
+
+# Periodic safety net for the /#/ipv6 toggle.
+#
+# Some GL.iNet 4.x firmware revisions only commit `glconfig.general.
+# enable_ipv6` on the disable path -- without an `ifdown wan6`, without a
+# `network` reload, and without a `ubus call service event ...` for the
+# glconfig package. None of our procd reload triggers or hotplugs see this
+# transition, so a slow-poll reconciler is the only fully reliable way to
+# notice it.
+#
+# Logs nothing unless the global state has actually changed since the
+# previous tick (delegated to wg_sync_all, which already emits one summary
+# line per real reconcile).
+cmd_cron_tick() {
+	_state_dir="$WG_NOIPV6_STATE_DIR"
+	_last_file="${_state_dir}/last-global"
+	mkdir -p "$_state_dir" 2>/dev/null || true
+
+	_cur="$(wg_global_ipv6_enabled)"
+	_last="$(cat "$_last_file" 2>/dev/null)"
+
+	if [ "$_cur" = "$_last" ]; then
+		return 0
+	fi
+
+	printf '%s\n' "$_cur" > "$_last_file"
+	WG_NOIPV6_QUIET=1 wg_sync_all
+	return 0
+}
+
+cmd_status() {
+	_pass=0; _fail=0; _seen=0
+
+	_global="enabled"
+	[ "$(wg_global_ipv6_enabled)" = "0" ] && _global="disabled"
+	printf '  [INFO] global IPv6: %s (driven by /#/ipv6)\n' "$_global"
+
+	_pf() {
+		if [ "$1" -eq 0 ]; then
+			printf '  [PASS] %s: %s\n' "$2" "$3"
+			_pass=$((_pass+1))
+		else
+			printf '  [FAIL] %s: %s\n' "$2" "$4"
+			_fail=$((_fail+1))
+		fi
+	}
+
+	for _srv in $(wg_list_glinet_servers); do
+		_seen=$((_seen+1))
+		_dev="$(wg_glinet_kernel_dev "$_srv")"
+		_label="glinet/${_srv} (${_dev})"
+		if [ "$_global" = "enabled" ]; then
+			# Two PASS checks: nothing leftover from a previous enforce.
+			_snap="$(_wg_snap_path_glinet "$_srv")"
+			[ ! -f "$_snap" ] && _ok=0 || _ok=1
+			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
+				"snapshot still present (un-restored): $_snap -- run: wg-noipv6 sync"
+
+			if wg_iface_is_valid "$_dev"; then
+				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+					&& _ok=0 || _ok=1
+				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
+					"stale sysctl drop-in present -- run: wg-noipv6 clear ${_dev}"
+			fi
+
+			# INFO lines: show what IPv6 is actually present so the user
+			# can confirm restore put things back the way they expect.
+			_v6srv="$(uci -q get "wireguard_server.${_srv}.address_v6" 2>/dev/null)"
+			if [ -n "$_v6srv" ]; then
+				printf '  [INFO] %s: UCI address_v6 = %s\n' "$_label" "$_v6srv"
+			else
+				printf '  [INFO] %s: UCI address_v6 not set\n' "$_label"
+			fi
+
+			_v6peers=0
+			for _p in $(wg_list_glinet_peers); do
+				for _key in client_ip allowed_ips; do
+					_cur="$(uci -q get "wireguard_server.${_p}.${_key}" 2>/dev/null)"
+					case "$_cur" in *:*) _v6peers=$((_v6peers+1));; esac
+				done
+			done
+			printf '  [INFO] %s: %d peer entry/entries contain IPv6\n' \
+				"$_label" "$_v6peers"
+
+			if wg_iface_is_valid "$_dev" && [ -d "/sys/class/net/$_dev" ]; then
+				_live=$(ip -6 addr show dev "$_dev" 2>/dev/null \
+						| awk '/inet6/ && $2 !~ /^fe80/' | wc -l)
+				printf '  [INFO] %s: %d global IPv6 address(es) on kernel dev\n' \
+					"$_label" "$_live"
+			fi
+			continue
+		fi
+
+		wg_iface_is_valid "$_dev" \
+			&& [ -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+			&& _ok=0 || _ok=1
+		_pf "$_ok" "$_label" "sysctl drop-in present" "sysctl drop-in missing"
+
+		_v6srv="$(uci -q get "wireguard_server.${_srv}.address_v6" 2>/dev/null)"
+		[ -z "$_v6srv" ] && _ok=0 || _ok=1
+		_pf "$_ok" "glinet/${_srv}" "address_v6 cleared" "address_v6 still set ($_v6srv)"
+
+		_bad=0
+		for _p in $(wg_list_glinet_peers); do
+			for _key in client_ip allowed_ips; do
+				_cur="$(uci -q get "wireguard_server.${_p}.${_key}" 2>/dev/null)"
+				case "$_cur" in *:*) _bad=$((_bad+1));; esac
+			done
+		done
+		[ "$_bad" -eq 0 ] && _ok=0 || _ok=1
+		_pf "$_ok" "glinet/${_srv}" "peer client_ip/allowed_ips IPv4-only" \
+			"$_bad peer entries still contain IPv6"
+
+		if [ -d "/sys/class/net/$_dev" ]; then
+			_live=$(ip -6 addr show dev "$_dev" 2>/dev/null \
+					| awk '/inet6/ && $2 !~ /^fe80/' | wc -l)
+			[ "$_live" -eq 0 ] && _ok=0 || _ok=1
+			_pf "$_ok" "$_label" "no global IPv6 on kernel dev" \
+				"$_live global IPv6 still on kernel dev"
+		else
+			printf '  [INFO] %s: kernel dev not present\n' "$_label"
+		fi
+	done
+
+	for _iface in $(wg_list_netifd_ifaces); do
+		_seen=$((_seen+1))
+		_dev="$(wg_netifd_kernel_dev "$_iface")"
+		_label="netifd/${_iface} (${_dev})"
+		if [ "$_global" = "enabled" ]; then
+			_snap="$(_wg_snap_path_netifd "$_iface")"
+			[ ! -f "$_snap" ] && _ok=0 || _ok=1
+			_pf "$_ok" "$_label" "no pending UCI snapshot to restore" \
+				"snapshot still present (un-restored): $_snap -- run: wg-noipv6 sync"
+
+			[ "$(uci -q get "network.${_iface}.ipv6")" != "0" ] && _ok=0 || _ok=1
+			_pf "$_ok" "netifd/${_iface}" "ipv6 not pinned to 0" \
+				"ipv6=0 still pinned -- run: wg-noipv6 sync"
+
+			if wg_iface_is_valid "$_dev"; then
+				[ ! -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+					&& _ok=0 || _ok=1
+				_pf "$_ok" "$_label" "no stale sysctl drop-in" \
+					"stale sysctl drop-in present -- run: wg-noipv6 clear ${_dev}"
+			fi
+
+			# INFO lines: show what IPv6 is actually present.
+			_v6addrs=0
+			_addrs="$(uci -q get "network.${_iface}.addresses" 2>/dev/null)"
+			for _a in $_addrs; do
+				case "$_a" in *:*) _v6addrs=$((_v6addrs+1));; esac
+			done
+			printf '  [INFO] %s: %d IPv6 address(es) in network UCI\n' \
+				"$_label" "$_v6addrs"
+
+			if wg_iface_is_valid "$_dev" && [ -d "/sys/class/net/$_dev" ]; then
+				_live=$(ip -6 addr show dev "$_dev" 2>/dev/null \
+						| awk '/inet6/ && $2 !~ /^fe80/' | wc -l)
+				printf '  [INFO] %s: %d global IPv6 address(es) on kernel dev\n' \
+					"$_label" "$_live"
+			fi
+			continue
+		fi
+
+		wg_iface_is_valid "$_dev" \
+			&& [ -f "${WG_NOIPV6_SYSCTL_DIR}/99-wg-noipv6-${_dev}.conf" ] \
+			&& _ok=0 || _ok=1
+		_pf "$_ok" "$_label" "sysctl drop-in present" "sysctl drop-in missing"
+
+		[ "$(uci -q get "network.${_iface}.ipv6")" = "0" ] && _ok=0 || _ok=1
+		_pf "$_ok" "netifd/${_iface}" "ipv6=0" "ipv6 not pinned to 0"
+	done
+
+	if [ "$_seen" -eq 0 ]; then
+		printf '  [INFO] no WireGuard server configured\n'
+		return 3
+	fi
+	printf '\nsummary: %d PASS / %d FAIL\n' "$_pass" "$_fail"
+	[ "$_fail" -gt 0 ] && return 2
+	return 0
+}
+
+main() {
+	[ "$(id -u)" -eq 0 ] || {
+		echo "wg-noipv6: must run as root" >&2
+		exit 1
+	}
+
+	_cmd="${1:-sync}"
+	[ $# -gt 0 ] && shift
+
+	case "$_cmd" in
+		sync)
+			wg_sync_all
+			;;
+		apply)
+			_need_dev "${1:-}"
+			wg_apply_dev_hostside "$1"
+			_wg_say "apply: enforced IPv4-only host-side state on $1"
+			;;
+		clear)
+			_need_dev "${1:-}"
+			wg_clear_dev "$1"
+			_wg_say "clear: removed host-side enforcement on $1"
+			;;
+		clear-all)
+			wg_clear_all
+			;;
+		status)
+			cmd_status
+			exit $?
+			;;
+		cron-tick)
+			cmd_cron_tick
+			;;
+		help|-h|--help)
+			usage
+			;;
+		*)
+			usage >&2
+			exit 1
+			;;
+	esac
+}
+
+main "$@"

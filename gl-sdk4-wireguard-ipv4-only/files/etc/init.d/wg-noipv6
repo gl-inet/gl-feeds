@@ -1,0 +1,37 @@
+#!/bin/sh /etc/rc.common
+# Reload-only service: re-evaluate global IPv6 state on UCI changes
+# to wireguard_server, network or firewall.
+
+START=96
+STOP=10
+USE_PROCD=1
+
+start_service() {
+	# Hooks should only log to syslog -- never to stderr -- to keep procd
+	# logs and serial consoles clean.
+	WG_NOIPV6_QUIET=1 /usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+}
+
+reload_service() {
+	WG_NOIPV6_QUIET=1 /usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+}
+
+stop_service() {
+	# No-op: we have no procd instance to kill. Full teardown lives in
+	# `wg-noipv6 clear-all` (invoked by package prerm). Returning early
+	# here also avoids any procd ubus chatter on a manual `stop`.
+	return 0
+}
+
+# Belt-and-suspenders for procd revisions that run service_stopped after
+# stop_service: same no-op, same reason.
+service_stopped() {
+	return 0
+}
+
+service_triggers() {
+	procd_add_reload_trigger "wireguard_server"
+	procd_add_reload_trigger "network"
+	procd_add_reload_trigger "firewall"
+	procd_add_reload_trigger "glconfig"
+}

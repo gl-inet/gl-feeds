@@ -1,0 +1,25 @@
+#!/bin/sh
+# First-boot bootstrap:
+#   1) install a cron-tick entry (see cmd_cron_tick in /usr/sbin/wg-noipv6
+#      for why this is needed -- some GL.iNet firmware revisions don't fire
+#      any procd/hotplug event when /#/ipv6 is toggled off);
+#   2) trigger an initial sync so existing routers reach the right state.
+
+if [ -z "$IPKG_INSTROOT" ]; then
+	# Idempotent cron entry. Tagged with a comment marker so prerm can
+	# remove just our line without disturbing the rest of /etc/crontabs/root.
+	mkdir -p /etc/crontabs
+	[ -f /etc/crontabs/root ] || : > /etc/crontabs/root
+	if ! grep -qF '# wg-noipv6 reconcile' /etc/crontabs/root 2>/dev/null; then
+		printf '%s\n' \
+			'* * * * * /usr/sbin/wg-noipv6 cron-tick >/dev/null 2>&1 # wg-noipv6 reconcile' \
+			>> /etc/crontabs/root
+		/etc/init.d/cron enable >/dev/null 2>&1 || true
+		/etc/init.d/cron reload >/dev/null 2>&1 || /etc/init.d/cron restart >/dev/null 2>&1 || true
+	fi
+
+	/usr/sbin/wg-noipv6 sync >/dev/null 2>&1 || true
+fi
+
+exit 0
+
