@@ -162,6 +162,18 @@ static int lua_iwinfo_assoclist(lua_State *L)
             lua_setfield(L, -2, "expected_throughput");
         }
 
+	lua_pushinteger(L, e->tx_rate.rate);
+        lua_setfield(L, -2, "tx_rate");
+
+        lua_pushinteger(L, e->rx_rate.rate);
+        lua_setfield(L, -2, "rx_rate");
+
+        lua_pushinteger(L, e->tx_rate.mhz);
+        lua_setfield(L, -2, "tx_mhz");
+
+        lua_pushinteger(L, e->rx_rate.mhz);
+        lua_setfield(L, -2, "rx_mhz");
+
         lua_setfield(L, -2, macstr);
     }
 
