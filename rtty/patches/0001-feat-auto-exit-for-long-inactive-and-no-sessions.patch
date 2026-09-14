@@ -1,0 +1,75 @@
+From 6aa15be9a488151ef3e7a20e0c195f56feed7e74 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Mon, 14 Sep 2026 15:20:29 +0800
+Subject: [PATCH] feat: auto exit for long inactive and no sessions
+
+Change-Id: I0a612a5bdd5b600c926232bbe66b77361c98c951
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ src/rtty.c | 12 ++++++++++++
+ src/rtty.h |  1 +
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/rtty.c b/src/rtty.c
+index f703643..66f90e9 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -507,10 +507,12 @@ static int parse_msg(struct rtty *rtty)
+         case MSG_TYPE_WINSIZE:
+         case MSG_TYPE_FILE:
+         case MSG_TYPE_ACK:
++            rtty->user_active = ev_now(rtty->loop);
+             parse_tty_msg(rtty, msgtype, msglen);
+             break;
+ 
+         case MSG_TYPE_CMD:
++            rtty->user_active = ev_now(rtty->loop);
+             run_command(rtty, buffer_data(rb));
+             buffer_pull(rb, NULL, msglen);
+             break;
+@@ -519,6 +521,7 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_HTTP:
++            rtty->user_active = ev_now(rtty->loop);
+             http_request(rtty, msglen);
+             break;
+ 
+@@ -737,6 +740,13 @@ static void rtty_timer_cb(struct ev_loop *loop, struct ev_timer *w, int revents)
+ {
+     struct rtty *rtty = container_of(w, struct rtty, tmr);
+ 
++    if (list_empty(&rtty->ttys) && ev_now(loop) - rtty->user_active > 30 * 60) {
++        log_info("no sessions and inactive for 30 minutes, now exit\n");
++        rtty->reconnect = false;
++        rtty_exit(rtty);
++        return;
++    }
++
+     if (rtty->sock < 0) {
+         tcp_connect(rtty->loop, rtty->host, rtty->port, on_net_connected, rtty);
+         return;
+@@ -775,6 +785,8 @@ int rtty_start(struct rtty *rtty)
+     INIT_LIST_HEAD(&rtty->ttys);
+     INIT_LIST_HEAD(&rtty->http_conns);
+ 
++    rtty->user_active = ev_now(rtty->loop);
++
+     if (tcp_connect(rtty->loop, rtty->host, rtty->port, on_net_connected, rtty) < 0
+             && !rtty->reconnect)
+         return -1;
+diff --git a/src/rtty.h b/src/rtty.h
+index be8bf00..1f78ace 100644
+--- a/src/rtty.h
++++ b/src/rtty.h
+@@ -123,6 +123,7 @@ struct rtty {
+     int ntty;   /* tty number */
+     struct list_head ttys;
+     struct list_head http_conns;
++    ev_tstamp user_active;
+ };
+ 
+ int rtty_start(struct rtty *rtty);
+-- 
+2.53.0
+
