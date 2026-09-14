@@ -1,3 +1,4 @@
+<<<<<<< HEAD   (587244 fix: fix DHCP address pool off-by-one in dhcp_add() #SDK-253)
 --- a/src/rtty.c
 +++ b/src/rtty.c
 @@ -444,6 +444,7 @@ static int parse_msg(struct rtty *rtty)
@@ -47,3 +48,5 @@
  };
  
  int rtty_start(struct rtty *rtty);
+=======
+>>>>>>> CHANGE (a7a065 feat: update rtty to 9.1.0 #SDK-24956)
