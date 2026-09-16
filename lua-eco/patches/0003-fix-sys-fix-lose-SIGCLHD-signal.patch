@@ -1,0 +1,89 @@
+From 05e3391ae25bccc0bc6343c7024becc3569530e6 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Wed, 16 Sep 2026 20:21:16 +0800
+Subject: [PATCH] fix(sys): fix lose SIGCLHD signal
+
+Change-Id: I916f187dfd6d91dc36dec53b8d1d799329d93dfc
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ sys.lua | 47 +++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 41 insertions(+), 6 deletions(-)
+
+diff --git a/sys.lua b/sys.lua
+index 9acf69d..721d25c 100644
+--- a/sys.lua
++++ b/sys.lua
+@@ -10,6 +10,7 @@
+ local file = require 'eco.internal.file'
+ local sys = require 'eco.internal.sys'
+ local sync = require 'eco.sync'
++local time = require 'eco.time'
+ local eco = require 'eco'
+ 
+ local M = {}
+@@ -93,6 +94,7 @@ end
+ -- @treturn[2] nil On timeout or error.
+ -- @treturn[2] string Error message.
+ function exec_methods:wait(timeout)
++    local deadline = timeout and time.now() + timeout
+     local status = self.__status
+     if status then
+         self.__status = nil
+@@ -113,15 +115,48 @@ function exec_methods:wait(timeout)
+         return self.pid, status
+     end
+ 
+-    local res, err = c:wait(timeout)
++    while true do
++        local wait_timeout = 0.1
++        if deadline then
++            wait_timeout = deadline - time.now()
++            if wait_timeout <= 0 then
++                self.wait_cond = nil
++                return nil, 'timeout'
++            end
+ 
+-    self.wait_cond = nil
++            wait_timeout = math.min(wait_timeout, 0.1)
++        end
+ 
+-    if not res then
+-        return nil, err
+-    end
++        local res, err = c:wait(wait_timeout)
++        if res then
++            self.wait_cond = nil
++            return res.pid, res.status
++        end
++
++        if err ~= 'timeout' then
++            self.wait_cond = nil
++            return nil, err
++        end
+ 
+-    return res.pid, res.status
++        status = self.__status
++        if status then
++            self.__status = nil
++            self.wait_cond = nil
++            return self.pid, status
++        end
++
++        local pid
++        pid, status = sys.waitpid(self.pid)
++        if not pid then
++            self.wait_cond = nil
++            return nil, status
++        end
++
++        if pid ~= 0 then
++            self.wait_cond = nil
++            return pid, status
++        end
++    end
+ end
+ 
+ --- Send a signal to the process.
+-- 
+2.53.0
+
