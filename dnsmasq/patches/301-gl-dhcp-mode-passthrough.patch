@@ -10,20 +10,6 @@ index 90f3704..1111111 100644
    int max_procs;
    uint max_procs_used;
  } *daemon;
-diff --git a/src/lease.c b/src/lease.c
-index 00748ad..2222222 100644
---- a/src/lease.c
-+++ b/src/lease.c
-@@ -645,6 +645,9 @@ struct dhcp_lease *lease_find_by_client(unsigned char *hwaddr, int hw_len, int h
- {
-   struct dhcp_lease *lease;
- 
-+  if (daemon->mode && strcmp(daemon->mode, "passthrough") == 0)
-+    return NULL;
-+
-   if (clid)
-     for (lease = leases; lease; lease = lease->next)
-       {
 diff --git a/src/option.c b/src/option.c
 index a13f1fa..3333333 100644
 --- a/src/option.c
