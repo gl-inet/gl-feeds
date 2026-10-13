@@ -35,6 +35,9 @@
 #define CST353X_RAW_X_MAX               239
 #define CST353X_RAW_Y_MAX               319
 
+#define CST353X_HYN_RAW_X_MAX           171
+#define CST353X_HYN_RAW_Y_MAX           319
+
 /* CST8xx event in XH[7:6]: 0=down, 1=up, 2=contact. */
 #define CST353X_EVENT_DOWN              0x00
 #define CST353X_EVENT_UP                0x01
@@ -273,8 +276,8 @@ static const struct cst353x_variant cst353x_frame_variant = {
 
 static const struct cst353x_variant cst353x_reg8_variant = {
     .name = "reg8",
-    .raw_x_max = CST353X_RAW_X_MAX,
-    .raw_y_max = CST353X_RAW_Y_MAX,
+    .raw_x_max = CST353X_HYN_RAW_X_MAX,
+    .raw_y_max = CST353X_HYN_RAW_Y_MAX,
     .default_width = 172,
     .default_height = 320,
     .reset_delay_ms = 200,
