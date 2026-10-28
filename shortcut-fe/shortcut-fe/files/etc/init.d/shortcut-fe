@@ -42,6 +42,23 @@ start() {
 	local actype=$(uci -q get mtkhnat.global.actype)
 	local mtknat_enable=$(uci -q get mtkhnat.global.enable)
 	[ "$actype" == "1" ] || [ "$mtknat_enable" == "0" ] && exit 0
+	if [ "$mtknat_enable" = "1" ] && { [ "$actype" = "0" ] || [ -z "$actype" ]; }; then
+		local mesh_agent=0
+		local wan_up
+
+		if [ -f "/etc/config/gl-mesh" ] &&
+			[ "$(uci -q get 'gl-mesh.@base[0].enabled')" = "1" ] &&
+			[ "$(uci -q get 'gl-mesh.@base[0].mode')" = "agent" ]; then
+			mesh_agent=1
+		fi
+
+		wan_up="$(ubus call network.interface.wan status 2>/dev/null | jsonfilter -e '@.up')"
+		if [ "$mesh_agent" = "1" ] || [ "$wan_up" = "true" ]; then
+			stop
+			[ -f "/sys/kernel/debug/hnat/hook_toggle" ] && echo '1' > /sys/kernel/debug/hnat/hook_toggle
+			return 0
+		fi
+	fi
 	[ -f "/sys/kernel/debug/hnat/hook_toggle" ] && echo '0' > /sys/kernel/debug/hnat/hook_toggle
 
 	local ipv6_enable=$(uci get glipv6.globals.enabled)
