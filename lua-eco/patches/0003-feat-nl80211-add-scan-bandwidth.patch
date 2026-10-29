@@ -1,0 +1,428 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: pan.wei <pan.wei@gl-inet.com>
+Date: Thu, 29 Oct 2026 10:48:48 +0800
+Subject: [PATCH] nl80211: add optional scan bandwidth and center channels
+
+Decode AP operating information only when bandwidth is requested.
+Keep existing BSS fields and raw IE output unchanged. Invalid or
+unsupported channel layouts return zero; 80+80 exposes both centers.
+
+Signed-off-by: pan.wei <pan.wei@gl-inet.com>
+---
+ nl/nl80211.lua         | 194 ++++++++++++++++++++++++++++++++++++++++++++++++
+ tests/nl80211-test.lua | 155 +++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 343 insertions(+), 6 deletions(-)
+
+diff --git a/nl/nl80211.lua b/nl/nl80211.lua
+--- a/nl/nl80211.lua
++++ b/nl/nl80211.lua
+@@ -123,6 +123,9 @@
+ -- @field wpa table|nil WPA information (parsed).
+ -- @field status string|nil Link status: authenticated/associated/ibss_joined.
+ -- @field elems table|nil Raw parsed information elements (when keep_elems is true).
++-- @field bandwidth int|nil AP operating width in MHz (when bandwidth is true); 0 if unknown.
++-- @field center_channel int|nil Whole channel center, or primary 80 MHz center for 80+80.
++-- @field center_channel2 int|nil Other 80 MHz center for 80+80; 0 for contiguous channels.
+ 
+ --- @section end
+ 
+@@ -839,7 +842,191 @@
+     end
+ end
+ 
+-local function parse_bss(nest, keep_elems)
++local scan_ie_names = {
++    [1] = 'rates', [45] = 'ht_cap', [61] = 'ht', [191] = 'vht_cap',
++    [192] = 'vht', [291] = 'he_cap', [292] = 'he', [362] = 'eht', [364] = 'eht_cap'
++}
++
++local function read_scan_ies(data)
++    local ies = {}
++    local pos = 1
++
++    while pos <= #data do
++        if pos + 1 > #data then return end
++        local id, len = str_byte(data, pos, pos + 1)
++        if pos + 1 + len > #data then return end
++        local value = data:sub(pos + 2, pos + 1 + len)
++        if id == 255 and len > 0 then
++            id = 256 + str_byte(value, 1)
++            value = value:sub(2)
++        end
++        local name = scan_ie_names[id]
++        if name then
++            if ies[name] and ies[name] ~= value then return end
++            ies[name] = value
++        end
++        pos = pos + 2 + len
++    end
++    return ies
++end
++
++local function center_freq(band, channel)
++    if band == 2.4 then return channel == 14 and 2484 or 2407 + channel * 5 end
++    if band == 6 then return channel == 2 and 5935 or 5950 + channel * 5 end
++    return 5000 + channel * 5
++end
++
++local function check_center(info, width, center)
++    if not center or center <= 0 then return false end
++    local freq = center_freq(info.band, center)
++    local first, last = freq - width / 2 + 10, freq + width / 2 - 10
++    local low, high = 5000, 5925
++    if info.band == 2.4 then low, high = 2412, width == 20 and 2484 or 2472 end
++    if info.band == 6 then low, high = 5955, 7115 end
++    if info.band == 6 and width == 20 and center == 2 then low = 5935 end
++    return first >= low and last <= high and info.freq >= first and info.freq <= last and
++        (info.freq - first) % 20 == 0
++end
++
++local function read_vht_width(info, mode, c0, c1)
++    if c0 == 0 then return end
++    if mode == 1 then
++        if c1 == 0 then return 80, c0, 0 end
++        -- 新版 VHT 用主 80 MHz 中心和整段中心共同表示连续 160 MHz。
++        if math.abs(c0 - c1) == 8 and check_center(info, 80, c0) then return 160, c1, 0 end
++        if math.abs(c0 - c1) > 16 then return 160, c0, c1 end
++    elseif mode == 2 and c1 == 0 then
++        return 160, c0, 0
++    elseif mode == 3 and c1 > 0 and math.abs(c0 - c1) > 16 then
++        return 160, c0, c1
++    end
++end
++
++local function read_bandwidth(info, ies)
++    local band = info.band
++    local width, center, center2
++    local ht, vht, he, eht = ies.ht, ies.vht, ies.he, ies.eht
++
++    if ht and band ~= 6 then
++        if #ht < 22 or str_byte(ht, 1) ~= info.channel then return end
++        local flags = str_byte(ht, 2)
++        local offset = flags & 3
++        if offset == 2 then return end
++        width, center, center2 = 20, info.channel, 0
++        if flags & 4 ~= 0 and offset ~= 0 then
++            width, center = 40, info.channel + (offset == 1 and 2 or -2)
++        end
++    elseif band ~= 6 and ies.rates and #ies.rates > 0 and
++        not ies.ht_cap and not ies.vht_cap and not ies.he_cap and not ies.eht_cap then
++        width, center, center2 = 20, info.channel, 0
++    end
++
++    if vht and band == 5 then
++        if #vht < 5 then return end
++        local mode, c0, c1 = str_byte(vht, 1, 3)
++        if mode > 0 then
++            width, center, center2 = read_vht_width(info, mode, c0, c1)
++            if not width then return end
++        end
++    end
++
++    if he then
++        if #he < 6 then return end
++        local flags = str_byte(he, 1) | str_byte(he, 2) << 8 | str_byte(he, 3) << 16
++        local pos = 7
++        if flags & 0x4000 ~= 0 then
++            if #he < pos + 2 then return end
++            local mode, c0, c1 = str_byte(he, pos, pos + 2)
++            if band == 5 and mode > 0 then
++                width, center, center2 = read_vht_width(info, mode, c0, c1)
++                if not width then return end
++            end
++            pos = pos + 3
++        end
++        if flags & 0x8000 ~= 0 then pos = pos + 1 end
++        if #he < pos - 1 then return end
++        if flags & 0x20000 ~= 0 then
++            if #he < pos + 4 then return end
++            if band == 6 then
++                local primary, control, c0, c1 = str_byte(he, pos, pos + 3)
++                if primary ~= info.channel then return end
++                local mode = control & 3
++                if mode < 3 then
++                    if c1 ~= 0 then return end
++                    width, center, center2 = 20 << mode, c0, 0
++                else
++                    width, center, center2 = read_vht_width(info, 1, c0, c1)
++                    if width ~= 160 then return end
++                end
++            end
++        end
++    end
++
++    local puncturing = 0
++    if eht then
++        if #eht < 5 then return end
++        local flags = str_byte(eht, 1)
++        if flags & 1 ~= 0 then
++            if #eht < 8 then return end
++            local control, c0, c1 = str_byte(eht, 6, 8)
++            local mode = control & 7
++            if mode > 4 or c0 == 0 then return end
++            width, center, center2 = 20 << mode, c0, 0
++            if mode >= 3 then
++                if c1 == 0 or math.abs(c0 - c1) ~= width / 20 or
++                    not check_center(info, width / 2, c0) then return end
++                center = c1
++            elseif c1 ~= 0 then
++                return
++            end
++            if flags & 2 ~= 0 then
++                if #eht < 10 then return end
++                puncturing = str_byte(eht, 9) | str_byte(eht, 10) << 8
++            end
++        elseif flags & 2 ~= 0 then
++            return
++        end
++    end
++
++    if not width or width > (band == 2.4 and 40 or band == 5 and 160 or 320) then return end
++    if center2 ~= 0 then
++        -- 保证第一个中心所在的 80 MHz 段包含主信道。
++        if check_center(info, 80, center2) then center, center2 = center2, center end
++        local other = { band = band, freq = center_freq(band, center2) - 30 }
++        if width ~= 160 or math.abs(center - center2) <= 16 or
++            not check_center(info, 80, center) or not check_center(other, 80, center2) then return end
++    elseif not check_center(info, width, center) then
++        return
++    end
++    if puncturing >= 1 << (width / 20) then return end
++    if puncturing ~= 0 then
++        local first = center_freq(band, center) - width / 2 + 10
++        local index = (info.freq - first) / 20
++        if puncturing & (1 << index) ~= 0 then return end
++    end
++    return width, center, center2
++end
++
++local function parse_bandwidth(info, attrs)
++    info.bandwidth, info.center_channel, info.center_channel2 = 0, 0, 0
++    if info.band ~= 2.4 and info.band ~= 5 and info.band ~= 6 then return end
++    local primary = attrs[nl80211.BSS_INFORMATION_ELEMENTS]
++    local beacon = attrs[nl80211.BSS_BEACON_IES]
++    local ies = read_scan_ies(primary and nl.attr_get_payload(primary) or '')
++    if not ies then return end
++
++    -- 只补缺失的完整运行 IE，不改原来的 SSID、安全解析及 keep_elems 返回值。
++    local fallback = beacon and read_scan_ies(nl.attr_get_payload(beacon))
++    for name, value in pairs(fallback or {}) do
++        if not ies[name] then ies[name] = value end
++    end
++    local width, center, center2 = read_bandwidth(info, ies)
++    if width then
++        info.bandwidth, info.center_channel, info.center_channel2 = width, center, center2
++    end
++end
++
++local function parse_bss(nest, keep_elems, bandwidth)
+     local attrs = nl.parse_attr_nested(nest)
+     local info = { caps = {} }
+ 
+@@ -883,6 +1070,8 @@
+     if attrs[nl80211.BSS_BEACON_IES] then
+         parse_bss_ie(info, nl.attr_get_payload(attrs[nl80211.BSS_BEACON_IES]), false, true)
+     end
++
++    if bandwidth then parse_bandwidth(info, attrs) end
+ 
+     if attrs[nl80211.BSS_STATUS] then
+         local status = nl.attr_get_u32(attrs[nl80211.BSS_STATUS])
+@@ -948,7 +1137,7 @@
+ 
+         local attrs = reply:parse_attr(genl.GENLMSGHDR_SIZE)
+         if attrs[nl80211.ATTR_BSS] then
+-            local res = parse_bss(attrs[nl80211.ATTR_BSS], params.keep_elems)
++            local res = parse_bss(attrs[nl80211.ATTR_BSS], params.keep_elems, params.bandwidth)
+             if res then
+                 bss[#bss + 1] = res
+             end
+@@ -974,6 +1163,7 @@
+ -- - `freqs` (table, optional): list of frequencies in MHz
+ -- - `ie` (string, optional): extra IEs
+ -- - `keep_elems` (boolean, optional): include raw `elems` in BSS results
++-- - `bandwidth` (boolean, optional): decode AP operating width and center channels; default false
+ --
+ -- @function scan
+ -- @tparam string action One of `trigger`, `dump`, `abort`.
+diff --git a/tests/nl80211-test.lua b/tests/nl80211-test.lua
+--- a/tests/nl80211-test.lua
++++ b/tests/nl80211-test.lua
+@@ -49,13 +49,14 @@
+ local nl80211_scan = get_upvalue(nl80211.scan, 'nl80211_scan')
+ local parse_bss = get_upvalue(nl80211_scan, 'parse_bss')
+ 
+-local function parse_bss_info(information_ies, beacon_ies, keep_elems)
++local function parse_bss_info(information_ies, beacon_ies, keep_elems, options)
++    options = options or {}
+     local msg = nl.nlmsg(0, 0)
+ 
+     msg:put_attr_nest_start(1)
+     msg:put_attr(nl80211.BSS_BSSID, string.rep('\0', 6))
+     msg:put_attr(nl80211.BSS_CAPABILITY, string.pack('=I2', 1))
+-    msg:put_attr_u32(nl80211.BSS_FREQUENCY, 2412)
++    msg:put_attr_u32(nl80211.BSS_FREQUENCY, options.freq or 2412)
+ 
+     if information_ies then
+         msg:put_attr(nl80211.BSS_INFORMATION_ELEMENTS, information_ies)
+@@ -73,7 +74,7 @@
+     local attrs, err = rx:parse_attr(0)
+     assert(attrs, err)
+ 
+-    return assert(parse_bss(attrs[1], keep_elems))
++    return assert(parse_bss(attrs[1], keep_elems, options.bandwidth))
+ end
+ 
+ test.run_case_sync('beacon IEs fill missing RSN and WPA data', function()
+@@ -115,4 +116,150 @@
+     assert(info.wpa == nil)
+ end)
+ 
+-print('nl80211 tests passed')
++local function ht(channel, flags)
++    return ie(61, string.char(channel, flags) .. string.rep('\0', 20))
++end
++
++local function vht(mode, c0, c1)
++    return ie(192, string.char(mode, c0, c1 or 0, 0, 0))
++end
++
++local function he(flags, extra)
++    return ie(255, string.char(36) .. string.pack('<I3', flags) .. '\0\0\0' .. (extra or ''))
++end
++
++local function eht(mode, c0, c1, bitmap)
++    return ie(255, string.char(106, bitmap and 3 or 1) .. string.rep('\0', 4) ..
++        string.char(mode, c0, c1 or 0) .. (bitmap and string.pack('<I2', bitmap) or ''))
++end
++
++local cases = {
++    { 'legacy 20', 2412, ie(1, '\130'), 20, 1, 0 },
++    { 'missing operation', 2412, ie(1, '\130') .. ie(45, ''), 0, 0, 0 },
++    { 'empty information', 2412, '', 0, 0, 0 },
++    { 'HT20', 2412, ht(1, 0), 20, 1, 0 },
++    { 'HT40 above', 2412, ht(1, 5), 40, 3, 0 },
++    { 'HT40 below', 2472, ht(13, 7), 40, 11, 0 },
++    { 'HT20 ignores secondary when narrow', 2437, ht(6, 1), 20, 6, 0 },
++    { 'HT40 outside band', 2412, ht(1, 7), 0, 0, 0 },
++    { 'HT wrong primary', 2412, ht(6, 5), 0, 0, 0 },
++    { 'HT reserved offset', 2412, ht(1, 6), 0, 0, 0 },
++    { 'channel 14', 2484, ht(14, 0), 20, 14, 0 },
++    { '5G 20', 5180, ht(36, 0) .. vht(0, 0), 20, 36, 0 },
++    { '5G 40', 5180, ht(36, 5) .. vht(0, 0), 40, 38, 0 },
++    { 'VHT80', 5180, vht(1, 42), 80, 42, 0 },
++    { 'VHT160 old', 5180, vht(2, 50), 160, 50, 0 },
++    { 'VHT160 revised', 5180, vht(1, 42, 50), 160, 50, 0 },
++    { 'VHT160 wrong primary segment', 5180, vht(1, 58, 50), 0, 0, 0 },
++    { '80+80 old', 5180, vht(3, 42, 155), 160, 42, 155 },
++    { '80+80 revised', 5180, vht(1, 42, 155), 160, 42, 155 },
++    { '80+80 reverse order', 5180, vht(3, 155, 42), 160, 42, 155 },
++    { '80+80 second band edge', 5180, vht(3, 42, 250), 0, 0, 0 },
++    { '80+80 missing second center', 5180, vht(3, 42), 0, 0, 0 },
++    { '80+80 adjacent blocks', 5180, vht(3, 42, 58), 0, 0, 0 },
++    { 'VHT reserved width', 5180, vht(4, 42), 0, 0, 0 },
++    { 'VHT unaligned primary', 5180, vht(1, 43), 0, 0, 0 },
++    { 'HE embedded VHT', 5180, he(0x4000, string.char(1, 42, 50)), 160, 50, 0 },
++    { 'HE 6G20', 5975, he(0x20000, string.char(5, 0, 5, 0, 0)), 20, 5, 0 },
++    { 'HE 6G40', 5975, he(0x20000, string.char(5, 1, 3, 0, 0)), 40, 3, 0 },
++    { 'HE 6G80', 5975, he(0x20000, string.char(5, 2, 7, 0, 0)), 80, 7, 0 },
++    { 'HE 6G160', 5975, he(0x20000, string.char(5, 3, 7, 15, 0)), 160, 15, 0 },
++    { 'HE 6G80+80', 5975, he(0x20000, string.char(5, 3, 7, 39, 0)), 160, 7, 39 },
++    { 'HE optional fields', 5975, he(0x2c000, string.char(0, 0, 0, 0, 5, 2, 7, 0, 0)), 80, 7, 0 },
++    { 'HE wrong primary', 5975, he(0x20000, string.char(9, 2, 7, 0, 0)), 0, 0, 0 },
++    { 'HE missing center', 5975, he(0x20000, string.char(5, 3, 7, 0, 0)), 0, 0, 0 },
++    { 'HE truncated optional fields', 5975, he(0x2c000, '\0'), 0, 0, 0 },
++    { 'EHT20', 2412, eht(0, 1), 20, 1, 0 },
++    { 'EHT40', 2412, eht(1, 3), 40, 3, 0 },
++    { 'EHT80', 5180, eht(2, 42), 80, 42, 0 },
++    { 'EHT160', 5180, eht(3, 42, 50), 160, 50, 0 },
++    { 'EHT320', 5975, eht(4, 15, 31), 320, 31, 0 },
++    { 'EHT320 upper half', 6215, eht(4, 47, 31), 320, 31, 0 },
++    { 'EHT320 overlapping placement', 6215, eht(4, 47, 63), 320, 63, 0 },
++    { 'EHT keeps nominal width with puncturing', 5975, eht(4, 15, 31, 16), 320, 31, 0 },
++    { 'EHT punctured primary', 5975, eht(4, 15, 31, 2), 0, 0, 0 },
++    { 'EHT bitmap outside width', 5180, eht(2, 42, 0, 16), 0, 0, 0 },
++    { 'EHT 320 outside band', 5955, eht(4, 223, 239), 0, 0, 0 },
++    { 'EHT reserved width', 5975, eht(5, 15, 31), 0, 0, 0 },
++    { 'EHT missing second center', 5975, eht(4, 15), 0, 0, 0 },
++    { 'EHT inconsistent segments', 5975, eht(4, 7, 31), 0, 0, 0 },
++    { 'EHT 320 on 5G', 5180, eht(4, 50, 82), 0, 0, 0 },
++    { 'truncated IE', 5180, vht(1, 42) .. string.char(255, 9, 106), 0, 0, 0 },
++    { 'conflicting duplicate IE', 5180, vht(1, 42) .. vht(2, 50), 0, 0, 0 },
++    { 'identical duplicate IE', 5180, vht(1, 42) .. vht(1, 42), 80, 42, 0 },
++    { 'no 6G legacy guess', 5975, ie(1, '\130'), 0, 0, 0 },
++    { 'unknown band', 60000, vht(1, 42), 0, 0, 0 },
++}
++
++for _, row in ipairs(cases) do
++    test.run_case_sync(row[1], function()
++        local info = parse_bss_info(row[3], nil, false, { freq = row[2], bandwidth = true })
++        assert(info.bandwidth == row[4], 'bandwidth: ' .. tostring(info.bandwidth))
++        assert(info.center_channel == row[5], 'center: ' .. tostring(info.center_channel))
++        assert(info.center_channel2 == row[6], 'second center: ' .. tostring(info.center_channel2))
++        assert(info.elems == nil)
++    end)
++end
++
++test.run_case_sync('bandwidth is optional and old fields stay unchanged', function()
++    local raw = ie(0, 'example') .. ht(36, 5) .. vht(1, 42) ..
++        ie(nl80211.WLAN_EID_RSN, rsn(OUI_IEEE80211, 2))
++    local old = parse_bss_info(raw, nil, true, { freq = 5180 })
++    local new = parse_bss_info(raw, nil, true, { freq = 5180, bandwidth = true })
++    assert(old.bandwidth == nil and old.center_channel == nil and old.center_channel2 == nil)
++    new.bandwidth, new.center_channel, new.center_channel2 = nil, nil, nil
++    local function equal(a, b)
++        if type(a) ~= 'table' then assert(a == b); return end
++        assert(type(b) == 'table')
++        for k, value in pairs(a) do equal(value, b[k]) end
++        for k in pairs(b) do assert(a[k] ~= nil) end
++    end
++    equal(old, new)
++end)
++
++test.run_case_sync('beacon supplies missing operation without changing raw IEs', function()
++    local primary = ie(0, 'probe') .. ht(36, 5)
++    local beacon = ie(0, 'beacon') .. vht(1, 42)
++    local info = parse_bss_info(primary, beacon, true, { freq = 5180, bandwidth = true })
++    assert(info.bandwidth == 80 and info.center_channel == 42 and info.center_channel2 == 0)
++    assert(info.ssid == 'probe' and info.elems[192] == nil)
++    info = parse_bss_info(nil, beacon, false, { freq = 5180, bandwidth = true })
++    assert(info.bandwidth == 80 and info.center_channel == 42)
++    info = parse_bss_info(vht(1, 42), vht(2, 50), false, { freq = 5180, bandwidth = true })
++    assert(info.bandwidth == 80 and info.center_channel == 42)
++end)
++
++test.run_case_sync('every truncated operation returns unknown', function()
++    for _, raw in ipairs({ ht(36, 5), vht(1, 42), he(0x4000, '\1\42\50'), eht(3, 42, 50, 0) }) do
++        for length = 1, #raw - 1 do
++            local info = parse_bss_info(raw:sub(1, length), nil, false, { freq = 5180, bandwidth = true })
++            assert(info.bandwidth == 0 and info.center_channel == 0 and info.center_channel2 == 0)
++        end
++    end
++end)
++
++test.run_case_sync('malformed operation payloads cannot break a scan', function()
++    local seed = 17
++    local function byte()
++        seed = (seed * 1103515245 + 12345) & 0x7fffffff
++        return (seed >> 16) & 255
++    end
++    local allowed = { [0] = true, [20] = true, [40] = true, [80] = true, [160] = true, [320] = true }
++    for index = 1, 1200 do
++        local data = {}
++        for _ = 1, byte() % 25 do data[#data + 1] = string.char(byte()) end
++        local value = table.concat(data)
++        local kind = index % 4
++        local raw = kind == 0 and ie(61, value) or kind == 1 and ie(192, value) or
++            ie(255, string.char(kind == 2 and 36 or 106) .. value)
++        local info = parse_bss_info(raw, nil, false,
++            { freq = index % 2 == 0 and 5180 or 5975, bandwidth = true })
++        assert(allowed[info.bandwidth])
++        assert(type(info.center_channel) == 'number' and type(info.center_channel2) == 'number')
++        if info.bandwidth == 0 then
++            assert(info.center_channel == 0 and info.center_channel2 == 0)
++        end
++    end
++end)
++
++print('nl80211 tests passed: ' .. (#cases + 7) .. ' cases (including 1200 malformed payloads)')
