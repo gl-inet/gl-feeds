@@ -1,4 +1,5 @@
 #!/bin/sh /etc/rc.common
+. /lib/functions/gl_util.sh
 
 USE_PROCD=1
 
@@ -26,6 +27,7 @@ wait_port_release() {
 start_service() {
     local mode=$(uci -q get gl-dns-v2.@dns[0].mode)
     local proto=$(uci -q get gl-dns-v2.@dns[0].proto)
+    local model
 
     [ "$mode" = "secure" ] || return 0
     [ "$proto" = "odoh" ] && return 0
@@ -34,6 +36,13 @@ start_service() {
 
     procd_open_instance
     procd_set_param command "$PROG" --upstream-mode="parallel" --config-path="$CONFIG_FILE"
+
+    model=$(get_model)
+    case "$model" in
+        "mg1300"|"halowlink2")
+            procd_append_param command --max-go-routines=32
+            ;;
+    esac
     [ "$(uci -q get gl-dns-v2.@dns[0].override_vpn)" = "1" ] && procd_append_param command --enable-conntrack
     procd_set_param file "$CONFIG_FILE"
     procd_set_param stdout 1
