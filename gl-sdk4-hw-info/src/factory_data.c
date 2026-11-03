@@ -174,6 +174,37 @@ static void make_device_cert(struct device_node *np)
 #endif
 }
 
+static void make_firmware_type_flag(struct device_node *np)
+{
+#ifdef CONFIG_MTD
+    const char *part, *offset_str;
+    struct mtd_info *mtd;
+    char flag[2] = {0};
+    size_t retlen = 0;
+    u32 offset;
+    int ret;
+
+    if (of_property_read_string_index(np, "firmware_type", 0, &part) ||
+        of_property_read_string_index(np, "firmware_type", 1, &offset_str))
+        return;
+
+    if (kstrtou32(offset_str, 0, &offset))
+        return;
+
+    mtd = get_mtd_device_nm(part);
+    if (IS_ERR(mtd))
+        return;
+
+    ret = mtd_read(mtd, offset, sizeof(flag), &retlen, flag);
+    put_mtd_device(mtd);
+    if ((ret && !mtd_is_bitflip(ret)) || retlen != sizeof(flag))
+        return;
+
+    create_proc_node("firmware_type",
+                     memcmp(flag, "2b", sizeof(flag)) == 0 ? "2b" : "2c");
+#endif
+}
+
 void make_factory_data(struct device_node *np)
 {
     make_device_mac(np);
@@ -182,4 +213,5 @@ void make_factory_data(struct device_node *np)
     make_device_sn_bak(np);
     make_device_cert(np);
     make_device_country_code(np);
+    make_firmware_type_flag(np);
 }
