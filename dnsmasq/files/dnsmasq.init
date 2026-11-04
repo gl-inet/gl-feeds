@@ -620,12 +620,18 @@ dhcp_add() {
 			if [ "$LIP" != "" ] && [ "$tmp" != "" ];then
 				local subnet=`uci -q get passthrough.passthrough.ipaddr`
 				local netmask=`uci -q get passthrough.passthrough.netmask`
-				ipcalc "$subnet/$netmask" 0 0
+				ipcalc "$subnet" "$netmask" 0 0
 				START=$IP
 				END=$IP
-				local mac=`uci -q get passthrough.passthrough.mac | awk '{print toupper($0)}'`
-				local tag="${mac},${subnet}"
-				[ "$mac" != "" ] && xappend "--dhcp-host=$tag"
+				local target=`uci -q get passthrough.passthrough.target`
+				if [ "$target" = "mac" ]; then
+					local mac=`uci -q get passthrough.passthrough.mac | tr '[:lower:]' '[:upper:]'`
+					[ -n "$mac" ] && xappend "--dhcp-host=${mac},${subnet},set:ippt_target"
+					xappend "--dhcp-ignore=tag:${ifname},tag:!ippt_target"
+				elif [ -z "$target" ]; then
+					local mac=`uci -q get passthrough.passthrough.mac | tr '[:lower:]' '[:upper:]'`
+					[ -n "$mac" ] && xappend "--dhcp-host=${mac},${subnet}"
+				fi
 				rm /tmp/dhcp.leases 2>/dev/null
 			else
 				ipcalc "$ipaddr/$prefix_or_netmask" "$start" "$limit"
