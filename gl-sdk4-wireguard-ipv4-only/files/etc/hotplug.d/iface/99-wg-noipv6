@@ -1,0 +1,39 @@
+#!/bin/sh
+# Re-evaluate WireGuard IPv4-only enforcement on netifd state changes.
+#
+# We listen on two classes of events:
+#
+#   * ifup on a tracked WireGuard interface -- so newly-up WG sections
+#     immediately get pinned (or cleared) per the global IPv6 state.
+#
+#   * ifup/ifdown on wan6 -- this is the most reliable signal that the
+#     /#/ipv6 toggle changed. Some firmware revisions disable IPv6 by
+#     calling `ifdown wan6` directly without going through `ubus call
+#     uci commit`, which would otherwise bypass procd_add_reload_trigger.
+
+case "$ACTION" in
+	ifup|ifdown) ;;
+	*) exit 0 ;;
+esac
+[ -n "$INTERFACE" ] || exit 0
+
+. /usr/lib/wg-noipv6/functions.sh
+
+# Hotplug context: never echo to stderr, just syslog.
+export WG_NOIPV6_QUIET=1
+
+case "$INTERFACE" in
+	wan6|wan6_*)
+		wg_sync_all
+		exit 0
+		;;
+esac
+
+# Tracked WG sections only react to ifup; ifdown is harmless to skip
+# because enforcement is host-side and survives the down event.
+[ "$ACTION" = "ifup" ] || exit 0
+case " $(wg_list_netifd_ifaces) $(wg_list_glinet_servers) " in
+	*" ${INTERFACE} "*) wg_sync_all ;;
+esac
+
+exit 0
