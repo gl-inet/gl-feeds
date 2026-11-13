@@ -1,0 +1,118 @@
+--- a/src/lease.c
++++ b/src/lease.c
+@@ -26,7 +26,8 @@
+   union all_addr addr;
+   struct dhcp_lease *lease;
+   int opt_len, clid_len, hw_len, hw_type;
+-  int items;
++  int offset, ch;
++  char line[2048], *fields, *name, *clid;
+  
+   *daemon->dhcp_buff3 = *daemon->dhcp_buff2 = '\0';
+ 
+@@ -39,8 +40,18 @@
+ # error Buffer size breakage in leasefile parsing.
+ #endif
+ 
+-    while ((items=fscanf(leasestream, "%255s %255s", daemon->dhcp_buff3, daemon->dhcp_buff2)) == 2)
++    while (fgets(line, sizeof(line), leasestream))
+       {
++        /* Never consume a following lease when a record is malformed. */
++        if (!strchr(line, '\n') && !feof(leasestream))
++          {
++            while ((ch = fgetc(leasestream)) != '\n' && ch != EOF);
++            continue;
++          }
++        if (sscanf(line, "%255s %255s %n", daemon->dhcp_buff3,
++                   daemon->dhcp_buff2, &offset) != 2)
++          continue;
++        fields = line + offset;
+ 	*daemon->namebuff = *daemon->dhcp_buff = *daemon->packet = '\0';
+ 	hw_len = hw_type = clid_len = 0;
+ 	
+@@ -59,7 +70,7 @@
+ 	/* Weird backwards compatible way of adding extra fields to leases */
+ 	if ((strcmp(daemon->dhcp_buff3, "vendorclass") == 0 || strcmp(daemon->dhcp_buff3, "agent-info") == 0))
+ 	  {
+-	    if (fscanf(leasestream, " %764s", daemon->packet) == 1)
++	    if (sscanf(fields, " %764s", daemon->packet) == 1)
+ 	      {
+ 		if (inet_pton(AF_INET, daemon->dhcp_buff2, &addr.addr4))
+ 		  lease = lease_find_by_addr(addr.addr4);
+@@ -70,9 +81,8 @@
+ 		else
+ 		  continue;
+ 		
+-		if (lease)
++		if (lease && (opt_len = parse_hex(daemon->packet, (unsigned char *)daemon->packet, 255, NULL, NULL)) >= 0)
+ 		  {
+-		    opt_len = parse_hex(daemon->packet, (unsigned char *)daemon->packet, 255, NULL, NULL);
+ 		    
+ 		    if (strcmp(daemon->dhcp_buff3, "vendorclass") == 0)
+ 		      lease_set_vendorclass(lease, (unsigned char *)daemon->packet, opt_len);
+@@ -84,21 +94,33 @@
+ 	    continue;
+ 	  }
+ 	
+-	if (fscanf(leasestream, " %64s %255s %764s",
+-		   daemon->namebuff, daemon->dhcp_buff, daemon->packet) != 3)
+-	  {
+-	    my_syslog(MS_DHCP | LOG_WARNING, _("ignoring invalid line in lease database: %s %s %s %s ..."),
+-		      daemon->dhcp_buff3, daemon->dhcp_buff2,
+-		      daemon->namebuff, daemon->dhcp_buff);
+-	    continue;
+-	  }
+-		
++        /* Preserve spaces between the IP address and final client-id. */
++        if (sscanf(fields, "%64s %n", daemon->namebuff, &offset) != 1)
++          continue;
++        name = fields + offset;
++        clid = name + strlen(name);
++        while (clid > name && isspace((unsigned char)clid[-1]))
++          *--clid = '\0';
++        while (clid > name && !isspace((unsigned char)clid[-1]))
++          clid--;
++        if (clid == name || strlen(clid) > 764)
++          continue;
++        strcpy(daemon->packet, clid);
++        while (clid > name && isspace((unsigned char)clid[-1]))
++          *--clid = '\0';
++        if (clid == name || clid - name > 255)
++          continue;
++        strcpy(daemon->dhcp_buff, name);
++
++        if (strcmp(daemon->packet, "*") != 0 &&
++            (clid_len = parse_hex(daemon->packet, (unsigned char *)daemon->packet, 255, NULL, NULL)) < 0)
++          continue;
++
+ 	if (inet_pton(AF_INET, daemon->namebuff, &addr.addr4))
+ 	  {
+-	    lease = lease4_allocate(addr.addr4);
+-	    
+-	    
+-	    hw_len = parse_hex(daemon->dhcp_buff2, (unsigned char *)daemon->dhcp_buff2, DHCP_CHADDR_MAX, NULL, &hw_type);
++	    if ((hw_len = parse_hex(daemon->dhcp_buff2, (unsigned char *)daemon->dhcp_buff2, DHCP_CHADDR_MAX, NULL, &hw_type)) < 0)
++              continue;
++            lease = lease4_allocate(addr.addr4);
+ 	    /* For backwards compatibility, no explicit MAC address type means ether. */
+ 	    if (hw_type == 0 && hw_len != 0)
+ 	      hw_type = ARPHRD_ETHER; 
+@@ -130,9 +152,6 @@
+ 	if (!lease)
+ 	  die (_("too many stored leases"), NULL, EC_MISC);
+ 
+-	if (strcmp(daemon->packet, "*") != 0)
+-	  clid_len = parse_hex(daemon->packet, (unsigned char *)daemon->packet, 255, NULL, NULL);
+-	
+ 	lease_set_hwaddr(lease, (unsigned char *)daemon->dhcp_buff2, (unsigned char *)daemon->packet, 
+ 			 hw_len, hw_type, clid_len, now, 0);
+ 	
+@@ -160,7 +179,7 @@
+ 	*daemon->dhcp_buff3 = *daemon->dhcp_buff2 = '\0';
+       }
+     
+-    return (items == 0 || items == EOF);
++    return !ferror(leasestream);
+ }
+ 
+ void lease_init(time_t now)
