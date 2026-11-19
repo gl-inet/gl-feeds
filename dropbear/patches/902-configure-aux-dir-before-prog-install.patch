@@ -1,0 +1,18 @@
+--- a/configure.ac
++++ b/configure.ac
+@@ -149,6 +149,7 @@
+ AC_CHECK_TOOL(AR, ar, :)
+ AC_CHECK_TOOL(RANLIB, ranlib, :)
+ AC_CHECK_TOOL(STRIP, strip, :)
++AC_CONFIG_AUX_DIR([src])
+ AC_PROG_INSTALL
+ 
+ dnl Can't use login() or logout() with uclibc
+@@ -838,7 +839,6 @@
+ # flags that should be set in Makefile but not for configure tests
+ CFLAGS="$CFLAGS $LATE_CFLAGS"
+ 
+-AC_CONFIG_AUX_DIR([src])
+ 
+ AC_CONFIG_HEADERS([config.h:src/config.h.in])
+ AC_CONFIG_FILES(Makefile $LIBTOM_FILES test/Makefile)
