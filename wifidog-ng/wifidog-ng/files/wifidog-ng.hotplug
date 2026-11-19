@@ -1,0 +1,8 @@
+[ "$ACTION" = "add" -o "$ACTION" = "update" ] || exit 0
+
+addr=$(uci get network.lan.ipaddr)
+
+port=$(uci -q get wifidog-ng.@gateway[0].port)
+[ -z "$port" ] && exit 0
+
+wget "http://$addr:$port/wifidog/ctl?op=roam&ip=$IPADDR&mac=$MACADDR" -O /dev/null &
