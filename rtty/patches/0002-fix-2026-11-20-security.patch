@@ -1,0 +1,53 @@
+From 070b8cb0e650477622f295fd5dacf78c1d9be613 Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Fri, 20 Nov 2026 20:39:56 +0800
+Subject: [PATCH] fix security
+
+1. mask of `-f`
+2. force enable tls
+3. remove remote execute command
+
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ src/main.c | 4 +++-
+ src/rtty.c | 2 +-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index 23751a5..d1c4dcd 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -627,7 +627,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            //rtty.username = optarg;
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -652,6 +652,8 @@ int main(int argc, char **argv)
+ 
+     signal(SIGPIPE, SIG_IGN);
+ 
++    rtty.ssl_on = true;
++
+     if (!rtty.devid) {
+         log_err("you must specify an id for your device\n");
+         ret = -1;
+diff --git a/src/rtty.c b/src/rtty.c
+index 66f90e9..0899b83 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -513,7 +513,7 @@ static int parse_msg(struct rtty *rtty)
+ 
+         case MSG_TYPE_CMD:
+             rtty->user_active = ev_now(rtty->loop);
+-            run_command(rtty, buffer_data(rb));
++            //run_command(rtty, buffer_data(rb));
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
+-- 
+2.53.0
+
