@@ -1,0 +1,66 @@
+From a4f87315399012c4824b220d39731abe6635e5d7 Mon Sep 17 00:00:00 2001
+From: "jiayi.ming" <jiayi.ming@gl-inet.com>
+Date: Sat, 21 Nov 2026 16:48:20 +0800
+Subject: [PATCH] fix: backport 2026-11-20 security hardening to rtty 8.1.5
+
+Backport the behavior of gl-feeds change 21691 (commit
+4bb291e42f0e1fe1d60e187282efbf847a637bb7) without upgrading rtty.
+
+Apply after the existing common_v4.10 patches: the 8.1.5 main function
+has a different startup sequence, and its MSG_TYPE_CMD branch does not
+update user_active. Ignore -f and -x, always use TLS, and discard remote
+command messages while continuing to parse subsequent messages.
+
+Original security change by Jianhui Zhao and hangfei.zheng.
+
+Signed-off-by: jiayi.ming <jiayi.ming@gl-inet.com>
+---
+ src/main.c | 7 ++++---
+ src/rtty.c | 2 +-
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index 149cda1..59ad70d 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -232,8 +232,7 @@ int main(int argc, char **argv)
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            /* Certificate verification is mandatory. */
+             break;
+         case 'c':
+             if (ssl_load_cert_file(rtty.ssl_ctx, optarg)) {
+@@ -255,7 +254,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            /* Always require login authentication. */
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -278,6 +277,8 @@ int main(int argc, char **argv)
+         }
+     }
+ 
++    rtty.ssl_on = true;
++
+     signal(SIGPIPE, SIG_IGN);
+     signal(SIGUSR1, signal_handler);
+ 
+diff --git a/src/rtty.c b/src/rtty.c
+index 2920920..2f2e71f 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -449,7 +449,7 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_CMD:
+-            run_command(rtty, buffer_data(rb));
++            /* Remote command execution is disabled. */
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
