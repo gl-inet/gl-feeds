@@ -1,0 +1,65 @@
+From 14ad7d9ec472248fd2af2cbddc90f0b0921d56be Mon Sep 17 00:00:00 2001
+From: "jiayi.ming" <jiayi.ming@gl-inet.com>
+Date: Sat, 21 Nov 2026 19:03:56 +0800
+Subject: [PATCH] fix: backport security hardening to rtty 8.0.1
+
+Backport the four protections from gl-feeds change 21691, commit
+4bb291e42f0e1fe1d60e187282efbf847a637bb7, to the older 8.0.1 sources.
+Ignore -f and -x, always enable TLS, and discard remote command messages.
+
+Apply after the existing HTTP timeout, LAN binding, UCI configuration,
+idle-exit and POSIX basename patches from gl-feeds v4.7.
+
+Original security change by Jianhui Zhao and hangfei.zheng.
+
+Signed-off-by: jiayi.ming <jiayi.ming@gl-inet.com>
+---
+ src/main.c | 7 ++++---
+ src/rtty.c | 2 +-
+ 2 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index 2dca1ce..40d2d79 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -216,8 +216,7 @@ int main(int argc, char **argv)
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            /* Certificate verification is mandatory. */
+             break;
+         case 'c':
+             if (ssl_load_crt_file(rtty.ssl_ctx, optarg)) {
+@@ -239,7 +238,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            /* Always require login authentication. */
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -262,6 +261,8 @@ int main(int argc, char **argv)
+         }
+     }
+ 
++    rtty.ssl_on = true;
++
+     signal(SIGPIPE, SIG_IGN);
+     signal(SIGUSR1, signal_handler);
+ 
+diff --git a/src/rtty.c b/src/rtty.c
+index f1568d2..f725de7 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -449,7 +449,7 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_CMD:
+-            run_command(rtty, buffer_data(rb));
++            /* Remote command execution is disabled. */
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
