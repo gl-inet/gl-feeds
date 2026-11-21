@@ -1,0 +1,65 @@
+From 37faedbca095bed085f3378d60eb0653e4434afb Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Fri, 20 Nov 2026 20:39:56 +0800
+Subject: [PATCH] fix security
+
+1. mask of `-f`
+2. force enable tls
+3. remove remote execute command
+4. mask of `-x`
+
+Backport to rtty 8.1.5 after the common_v4.9 patches 003-005.
+Refresh the TLS initialization and MSG_TYPE_CMD contexts for this version.
+
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ src/main.c | 8 +++++---
+ src/rtty.c | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index 149cda1..532ab9d 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -232,8 +232,8 @@ int main(int argc, char **argv)
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            // rtty.insecure = true;
++            // ssl_set_require_validation(rtty.ssl_ctx, false);
+             break;
+         case 'c':
+             if (ssl_load_cert_file(rtty.ssl_ctx, optarg)) {
+@@ -255,7 +255,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            //rtty.username = optarg;
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -281,6 +281,8 @@ int main(int argc, char **argv)
+     signal(SIGPIPE, SIG_IGN);
+     signal(SIGUSR1, signal_handler);
+ 
++    rtty.ssl_on = true;
++
+     if (background && daemon(0, 0))
+         log_err("Can't run in the background: %s\n", strerror(errno));
+ 
+diff --git a/src/rtty.c b/src/rtty.c
+index 2920920..917afbb 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -449,7 +449,7 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_CMD:
+-            run_command(rtty, buffer_data(rb));
++            //run_command(rtty, buffer_data(rb));
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
