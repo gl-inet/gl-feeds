@@ -1,0 +1,65 @@
+From 37faedbca095bed085f3378d60eb0653e4434afb Mon Sep 17 00:00:00 2001
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Date: Fri, 20 Nov 2026 20:39:56 +0800
+Subject: [PATCH] fix security
+
+1. mask of `-f`
+2. force enable tls
+3. remove remote execute command
+4. mask of `-x`
+
+Signed-off-by: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+---
+ src/main.c | 8 +++++---
+ src/rtty.c | 2 +-
+ 2 files changed, 6 insertions(+), 4 deletions(-)
+
+diff --git a/src/main.c b/src/main.c
+index 23751a5..c128ad1 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -599,8 +599,8 @@ int main(int argc, char **argv)
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            // rtty.insecure = true;
++            // ssl_set_require_validation(rtty.ssl_ctx, false);
+             break;
+         case 'c':
+             if (ssl_load_cert_file(rtty.ssl_ctx, optarg)) {
+@@ -627,7 +627,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            //rtty.username = optarg;
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -652,6 +652,8 @@ int main(int argc, char **argv)
+ 
+     signal(SIGPIPE, SIG_IGN);
+ 
++    rtty.ssl_on = true;
++
+     if (!rtty.devid) {
+         log_err("you must specify an id for your device\n");
+         ret = -1;
+diff --git a/src/rtty.c b/src/rtty.c
+index 66f90e9..0899b83 100644
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -513,7 +513,7 @@ static int parse_msg(struct rtty *rtty)
+ 
+         case MSG_TYPE_CMD:
+             rtty->user_active = ev_now(rtty->loop);
+-            run_command(rtty, buffer_data(rb));
++            //run_command(rtty, buffer_data(rb));
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
+-- 
+2.53.0
+
