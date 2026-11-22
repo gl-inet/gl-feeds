@@ -1,5 +1,5 @@
-
 config globals 'globals'
-	option enabled '1'
-	option sysfs '/sys/devices/virtual/thermal/thermal_zone0/temp'
-	option div 1
+        option enabled '1'
+        option sysfs '/sys/devices/virtual/thermal/thermal_zone0/temp'
+        option div 1000
+        option temperature 40
