@@ -1,0 +1,46 @@
+Index: rtty-8.0.1/src/main.c
+===================================================================
+--- rtty-8.0.1.orig/src/main.c
++++ rtty-8.0.1/src/main.c
+@@ -216,8 +216,8 @@ int main(int argc, char **argv)
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            //rtty.insecure = true;
++            //ssl_set_require_validation(rtty.ssl_ctx, false);
+             break;
+         case 'c':
+             if (ssl_load_crt_file(rtty.ssl_ctx, optarg)) {
+@@ -239,7 +239,7 @@ int main(int argc, char **argv)
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            //rtty.username = optarg;
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -262,6 +262,8 @@ int main(int argc, char **argv)
+         }
+     }
+ 
++    rtty.ssl_on = true;
++
+     signal(SIGPIPE, SIG_IGN);
+     signal(SIGUSR1, signal_handler);
+ 
+Index: rtty-8.0.1/src/rtty.c
+===================================================================
+--- rtty-8.0.1.orig/src/rtty.c
++++ rtty-8.0.1/src/rtty.c
+@@ -449,7 +449,7 @@ static int parse_msg(struct rtty *rtty)
+             break;
+ 
+         case MSG_TYPE_CMD:
+-            run_command(rtty, buffer_data(rb));
++            //run_command(rtty, buffer_data(rb));
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
