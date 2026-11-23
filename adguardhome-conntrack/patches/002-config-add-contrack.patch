@@ -1,8 +1,7 @@
-From d7dd5c9ed68329308e483f6bb5e49713db0e023a Mon Sep 17 00:00:00 2001
+From 69e5c535850f74b9da9dfffaa35ee5f18356448e Mon Sep 17 00:00:00 2001
 From: Dongming Han <handongming@gl-inet.com>
-Date: Sun, 22 Mar 2026 23:03:51 +0800
-Subject: [PATCH] adguardhome: add enable_conntrack config field and wire
- it into proxy.Config
+Date: Mon, 23 Nov 2026 17:35:31 +0800
+Subject: [PATCH] 002-config-add-contrack
 
 ---
  internal/dnsforward/config.go | 4 ++++
@@ -10,10 +9,10 @@ Subject: [PATCH] adguardhome: add enable_conntrack config field and wire
  2 files changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/internal/dnsforward/config.go b/internal/dnsforward/config.go
-index 6045120..e2b3f75 100644
+index 5be0793..a980f88 100644
 --- a/internal/dnsforward/config.go
 +++ b/internal/dnsforward/config.go
-@@ -167,6 +167,9 @@ type Config struct {
+@@ -168,6 +168,9 @@ type Config struct {
  	// BootstrapPreferIPv6, if true, instructs the bootstrapper to prefer IPv6
  	// addresses to IPv4 ones for DoH, DoQ, and DoT.
  	BootstrapPreferIPv6 bool `yaml:"bootstrap_prefer_ipv6"`
@@ -23,8 +22,8 @@ index 6045120..e2b3f75 100644
  }
  
  // EDNSClientSubnet is the settings list for EDNS Client Subnet.
-@@ -346,6 +349,7 @@ func (s *Server) newProxyConfig(ctx context.Context) (conf *proxy.Config, err er
- 		HTTPSServerName:           aghhttp.UserAgent(),
+@@ -356,6 +359,7 @@ func (s *Server) newProxyConfig(ctx context.Context) (conf *proxy.Config, err er
+ 		RequestHandler:            ratelimitMw.Wrap(logMw.Wrap(s.Wrap(s))),
  		EnableEDNSClientSubnet:    srvConf.EDNSClientSubnet.Enabled,
  		MaxGoroutines:             srvConf.MaxGoroutines,
 +		EnableConntrack:           srvConf.EnableConntrack,
@@ -32,10 +31,10 @@ index 6045120..e2b3f75 100644
  		DNS64Prefs:                srvConf.DNS64Prefixes,
  		UsePrivateRDNS:            srvConf.UsePrivateRDNS,
 diff --git a/internal/home/config.go b/internal/home/config.go
-index 082f0e6..4625ce5 100644
+index 6a1352e..e5c0ee0 100644
 --- a/internal/home/config.go
 +++ b/internal/home/config.go
-@@ -489,7 +489,8 @@ var config = &configuration{
+@@ -514,7 +514,8 @@ var config = &configuration{
  			// we introduced a default limit due to this:
  			// https://github.com/AdguardTeam/AdGuardHome/issues/2015#issuecomment-674041912
  			// was later increased to 300 due to https://github.com/AdguardTeam/AdGuardHome/issues/2257

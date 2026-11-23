@@ -1,17 +1,17 @@
-From ea0f0e641620e85346e77f890a1cd2cfe685f911 Mon Sep 17 00:00:00 2001
-From: zengyinbin <yinbin.zeng@gl-inet.com>
-Date: Fri, 21 Nov 2025 18:07:25 +0800
-Subject: [PATCH] optimize flash storage usage
+From 5f7f91e5239986f2c30addf4962c454d9d5d8d69 Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Mon, 23 Nov 2026 17:35:31 +0800
+Subject: [PATCH] 004-optimize-flash-storage-usage
 
 ---
  internal/filtering/http.go | 3 ++-
  1 file changed, 2 insertions(+), 1 deletion(-)
 
 diff --git a/internal/filtering/http.go b/internal/filtering/http.go
-index 94a601f..b7ba4bb 100644
+index a7ffd46..bd8e818 100644
 --- a/internal/filtering/http.go
 +++ b/internal/filtering/http.go
-@@ -175,7 +175,8 @@ func (d *DNSFilter) handleFilteringRemoveURL(w http.ResponseWriter, r *http.Requ
+@@ -233,7 +233,8 @@ func (d *DNSFilter) handleFilteringRemoveURL(w http.ResponseWriter, r *http.Requ
  
  		deleted = (*filters)[delIdx]
  		p := deleted.Path(d.conf.DataDir)
@@ -19,8 +19,8 @@ index 94a601f..b7ba4bb 100644
 +		// err = os.Rename(p, p+".old")
 +		err = os.Remove(p)
  		if err != nil && !errors.Is(err, os.ErrNotExist) {
- 			log.Error("deleting filter %d: renaming file %q: %s", deleted.ID, p, err)
- 
+ 			d.logger.ErrorContext(
+ 				ctx,
 -- 
 2.34.1
 

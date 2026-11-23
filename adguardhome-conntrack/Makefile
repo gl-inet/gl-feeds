@@ -6,27 +6,27 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=adguardhome-conntrack
-PKG_VERSION:=0.107.73
-PKG_RELEASE:=2
+PKG_VERSION:=0.107.80
+PKG_RELEASE:=1
 
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://codeload.github.com/AdguardTeam/AdGuardHome/tar.gz/v$(PKG_VERSION)?
-PKG_HASH:=f5f2c97dc1425ba1445d0c4050911e6924f153bd64926f27c677087586f9a4fb
+PKG_HASH:=c67cf289f1d4b05c78994f4d1d169962540814a212244eb191cd599795d90278
 
-DNSPROXY_VERSION:=0.78.2
+DNSPROXY_VERSION:=0.83.2
 DNSPROXY_SOURCE:=dnsproxy-$(DNSPROXY_VERSION).tar.gz
 DNSPROXY_URL:=https://codeload.github.com/AdguardTeam/dnsproxy/tar.gz/v$(DNSPROXY_VERSION)?
-DNSPROXY_HASH:=dabb78173f518da7c2a5394cf52e3f6cdd09d9cb48f3dafa59f5b5788459bf75
+DNSPROXY_HASH:=85498aa8214756bdbf3910fdac82fc5dc21b74c7f6dcb5086e6903f81d1d481e
 
-DNSCRYPT_VERSION:=2.4.0
+DNSCRYPT_VERSION:=0.0.2
 DNSCRYPT_SOURCE:=dnscrypt-$(DNSCRYPT_VERSION).tar.gz
-DNSCRYPT_URL:=https://codeload.github.com/ameshkov/dnscrypt/tar.gz/v$(DNSCRYPT_VERSION)?
-DNSCRYPT_HASH:=a3b01bd53a169369a3c96f7aa60516fbb843af0f58cd2b866c38b52a4e4344c1
+DNSCRYPT_URL:=https://codeload.github.com/AdguardTeam/dnscrypt/tar.gz/v$(DNSCRYPT_VERSION)?
+DNSCRYPT_HASH:=9eb3dfc488a2046a7990ae334569be03ec17dcfef5b99d745d0d5a716c68a149
 
 FRONTEND_FILE:=AdGuardHome_frontend-$(PKG_VERSION).tar.gz
 FRONTEND_ORIG:=AdGuardHome_frontend.tar.gz
 FRONTEND_URL:=https://github.com/AdguardTeam/AdGuardHome/releases/download/v$(PKG_VERSION)
-FRONTEND_HASH:=a69c540fe6959575330bdea150e31eee0c0c204985bf50e3522ce6d292e3c64e
+FRONTEND_HASH:=f01f3c7713a8190dd0aaaf18c3f9a0e38235c21d696325bfca9dc681e389d894
 
 GO_MOD_PROXY?=https://proxy.golang.org,direct
 GO_MOD_SUMDB?=sum.golang.org
@@ -57,6 +57,8 @@ endif
 
 include $(INCLUDE_DIR)/package.mk
 include ../golang/golang-package.mk
+# Older SDKs pin GOTOOLCHAIN=local. Select the toolchain required by v0.107.80.
+GO_PKG_BUILD_VARS += GOTOOLCHAIN=go1.27.3 GOFLAGS=-buildvcs=false
 
 define Package/$(PKG_NAME)
 	SECTION:=net
@@ -85,7 +87,8 @@ endef
 $(eval $(call Download,dnscrypt))
 
 define Download/frontend
-	FILE:=$(FRONTEND_ORIG)
+	FILE:=$(FRONTEND_FILE)
+	URL_FILE:=$(FRONTEND_ORIG)
 	URL:=$(FRONTEND_URL)
 	HASH:=$(FRONTEND_HASH)
 endef
@@ -93,17 +96,13 @@ $(eval $(call Download,frontend))
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	if [ ! -f $(DL_DIR)/$(FRONTEND_FILE) ] && [ -f $(DL_DIR)/$(FRONTEND_ORIG) ]; then \
-		cp $(DL_DIR)/$(FRONTEND_ORIG) $(DL_DIR)/$(FRONTEND_FILE); \
-	fi
 	tar -xzf $(DL_DIR)/$(FRONTEND_FILE) -C $(PKG_BUILD_DIR)
 	rm -rf $(PKG_BUILD_DIR)/../dnsproxy
 	mkdir -p $(PKG_BUILD_DIR)/../dnsproxy
 	$(TAR) -xzf $(DL_DIR)/$(DNSPROXY_SOURCE) -C $(PKG_BUILD_DIR)/../dnsproxy --strip-components=1
 	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0001-upstream-dns-query-mark-sync-with-downstream-connect.patch
-	cd $(PKG_BUILD_DIR)/../dnsproxy && patch -p1 < $(CURDIR)/patches-dnsproxy/0002-upstream-assign-nonzero-udp-id-for-zero-id-queries.patch
 	cd $(PKG_BUILD_DIR)/../dnsproxy && \
-		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/florianl/go-conntrack@v0.4.0 && \
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/vishvananda/netlink@v1.3.1 && \
 		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go mod tidy
 	rm -rf $(PKG_BUILD_DIR)/../dnscrypt
 	mkdir -p $(PKG_BUILD_DIR)/../dnscrypt
@@ -111,8 +110,8 @@ define Build/Prepare
 	cd $(PKG_BUILD_DIR)/../dnscrypt && patch -p1 < $(CURDIR)/patches-dnscrypt/0001-support-setting-upstream-query-mark-for-vpn-policy.patch
 	cd $(PKG_BUILD_DIR) && \
 		go mod edit -replace=github.com/AdguardTeam/dnsproxy=../dnsproxy && \
-		go mod edit -replace=github.com/ameshkov/dnscrypt/v2=../dnscrypt && \
-		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/florianl/go-conntrack@v0.4.0 && \
+		go mod edit -replace=github.com/AdguardTeam/dnscrypt=../dnscrypt && \
+		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go get github.com/vishvananda/netlink@v1.3.1 && \
 		GOPROXY=$(GO_MOD_PROXY) GOSUMDB=$(GO_MOD_SUMDB) go mod tidy
 endef
 

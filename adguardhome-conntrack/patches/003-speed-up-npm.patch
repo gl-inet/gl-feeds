@@ -1,6 +1,17 @@
+From 5cf58feca8b58312798abfcadaf4f5e141dd780b Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Mon, 23 Nov 2026 17:35:31 +0800
+Subject: [PATCH] 003-speed-up-npm
+
+---
+ Makefile | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+index 503baf2..5c3bebb 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -30,7 +30,8 @@
+@@ -29,7 +29,8 @@ GPG_KEY = devteam@adguard.com
  GPG_KEY_PASSPHRASE = not-a-real-password
  NPM = npm
  NPM_FLAGS = --prefix $(CLIENT_DIR)
@@ -10,3 +21,6 @@
  RACE = 0
  REVISION = $${REVISION:-$$(git rev-parse --short HEAD)}
  SIGN = 1
+-- 
+2.34.1
+
