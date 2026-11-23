@@ -189,6 +189,10 @@ define Build/Configure/dropbear_objects
 endef
 
 define Build/Configure
+	cp -f $(PKG_BUILD_DIR)/src/install-sh $(PKG_BUILD_DIR)/install-sh
+	chmod 0755 $(PKG_BUILD_DIR)/install-sh
+	cp -f $(PKG_BUILD_DIR)/src/config.guess $(PKG_BUILD_DIR)/config.guess
+	cp -f $(PKG_BUILD_DIR)/src/config.sub $(PKG_BUILD_DIR)/config.sub
 	rm -f $(PKG_BUILD_DIR)/localoptions.h
 	$(Build/Configure/Default)
 
