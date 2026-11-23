@@ -1,0 +1,22 @@
+Declare the auxiliary directory before compiler and install checks so that
+OpenWrt 22.03's Autoconf 2.69 finds the scripts shipped in src/.
+
+--- a/configure.ac
++++ b/configure.ac
+@@ -7,6 +7,7 @@
+ 
+ AC_PREREQ([2.59])
+ AC_INIT
++AC_CONFIG_AUX_DIR([src])
+ 
+ # Record which revision is being built
+ if test -s "`which hg`" && test -d "$srcdir/.hg"; then
+@@ -838,8 +839,6 @@ fi
+ # flags that should be set in Makefile but not for configure tests
+ CFLAGS="$CFLAGS $LATE_CFLAGS"
+ 
+-AC_CONFIG_AUX_DIR([src])
+-
+ AC_CONFIG_HEADERS([config.h:src/config.h.in])
+ AC_CONFIG_FILES(Makefile $LIBTOM_FILES test/Makefile)
+ AC_OUTPUT

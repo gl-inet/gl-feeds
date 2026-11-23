@@ -73,4 +73,8 @@ define Package/libbpf/install
 	$(CP) $(PKG_INSTALL_DIR)/usr/lib/libbpf.so.* $(1)/usr/lib/
 endef
 
+# OpenWrt 22.03 already provides libbpf through bpftools. Keep its native ABI
+# and avoid duplicate providers, including metadata scans that skip .config.
+ifeq ($(shell grep -l '^define Package/libbpf$$' $(TOPDIR)/package/network/utils/bpftools/Makefile 2>/dev/null),)
 $(eval $(call BuildPackage,libbpf))
+endif
