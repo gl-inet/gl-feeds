@@ -1,0 +1,55 @@
+From cccbaf87458d66acddbe76d6054966e3ab0cfa3e Mon Sep 17 00:00:00 2001
+From: Dongming Han <handongming@gl-inet.com>
+Date: Mon, 3 Jun 2024 17:22:51 +0800
+Subject: [PATCH] no log
+
+original patch:
+https://github.com/gl-inet/gl-feeds/commit/a914a3f1ea14262ab0052e153f2dd28723689424
+
+Signed-off-by: Dongming Han <handongming@gl-inet.com>
+---
+ logtail/logtail.go | 28 +---------------------------
+ 1 file changed, 1 insertion(+), 27 deletions(-)
+
+diff --git a/logtail/logtail.go b/logtail/logtail.go
+index 14cded5..5ca1a20 100644
+--- a/logtail/logtail.go
++++ b/logtail/logtail.go
+@@ -828,33 +828,7 @@ func (l *Logger) Logf(format string, args ...any) {
+ //
+ // This is intended as an interface for the stdlib "log" package.
+ func (l *Logger) Write(buf []byte) (int, error) {
+-	if len(buf) == 0 {
+-		return 0, nil
+-	}
+-	inLen := len(buf) // length as provided to us, before modifications to downstream writers
+-
+-	level, buf := parseAndRemoveLogLevel(buf)
+-	if l.stderr != nil && l.stderr != io.Discard && int64(level) <= atomic.LoadInt64(&l.stderrLevel) {
+-		if buf[len(buf)-1] == '\n' {
+-			l.stderr.Write(buf)
+-		} else {
+-			// The log package always line-terminates logs,
+-			// so this is an uncommon path.
+-			withNL := append(buf[:len(buf):len(buf)], '\n')
+-			l.stderr.Write(withNL)
+-		}
+-	}
+-
+-	if obscureIPs() {
+-		buf = redactIPs(buf)
+-	}
+-
+-	l.writeLock.Lock()
+-	defer l.writeLock.Unlock()
+-
+-	b := l.appendTextOrJSONLocked(l.writeBuf[:0], buf, level)
+-	_, err := l.sendLocked(b)
+-	return inLen, err
++	return 0, nil
+ }
+ 
+ var (
+-- 
+2.34.1
+
