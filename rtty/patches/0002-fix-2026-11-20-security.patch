@@ -1,0 +1,49 @@
+From: Jianhui Zhao <jianhui.zhao@gl-inet.com>
+Subject: [PATCH] rtty: backport SDK-26066 security restrictions to 8.1.5
+
+Adapt Gerrit gl-feeds/21691 patch set 1 (4bb291e42f0e1fe1d60e187282efbf847a637bb7).
+Disable -f login bypass, -x certificate bypass and remote command execution;
+force TLS for connections. Keep message consumption for protocol framing.
+
+--- a/src/main.c
++++ b/src/main.c
+@@ -170,8 +170,7 @@
+             has_cacert = true;
+             break;
+         case 'x':
+-            rtty.insecure = true;
+-            ssl_set_require_validation(rtty.ssl_ctx, false);
++            /* Keep certificate verification enabled, even with -x. */
+             break;
+         case 'c':
+             if (ssl_load_cert_file(rtty.ssl_ctx, optarg)) {
+@@ -193,7 +192,7 @@
+             rtty.token = optarg;
+             break;
+         case 'f':
+-            rtty.username = optarg;
++            /* Do not allow -f to bypass login authentication. */
+             break;
+         case 'R':
+             request_transfer_file('R', NULL);
+@@ -226,6 +225,9 @@
+     else
+         log_level(LOG_ERR);
+ 
++    /* Require TLS even when -s is omitted. */
++    rtty.ssl_on = true;
++
+     log_info("rtty version %s\n", RTTY_VERSION_STRING);
+ 
+     if (getuid() > 0) {
+--- a/src/rtty.c
++++ b/src/rtty.c
+@@ -444,7 +444,7 @@
+             break;
+ 
+         case MSG_TYPE_CMD:
+-            run_command(rtty, buffer_data(rb));
++            /* Remote command execution is disabled. */
+             buffer_pull(rb, NULL, msglen);
+             break;
+ 
